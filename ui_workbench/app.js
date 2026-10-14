@@ -310,8 +310,27 @@ function init() {
    都已确认 native_ok=false），所以「合法 / 违规 / 已降级」一律靠文案、
    边框明度与删除线区分，不靠颜色——与 Blender 侧的能力边界保持一致。 */
 
-var proposal = [];   // [{wkey, label, uiloayout, params, id, note, errors, downgraded, blocker, fallback}]
+var proposal = [];   // [{uid, wkey, label, uiloayout, params, id, note, errors, downgraded, blocker, fallback}]
 var vocab = null;
+
+/* 积木身份：每块拿到一个单调递增、永不复用的 uid（b1、b2……）。
+   为什么必须是 uid 而不是数组下标：下标是位置。提案视图一旦能删除、能排序，
+   第 3 块被删掉之后原来的第 4 块就顶上了它的位置——继续按下标定位，
+   用户正在编辑的参数框会莫名其妙跳到隔壁那块上，标注也会贴错块。
+   uid 只跟着积木走，位置随便变，身份不变。 */
+var uidSeq = 0;
+
+function nextUid() {
+  uidSeq += 1;
+  return "b" + uidSeq;
+}
+
+function idxByUid(uid) {
+  for (var i = 0; i < proposal.length; i++) {
+    if (proposal[i].uid === uid) { return i; }
+  }
+  return -1;
+}
 
 function loadVocab() {
   return getJSON("vocabulary.json").then(function (v) {
@@ -426,6 +445,7 @@ function validateWidget(w, params) {
 
 function addWidget(w) {
   proposal.push({
+    uid: nextUid(),
     wkey: w.key,
     label: w.label,
     uiloayout: w.uiloayout,
@@ -444,6 +464,7 @@ function addRejected(r) {
   // 降级项不开放参数输入：它是「这条原需求做不到 + 这样改」的记录，
   // 不是可拼装的控件，硬塞参数进去只会让人以为能落笔。
   proposal.push({
+    uid: nextUid(),
     wkey: "__downgraded__",
     label: r.label,
     uiloayout: "(不可用)",
@@ -470,22 +491,43 @@ function setParams(n, raw) {
   renderCanvas();
 }
 
+/* 删一块。参数是数组下标（调用方当场就该知道位置），块本身的身份靠 uid 自保——
+   剩下的积木不会被重新编号，删中间一块也不会把后面的焦点拽走。 */
+function delNode(idx) {
+  proposal.splice(idx, 1);
+  renderCanvas();
+}
+
+/* 复制一块，副本紧跟原块。副本必须领新的 uid：沿用原 uid 的话，焦点保存、
+   标注绑定、后续排序都会把两块当成同一块，改一块另一块跟着变。 */
+function dupNode(idx) {
+  var src = proposal[idx];
+  if (!src) { return; }   // uid 对不上（块刚被别的操作删掉）：不崩，什么也不做
+  var copy = {};
+  for (var k in src) { if (src.hasOwnProperty(k)) { copy[k] = src[k]; } }
+  copy.uid = nextUid();
+  copy.errors = (src.errors || []).slice();   // 不共享同一个数组，否则两块永远同步
+  proposal.splice(idx + 1, 0, copy);
+  renderCanvas();
+}
+
 /* 记下「谁在编辑哪个字段、光标在哪」，重建完再还回去。
    不这么做的话，用户在被自己 oninput 摘掉的 input 里敲第二个字符时，
-   事件已经打到 body 去了：输 scale_y 只会留下 s，全靠粘贴才能输完。 */
+   事件已经打到 body 去了：输 scale_y 只会留下 s，全靠粘贴才能输完。
+   记的是 uid 不是下标：画布每次都重建，下标会变，uid 不会。 */
 function captureFocus(host) {
   var af = document.activeElement;
   if (!af || !af.dataset || af.dataset.field == null) { return null; }
-  var box = host.querySelector('.pnode[data-idx="' + af.dataset.idx + '"]');
+  var box = host.querySelector('.pnode[data-uid="' + af.dataset.uid + '"]');
   var f = box && box.querySelector('[data-field="' + af.dataset.field + '"]');
   if (!f) { return null; }
-  return { idx: af.dataset.idx, field: af.dataset.field,
+  return { uid: af.dataset.uid, field: af.dataset.field,
            start: f.selectionStart, end: f.selectionEnd };
 }
 
 function restoreFocus(host, keep) {
   if (!keep) { return; }
-  var box = host.querySelector('.pnode[data-idx="' + keep.idx + '"]');
+  var box = host.querySelector('.pnode[data-uid="' + keep.uid + '"]');
   var f = box && box.querySelector('[data-field="' + keep.field + '"]');
   if (!f) { return; }
   f.focus();
@@ -508,7 +550,8 @@ function renderCanvas() {
   proposal.forEach(function (n, i) {
     var box = document.createElement("div");
     box.className = "note pnode" + (n.downgraded ? " down" : (n.errors.length ? " blocked" : ""));
-    box.dataset.idx = String(i);
+    box.dataset.idx = String(i);      // 仅供调试看顺序，任何定位都不许用它
+    box.dataset.uid = n.uid;
     box.dataset.wkey = n.wkey;
     box.dataset.downgraded = n.downgraded ? "1" : "0";
     box.dataset.status = n.downgraded ? "downgraded" : (n.errors.length ? "blocked" : "ok");
@@ -527,6 +570,31 @@ function renderCanvas() {
     var code = document.createElement("code");
     code.textContent = n.uiloayout;
     head.appendChild(code);
+
+    /* 复制 / 删除。
+       主题里没有红也没有绿（见文件头），所以「删除」不靠红色表达：
+       沿用 .chip.bad——它本来就是「不可用 / 违规」的表达（删除线 + 加深边框），
+       与降级块里「原需求做不到」那条删除线是同一套语汇。
+       复制沿用普通 .chip。两个按钮都靠 data-uid 找回自己那块，
+       不记下标——点了之后画布会重建，下标随时会过期。 */
+    var dupB = document.createElement("button");
+    dupB.className = "chip";
+    dupB.dataset.act = "dup";
+    dupB.dataset.uid = n.uid;
+    dupB.textContent = "复制";
+    dupB.title = "原地复制一块（副本是独立积木，身份独立）";
+    dupB.onclick = function () { dupNode(idxByUid(n.uid)); };
+    head.appendChild(dupB);
+
+    var delB = document.createElement("button");
+    delB.className = "chip bad";
+    delB.dataset.act = "del";
+    delB.dataset.uid = n.uid;
+    delB.textContent = "删除";
+    delB.title = "删掉这块积木";
+    delB.onclick = function () { delNode(idxByUid(n.uid)); };
+    head.appendChild(delB);
+
     box.appendChild(head);
 
     if (n.downgraded) {
@@ -557,7 +625,7 @@ function renderCanvas() {
       var pin = document.createElement("input");
       pin.className = "pin pinp";
       pin.dataset.field = "params";
-      pin.dataset.idx = String(i);
+      pin.dataset.uid = n.uid;
       pin.placeholder = "参数，逗号分隔（只认 " +
         ((n.allowed_props || []).join(", ") || "无") + "）";
       pin.value = n.params;
@@ -575,7 +643,7 @@ function renderCanvas() {
     var idIn = document.createElement("input");
     idIn.className = "pin";
     idIn.dataset.field = "id";
-    idIn.dataset.idx = String(i);
+    idIn.dataset.uid = n.uid;
     idIn.placeholder = "对应插件元素 ID（可空）";
     idIn.value = n.id;
     idIn.oninput = function () { n.id = idIn.value; };
@@ -584,7 +652,7 @@ function renderCanvas() {
     var ta = document.createElement("textarea");
     ta.className = "pnote";
     ta.dataset.field = "note";
-    ta.dataset.idx = String(i);
+    ta.dataset.uid = n.uid;
     ta.placeholder = "想要什么？为什么？";
     ta.value = n.note;
     ta.oninput = function () { n.note = ta.value; };
@@ -602,21 +670,79 @@ function renderCanvas() {
    （普通 #proposal 走不到提案视图：loadState 会把未知 hash 归一成状态名）。
    #proposal-blocked 会额外给文字（label）塞 size, color, scale, text：
    前三个分别命中 blocked_props、blocked_props、允许清单之外，text 合法。
-   #proposal-typing 走逐字符 input 事件，专治「重建画布把焦点弄丢」那类 bug。 */
+   #proposal-typing 走逐字符 input 事件，专治「重建画布把焦点弄丢」那类 bug。
+   #proposal-del / #proposal-dup 点真实的删除 / 复制按钮，核对块数与 uid 身份。 */
+/* 按 wkey 找到数组下标，再拿这块的 uid 去 DOM 里捞输入框——
+   两头都靠 uid，数组重排或中间被删掉都不会捞错块。 */
+function paramsInputOf(wkey) {
+  for (var i = 0; i < proposal.length; i++) {
+    if (proposal[i].wkey !== wkey) { continue; }
+    return el("canvas").querySelector('.pnode[data-uid="' + proposal[i].uid + '"] [data-field="params"]');
+  }
+  return null;
+}
+
+function uidListOf(nodes) {
+  return (nodes || []).map(function (n) { return n.uid; }).join(",");
+}
+
+function appendReport(id, attrs) {
+  var rep = document.createElement("div");
+  rep.id = id;
+  Object.keys(attrs).forEach(function (k) { rep.dataset[k] = attrs[k]; });
+  el("canvas").appendChild(rep);
+}
+
+/* #proposal-del：点画布上真实的删除按钮，核对「块数减一」与「其余块身份不动」。
+   先删最后一块（splice 越界与否在这里现形），再删中间一块（看后面的积木
+   会不会被重排挤掉身份）。 */
+function delReport() {
+  var before = uidListOf(proposal);
+  var all = el("canvas").querySelectorAll(".pnode");
+  var lastUid = proposal[proposal.length - 1].uid;
+  all[all.length - 1].querySelector('[data-act="del"]').click();
+  var afterLast = proposal.length;
+
+  var midUid = proposal[Math.floor(proposal.length / 2)].uid;
+  var box = el("canvas").querySelector('.pnode[data-uid="' + midUid + '"]');
+  box.querySelector('[data-act="del"]').click();
+
+  appendReport("del-report", {
+    before: String(all.length),
+    beforeUids: before,
+    afterLast: String(afterLast),
+    lastUid: lastUid,
+    midUid: midUid,
+    afterUids: uidListOf(proposal)
+  });
+  setStatus("DEMO del 剩 " + proposal.length + " 块");
+}
+
+/* #proposal-dup：复制最后一块，核对块数加一、副本拿到全新 uid，
+   并且副本真的以新 uid 渲染进了 DOM（不是只在数组里多了一条记录）。 */
+function dupReport() {
+  var before = uidListOf(proposal);
+  var all = el("canvas").querySelectorAll(".pnode");
+  all[all.length - 1].querySelector('[data-act="dup"]').click();
+
+  var boxes = el("canvas").querySelectorAll(".pnode[data-uid]");
+  appendReport("dup-report", {
+    before: String(all.length),
+    beforeUids: before,
+    after: String(proposal.length),
+    afterUids: uidListOf(proposal),
+    domCount: String(boxes.length),
+    domLastUid: boxes.length ? boxes[boxes.length - 1].dataset.uid : ""
+  });
+  setStatus("DEMO dup " + proposal.length + " 块");
+}
+
 /* 逐字符敲参数框，派发真的 input 事件——刻意不复用 #proposal-blocked 那条
    直接调 setParams 的捷径，因为那条绕开了用户实际会走的路径。
    这里模拟浏览器的真实行为：只有元素仍然持有焦点，这次按键才会落进去；
    节点一旦被 renderCanvas 摘出文档，后续按键就打到 body 上，字符会丢。
    敲 "scale_ys"（比合法值多一个 s）是为了同时验两件事：字符没丢，
    且最后那一下真的触发了拦截。 */
-function paramsInputOf(wkey) {
-  for (var i = 0; i < proposal.length; i++) {
-    if (proposal[i].wkey !== wkey) { continue; }
-    return el("canvas").querySelector('.pnode[data-idx="' + i + '"] [data-field="params"]');
-  }
-  return null;
-}
-
 function typeReport(wkey, text) {
   var lost = 0;
   // 先点一下输入框（用户就是这么开始打字的），否则第一次按键就会「丢失」，
@@ -655,6 +781,8 @@ function runDemoHook(hash) {
   var kind = (h === "proposal-all") ? "all"
            : (h === "proposal-blocked") ? "blocked"
            : (h === "proposal-typing") ? "typing"
+           : (h === "proposal-del") ? "del"
+           : (h === "proposal-dup") ? "dup"
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
   switchView("proposal");
@@ -674,6 +802,8 @@ function runDemoHook(hash) {
     }
     var rb = el("prop-notes").querySelectorAll("button[data-rkey]");
     for (var j = 0; j < rb.length; j++) { rb[j].click(); }
+    if (kind === "del") { delReport(); return; }
+    if (kind === "dup") { dupReport(); return; }
     var down = proposal.filter(function (x) { return x.downgraded; }).length;
     var blocked = proposal.filter(function (x) { return x.errors.length > 0; }).length;
     setStatus("DEMO " + kind + " 控件 " + (proposal.length - down) +

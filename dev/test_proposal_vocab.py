@@ -274,8 +274,7 @@ def dom_checks():
         # 每条降级方案都要把「原需求做不到 + 降级方案」两行写进画布节点里。
         # 必须只扫 #canvas：按钮的 title 里也抄了一遍 fallback 文案，
         # 扫全文档的话这条断言就算画布上什么都没写也会绿（变异验证实测过）。
-        canvas = allp.split('<div id="canvas"')[1].split('<div id="prop-notes"')[0] \
-            if '<div id="canvas"' in allp and '<div id="prop-notes"' in allp else ""
+        canvas = canvas_of(allp)
         ck("dom_all_canvas_found", bool(canvas.strip()), "定位不到画布区域")
         missing_fb = [k for k in dnodes if _fb_for(k) not in canvas]
         ck("dom_all_fallback_text", not missing_fb,
@@ -339,8 +338,122 @@ def dom_checks():
             ck("dom_typing_blocked", at.get("status") == "blocked" and at.get("errors") == "1",
                "多敲的那个 s 应被判违规，实际 status=%s errors=%s"
                % (at.get("status"), at.get("errors")))
+
+        # --- Task 9：稳定 uid + 删除 + 复制 ---
+        # 每块积木都要带身份。没有身份就没有任何东西能把「我编辑的是哪一块」
+        # 这个问题问对——data-idx 是位置，删掉中间一块后面全串位。
+        uids = re.findall(r'<div class="note pnode[^"]*"[^>]*data-uid="([^"]*)"', allp)
+        ck("dom_uid_on_every_node", len(uids) == EXPECT_WIDGETS + EXPECT_REJECTED,
+           "每块积木都要有 data-uid，实际 %d / 共 %d 块"
+           % (len(uids), EXPECT_WIDGETS + EXPECT_REJECTED))
+        ck("dom_uid_unique_all", bool(uids) and all(uids) and len(set(uids)) == len(uids),
+           "uid 重复或为空：%s" % uids)
+        # 每块一个删除、一个复制按钮，且只数画布切片（点按钮才出得了这些）
+        cvs = canvas_of(allp)
+        ck("dom_del_button_per_node", cvs.count('data-act="del"') == node_count(allp),
+           "每个积木都要有一个删除按钮，实际 %d / 共 %d 块"
+           % (cvs.count('data-act="del"'), node_count(allp)))
+        ck("dom_dup_button_per_node", cvs.count('data-act="dup"') == node_count(allp),
+           "每个积木都要有一个复制按钮，实际 %d / 共 %d 块"
+           % (cvs.count('data-act="dup"'), node_count(allp)))
+
+        # 删除：#proposal-del 里点的是画布上真实的删除按钮
+        dele = dump(exe, url + "#proposal-del", profile)
+        ck("dom_delete_removes_one", del_last_node(dele), "删除最后一块后块数应减一")
+        ck("dom_delete_no_uid_reuse", del_last_node_then_check_uid(dele),
+           "删掉中间一块后，其余积木的 uid 必须原样保留（身份不等于位置）")
+
+        # 复制：副本必须拿到全新 uid，否则焦点和标注会串回原块
+        dupd = dump(exe, url + "#proposal-dup", profile)
+        ck("dom_dup_adds_one", dup_last_node(dupd), "复制后块数应加一")
+        ck("dom_dup_gets_new_uid", dup_gets_distinct_uid(dupd),
+           "复制的积木必须是新 uid，否则焦点和标注会串到原块上")
     finally:
         shutil.rmtree(profile, ignore_errors=True)
+
+
+def canvas_of(p):
+    """取 #canvas 切片。
+
+    按钮的 title 里也抄了一遍 fallback 文案、数值文案，扫整份文档的话
+    「画布上写了没有」这类断言就算什么都没写也会绿（变异验证实测过）。
+    """
+    if '<div id="canvas"' not in p or '<div id="prop-notes"' not in p:
+        return ""
+    return p.split('<div id="canvas"')[1].split('<div id="prop-notes"')[0]
+
+
+def node_count(p):
+    return len(re.findall(r'<div class="note pnode[^"]*"', canvas_of(p)))
+
+
+def report(p, rid):
+    """读无头钩子吐出来的 <div id="..."> 报告，读不到就返回空 dict（判定必红）。"""
+    m = re.search(r'<div id="%s"([^>]*)>' % re.escape(rid), p)
+    if not m:
+        return {}
+    return dict(re.findall(r'data-([a-z][a-z-]*)="([^"]*)"', m.group(1)))
+
+
+def _uids(at, key):
+    v = at.get(key, "")
+    return v.split(",") if v else []
+
+
+def del_last_node(p):
+    """点最后一块的删除按钮 -> 块数减一。"""
+    at = report(p, "del-report")
+    if not at.get("before") or not at.get("after-last"):
+        return False
+    return int(at["after-last"]) == int(at["before"]) - 1
+
+
+def del_last_node_then_check_uid(p):
+    """删掉中间一块后，其余积木的身份必须原封不动。
+
+    钉的是「uid 是身份不是位置」：剩下的 uid 序列必须正好等于
+    原序列去掉被点的两块（最后一块 + 中间一块），且顺序不变、数量只少二。
+    若实现改用重排后的下标重新发 uid，或者复用被删的 uid，这里必红。
+    """
+    at = report(p, "del-report")
+    before, after = _uids(at, "before-uids"), _uids(at, "after-uids")
+    mid, last = at.get("mid-uid", ""), at.get("last-uid", "")
+    if not before or not after or not mid or not last:
+        return False
+    if len(after) != len(before) - 2:
+        return False
+    if mid not in before or last not in before or mid == last:
+        return False
+    if len(set(after)) != len(after):
+        return False                     # 出现重复 uid = 身份被复用
+    return after == [u for u in before if u not in (mid, last)]
+
+
+def dup_last_node(p):
+    at = report(p, "dup-report")
+    if not at.get("before") or not at.get("after"):
+        return False
+    return int(at["after"]) == int(at["before"]) + 1
+
+
+def dup_gets_distinct_uid(p):
+    """复制的副本必须拿到全新 uid，且原块一个都不能被改写。
+
+    同时核对 DOM：副本必须真的以新 uid 渲染出来，而不只是数组里多了条记录。
+    """
+    at = report(p, "dup-report")
+    before, after = _uids(at, "before-uids"), _uids(at, "after-uids")
+    if not before or not after:
+        return False
+    if len(after) != len(before) + 1:
+        return False
+    if after[:-1] != before:
+        return False                     # 原块被改写了（顺序或身份都变了）
+    if after[-1] in before or len(set(after)) != len(after):
+        return False                     # 副本沿用了原 uid
+    if at.get("dom-count") != str(len(after)):
+        return False
+    return at.get("dom-last-uid") == after[-1]
 
 
 def _fb_for(rkey):
