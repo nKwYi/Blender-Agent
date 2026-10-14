@@ -296,6 +296,7 @@ function init() {
   // 未知 hash 归一成状态名并写回 location.hash（"#proposal-all" -> "idle"），
   // 晚一步读就永远是 "idle"，钩子静默不触发。
   runDemoHook(window.location.hash || "");
+  bindCanvasDnd();
   loadState(stateFromHash());
 }
 
@@ -319,6 +320,106 @@ var vocab = null;
    用户正在编辑的参数框会莫名其妙跳到隔壁那块上，标注也会贴错块。
    uid 只跟着积木走，位置随便变，身份不变。 */
 var uidSeq = 0;
+
+/* 拖拽状态。只在一次拖拽期间非空，任何一条收尾路径都必须把它清掉。 */
+var dragState = null;   // {uid: string, fromIdx: int}
+
+/* 最近一次删除，供单步撤销用。null = 没有可撤销的东西。 */
+var lastDeleted = null; // {node: object, index: int}
+
+/* 把 fromIdx 处的积木移到 toIdx 处。toIdx 是「先取出源、再插入」的目标位置，
+   与 UIList / Array.splice 的常见用法一致，所以向后拖（toIdx > fromIdx）时
+   要减一——那个位置上的元素在源被取出后已经往前挪了一位。
+
+   只动数组顺序，绝不重建 uid：uid 是标注不串块的唯一依据，
+   一旦在这里调用 nextUid()，用户标注过的积木就集体换了身份。 */
+function reorderTo(fromIdx, toIdx) {
+  if (fromIdx === toIdx || fromIdx < 0 || fromIdx >= proposal.length) { return; }
+  var item = proposal.splice(fromIdx, 1)[0];
+  if (!item) { return; }
+  var at = toIdx > fromIdx ? toIdx - 1 : toIdx;
+  proposal.splice(at, 0, item);
+  renderCanvas();
+}
+
+/* 指针落在哪一格：返回「插在当前第几块之前」，值域 0..块数。
+   越过某块的中线就算落到下一格去——这是列表拖拽的通用手感，
+   半高判定对不齐的时候宁可用中线，别让两块之间出现死区。 */
+function dropIndexAt(clientY) {
+  var boxes = el("canvas").querySelectorAll(".pnode");
+  for (var i = 0; i < boxes.length; i++) {
+    var r = boxes[i].getBoundingClientRect();
+    if (clientY < r.top + r.height / 2) { return i; }
+  }
+  return boxes.length;
+}
+
+/* 把落位指示线挪到第 idx 格。指示线是 #canvas 的直接子元素，不是某块积木的
+   子节点——放进 .pnode 的话，它会跟着那一块一起被 renderCanvas 摘掉。 */
+function moveDropLine(idx) {
+  var host = el("canvas");
+  var line = host.querySelector(".drop-line");
+  if (!line) {
+    line = document.createElement("div");
+    line.className = "drop-line";
+    line.setAttribute("aria-hidden", "true");
+  }
+  if (line.parentNode !== host) { host.appendChild(line); }
+  var ref = host.querySelectorAll(".pnode")[idx] || null;
+  if (ref) { host.insertBefore(line, ref); } else { host.appendChild(line); }
+}
+
+/* 拖拽收尾。所有路径（正常落位、按 Esc、丢到画布外面、dragend 迟到）
+   都必须调用它，且它必须幂等：漏掉任何一处，画布就会永久卡在拖拽态，
+   指示线和半透明的块再也撤不掉。 */
+function clearDrag() {
+  dragState = null;
+  var host = el("canvas");
+  var dragging = host.querySelectorAll(".pnode.dragging");
+  for (var i = 0; i < dragging.length; i++) { dragging[i].classList.remove("dragging"); }
+  var lines = host.querySelectorAll(".drop-line");
+  for (var j = 0; j < lines.length; j++) {
+    if (lines[j].parentNode) { lines[j].parentNode.removeChild(lines[j]); }
+  }
+}
+
+/* 原生 HTML5 draggable，零依赖（file:// 下双击直开，不许引任何拖拽库）。
+   监听器挂在列容器 #canvas 上而不是每块积木上：画布每次操作都会整体重建，
+   挂在具体节点上的监听器第一次重建就失效了。
+   dragend 挂在 document 上：源节点一旦被 drop 里的 renderCanvas 摘掉，
+   从它身上冒泡的 dragend 就再也到不了 #canvas。 */
+function bindCanvasDnd() {
+  var canvas = el("canvas");
+  canvas.addEventListener("dragstart", function (e) {
+    // 在参数框 / 备注框里拖选文本也会冒泡出 dragstart。不挡掉的话，
+    // 用户只是在选中一段文字，整个积木却跟着半透明起来，像卡住了。
+    if (e.target && e.target.closest && e.target.closest("input, textarea")) { return; }
+    var box = e.target && e.target.closest ? e.target.closest(".pnode") : null;
+    if (!box) { return; }
+    dragState = { uid: box.dataset.uid, fromIdx: idxByUid(box.dataset.uid) };
+    box.classList.add("dragging");
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", box.dataset.uid); }
+      catch (err) { /* 某些浏览器对自定义类型会抛，忽略即可 */ }
+    }
+  });
+  canvas.addEventListener("dragover", function (e) {
+    if (!dragState) { return; }
+    e.preventDefault();                 // 不 preventDefault 的话 drop 根本不触发
+    if (e.dataTransfer) { e.dataTransfer.dropEffect = "move"; }
+    moveDropLine(dropIndexAt(e.clientY));
+  });
+  canvas.addEventListener("drop", function (e) {
+    if (!dragState) { return; }
+    e.preventDefault();
+    var from = dragState.fromIdx;
+    var to = dropIndexAt(e.clientY);
+    clearDrag();                          // 先收尾再重排：renderCanvas 会清空整列
+    reorderTo(from, to);
+  });
+  document.addEventListener("dragend", clearDrag);
+}
 
 function nextUid() {
   uidSeq += 1;
@@ -350,13 +451,14 @@ function renderVocabBar() {
   var host = el("vocab-bar");
   host.innerHTML = "";
   var h = document.createElement("b");
-  h.textContent = "可用控件（落笔即校验）：";
+  h.textContent = "可用控件（点一下落到画布最下面，搭好后可拖动换位）：";
   host.appendChild(h);
   vocab.widgets.forEach(function (w) {
     var b = document.createElement("button");
     b.dataset.wkey = w.key;
     b.textContent = w.label;
-    b.title = w.uiloayout +
+    b.title = "点一下加到画布最下面；搭好后按住积木左侧的手柄可拖动换位\n" +
+      w.uiloayout +
       (w.allowed_props.length ? "\n可用参数：" + w.allowed_props.join(", ") : "\n无参数") +
       (w.blocked_props.length ? "\n被拦参数：" + w.blocked_props.join(", ") : "") +
       (w.note ? "\n" + w.note : "");
@@ -369,6 +471,30 @@ function renderVocabBar() {
     sc.textContent = vocab.props_scope;
     host.appendChild(sc);
   }
+  renderUndoBar();
+}
+
+/* 单步撤销的按钮。没删过东西时必须 disabled——一个点下去静默无事发生的
+   按钮比没有更糟，它会让用户以为撤销坏了。单独抽出来是因为删完一块
+   之后必须立刻刷新它的可用状态，而那走的是 delNode 不是 renderVocabBar。 */
+function renderUndoBar() {
+  var host = el("vocab-bar");
+  if (!host) { return; }
+  var old = el("undo-del");
+  if (old && old.parentNode) { old.parentNode.removeChild(old); }
+  var row = document.createElement("div");
+  row.className = "rrow";
+  var b = document.createElement("button");
+  b.id = "undo-del";
+  b.dataset.act = "undo";
+  b.textContent = "撤销上一次删除";
+  b.title = lastDeleted
+    ? "把刚删掉的「" + lastDeleted.node.label + "」放回原位（身份不变，只救这一次）"
+    : "还没有删过东西";
+  b.disabled = !lastDeleted;
+  b.onclick = function () { undoDelete(); };
+  row.appendChild(b);
+  host.appendChild(row);
 }
 
 /* 可做、但词汇表还没收录的能力。控件栏没有它、降级栏也不会有它，
@@ -498,8 +624,27 @@ function setParams(n, raw) {
    一定还在数组里），但拖拽排序一行就会踩到，所以与 dupNode 一样挡掉。 */
 function delNode(idx) {
   if (idx < 0) { return; }
+  // 撤销用：整块原样存下来（含 uid），而不是只记个名字。
+  // 删除和复制两个按钮紧挨着、点错没有确认，误删的参数和标注就找不回来了。
+  lastDeleted = { node: proposal[idx], index: idx };
   proposal.splice(idx, 1);
   renderCanvas();
+  renderUndoBar();
+}
+
+/* 单步撤销，不是撤销栈：只救最近一次删除，救完就作废。
+   放回的是「原来那个对象」，所以 uid 一字不改——它是恢复，不是新建。
+   万一原位置已经越界（后面又删过别的），夹到合法区间里即可，
+   位置对不上也比数据丢了强。 */
+function undoDelete() {
+  if (!lastDeleted) { setStatus("没有可撤销的删除"); return; }
+  var at = Math.max(0, Math.min(lastDeleted.index, proposal.length));
+  proposal.splice(at, 0, lastDeleted.node);
+  var label = lastDeleted.node.label;
+  lastDeleted = null;
+  renderCanvas();
+  renderUndoBar();
+  setStatus("已撤销删除：「" + label + "」回到第 " + (at + 1) + " 位");
 }
 
 /* 复制一块，副本紧跟原块。副本必须领新的 uid：沿用原 uid 的话，焦点保存、
@@ -543,22 +688,34 @@ function restoreFocus(host, keep) {
   try { f.setSelectionRange(keep.start, keep.end); } catch (e) { /* 不支持就只聚焦 */ }
 }
 
+/* 空态引导。原来写的是「从上面挑控件开始拼装」——那是在教人填表单，
+   不是在教人怎么搭；用户反馈「还是有点不太会用」，可发现性的问题就在这句。
+   这里必须把两条路径都讲清楚：怎么加、怎么改顺序、顺序意味着什么。
+   控件架在画布上方（index.html 的结构如此），不是左边，别写错方位。 */
+function renderEmptyHint() {
+  var p = document.createElement("p");
+  p.id = "empty-hint";
+  p.className = "hint";
+  p.textContent = "点上面的控件，它就落到画布最下面；搭好之后，按住积木左侧的手柄" +
+    "可以随时拖动换位，也可以复制一块、或删掉重来。积木从上到下的顺序，" +
+    "就是插件里面板从上到下的顺序。挑不到想要的效果时，看下方「做不到」列表——" +
+    "点它插入的是降级方案，原需求会被标成做不到。搭好后切回镜像视图，对着真实截图比。";
+  return p;
+}
+
 function renderCanvas() {
   var host = el("canvas");
   var keep = captureFocus(host);
   host.innerHTML = "";
   if (!proposal.length) {
-    var p = document.createElement("p");
-    p.id = "empty-hint";
-    p.className = "hint";
-    p.textContent = "从上面挑控件开始拼装。挑不到想要的效果时，看下方「做不到」列表——" +
-      "点它插入的是降级方案，原需求会被标成做不到。";
-    host.appendChild(p);
+    host.appendChild(renderEmptyHint());
     return;
   }
   proposal.forEach(function (n, i) {
     var box = document.createElement("div");
     box.className = "note pnode" + (n.downgraded ? " down" : (n.errors.length ? " blocked" : ""));
+    box.setAttribute("draggable", "true");   // 必须在 dataset 之前写，否则会插到
+                                            // 既有属性中间，打断按顺序匹配的 DOM 断言
     box.dataset.idx = String(i);      // 仅供调试看顺序，任何定位都不许用它
     box.dataset.uid = n.uid;
     box.dataset.wkey = n.wkey;
@@ -569,6 +726,13 @@ function renderCanvas() {
 
     var head = document.createElement("div");
     head.className = "phead";
+    /* 拖拽手柄。整个 .pnode 都可拖，但手柄是「这里能拖」的视觉承诺——
+       没有它，积木看着像个表单卡片，用户不会想到可以换位。 */
+    var grip = document.createElement("span");
+    grip.className = "drop-handler";
+    grip.textContent = "⋮⋮";
+    grip.title = "按住这块积木拖动，可以换位置";
+    head.appendChild(grip);
     var tag = document.createElement("span");
     tag.className = "ptag";
     tag.textContent = n.downgraded ? "已降级" : (n.errors.length ? "违规 " + n.errors.length + " 项" : "合法");
@@ -814,6 +978,124 @@ function typeReport(wkey, text) {
   el("canvas").appendChild(rep);
 }
 
+function fireDrag(target, type, y, dt) {
+  var ev = new DragEvent(type, {
+    bubbles: true, cancelable: true, composed: true,
+    clientX: 24, clientY: y, dataTransfer: dt
+  });
+  target.dispatchEvent(ev);
+  return ev;
+}
+
+/* #proposal-drag：不用真实鼠标，直接派发真的 DragEvent 走一遍拖拽链路。
+   无头浏览器没法拖鼠标，但事件本身就是同一条路径——测的是真代码，不是替身。
+
+   两条路径都要走：
+     1) 取消：dragstart -> dragover -> dragend（没有 drop）。
+        模拟拖到一半按 Esc 或丢在画布外面，这条路上只有 dragend 能收尾，
+        漏掉它画布就永久卡在拖拽态（指示线撤不掉、块一直半透明）。
+     2) 落位：dragstart -> dragover -> drop（把第 3 块放到第 1 位）。
+        drop 里 renderCanvas 会把源节点摘掉，之后的 dragend 未必还冒泡得到，
+        所以 drop 自己就必须收干净。 */
+function dragReport() {
+  var canvas = el("canvas");
+  var before = uidListOf(proposal);
+  var dt = new DataTransfer();
+
+  // --- 1) 取消 ---
+  var b1 = canvas.querySelectorAll(".pnode");
+  var src1 = b1[5];
+  fireDrag(src1, "dragstart", 0, dt);
+  var y1 = b1[3].getBoundingClientRect().top + 4;
+  fireDrag(canvas, "dragover", y1, dt);
+  var lineSeen = canvas.querySelectorAll(".drop-line").length;
+  fireDrag(src1, "dragend", y1, dt);
+  var lineAfterCancel = canvas.querySelectorAll(".drop-line").length;
+  var draggingAfterCancel = canvas.querySelectorAll(".pnode.dragging").length;
+  var stateAfterCancel = String(dragState);
+  var orderAfterCancel = uidListOf(proposal);
+
+  // --- 2) 落位：第 3 块 -> 第 1 位 ---
+  var b2 = canvas.querySelectorAll(".pnode");
+  var src2 = b2[2];
+  // 目标 y 取第 1 块顶端上方 2px：肯定在它的中线之上 -> 插入位 = 0，
+  // 也就是「放在最前面」，结果顺序应为 [3,1,2,4…]
+  var y2 = b2[0].getBoundingClientRect().top + 2;
+  fireDrag(src2, "dragstart", 0, dt);
+  fireDrag(canvas, "dragover", y2, dt);
+  fireDrag(canvas, "drop", y2, dt);
+  var lineAfterDrop = canvas.querySelectorAll(".drop-line").length;
+  var stateAfterDrop = String(dragState);
+  // 浏览器在 drop 之后还会补一个 dragend，从 document 上派发模拟这一下：
+  // 此时源节点已经被重建掉了，真实浏览器里这条信号同样未必回得来，
+  // 所以 clearDrag 必须幂等。
+  fireDrag(document, "dragend", y2, dt);
+  var midOrder = uidListOf(proposal);
+
+  // --- 3) 反向落位：第 1 块 -> 第 3 位 ---
+  // 只测「往前拖」会漏掉 reorderTo 里 toIdx > fromIdx 那半边：
+  // 那一支要减 1（源被取出后，后面的元素已经往前挪了一位），
+  // 漏减就会多插一格。只走反向的话，这个 bug 永远测不出来。
+  var b3 = canvas.querySelectorAll(".pnode");
+  var src3 = b3[0];
+  var y3 = b3[3].getBoundingClientRect().top + 2;   // 插在当前第 4 块之前 -> 插入位 = 3
+  fireDrag(src3, "dragstart", 0, dt);
+  fireDrag(canvas, "dragover", y3, dt);
+  fireDrag(canvas, "drop", y3, dt);
+
+  var boxes = canvas.querySelectorAll(".pnode[data-uid]");
+  var domUids = [];
+  for (var i = 0; i < boxes.length; i++) { domUids.push(boxes[i].dataset.uid); }
+
+  appendReport("drag-report", {
+    beforeUids: before,
+    lineSeen: String(lineSeen),
+    lineAfterCancel: String(lineAfterCancel),
+    draggingAfterCancel: String(draggingAfterCancel),
+    stateAfterCancel: stateAfterCancel,
+    orderAfterCancel: orderAfterCancel,
+    lineAfterDrop: String(lineAfterDrop),
+    stateAfterDrop: stateAfterDrop,
+    afterUids: midOrder,
+    afterFwdUids: uidListOf(proposal),
+    domUids: domUids.join(",")
+  });
+  setStatus("DEMO drag 重排后剩 " + proposal.length + " 块");
+}
+
+/* #proposal-undo：删中间一块 -> 点画布上真实的撤销按钮 -> 必须原样回到原位。
+   报 DOM 上的 uid 序列：只报数组的话，「数组放回去了但画布上还是少一块」照样全绿。 */
+function undoReport() {
+  var canvas = el("canvas");
+  var before = uidListOf(proposal);
+  var midIdx = Math.floor(proposal.length / 2);
+  var victim = proposal[midIdx].uid;
+
+  canvas.querySelector('.pnode[data-uid="' + victim + '"] [data-act="del"]').click();
+  var afterDel = uidListOf(proposal);
+  var btnDel = el("undo-del");
+  var enabledAfterDel = String(!!btnDel && !btnDel.disabled);
+
+  el("undo-del").click();
+  var afterUndo = uidListOf(proposal);
+  var btnUndo = el("undo-del");
+  var boxes = canvas.querySelectorAll(".pnode[data-uid]");
+  var domUids = [];
+  for (var i = 0; i < boxes.length; i++) { domUids.push(boxes[i].dataset.uid); }
+
+  appendReport("undo-report", {
+    beforeUids: before,
+    victimUid: victim,
+    victimIdx: String(midIdx),
+    afterDelUids: afterDel,
+    enabledAfterDel: enabledAfterDel,
+    afterUndoUids: afterUndo,
+    enabledAfterUndo: String(!!btnUndo && !btnUndo.disabled),
+    domUids: domUids.join(",")
+  });
+  setStatus("DEMO undo 恢复后剩 " + proposal.length + " 块");
+}
+
 function runDemoHook(hash) {
   var h = String(hash || "").replace(/^#/, "");
   var kind = (h === "proposal-all") ? "all"
@@ -821,6 +1103,8 @@ function runDemoHook(hash) {
            : (h === "proposal-typing") ? "typing"
            : (h === "proposal-del") ? "del"
            : (h === "proposal-dup") ? "dup"
+           : (h === "proposal-drag") ? "drag"
+           : (h === "proposal-undo") ? "undo"
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
   switchView("proposal");
@@ -842,6 +1126,8 @@ function runDemoHook(hash) {
     for (var j = 0; j < rb.length; j++) { rb[j].click(); }
     if (kind === "del") { delReport(); return; }
     if (kind === "dup") { dupReport(); return; }
+    if (kind === "drag") { dragReport(); return; }
+    if (kind === "undo") { undoReport(); return; }
     var down = proposal.filter(function (x) { return x.downgraded; }).length;
     var blocked = proposal.filter(function (x) { return x.errors.length > 0; }).length;
     setStatus("DEMO " + kind + " 控件 " + (proposal.length - down) +

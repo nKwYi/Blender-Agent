@@ -190,6 +190,33 @@ def main():
     ck("html_slots", all(x in html for x in ('id="vocab-bar"', 'id="canvas"', 'id="prop-notes"')),
        "index.html 的提案视图挂载点不全")
 
+    # ---------- Task 10：拖拽排序 ----------
+    # 拖拽视觉三件套必须真的有样式，否则「有 draggable 属性但看不出来」等于没做。
+    css = read(os.path.join(WB, "style.css"))
+    ck("css_drop_handler", ".drop-handler" in css, "style.css 没定义拖拽手柄 .drop-handler")
+    ck("css_drop_line", ".drop-line" in css, "style.css 没定义放置指示线 .drop-line")
+    ck("css_dragging", ".pnode.dragging" in css, "style.css 没定义拖拽中的 .pnode.dragging")
+    for ev in ("dragstart", "dragover", "drop", "dragend"):
+        ck("app_drag_%s" % ev, '"%s"' % ev in app,
+           "app.js 没有监听 %s（原生 draggable 四件套缺一不可）" % ev)
+    # 零依赖铁律：拖拽只能用原生 draggable。
+    # 匹配具体库名而不是 "dnd" 这种三字母子串——后者会误伤 bindCanvasDnd。
+    ck("app_drag_no_library",
+       not any(s in app.lower() for s in
+               ("sortablejs", "dnd-kit", "react-dnd", "jquery-ui", "interactjs"))
+       and "draggable" in app,
+       "拖拽只能靠原生 draggable；app.js 里出现了拖拽库或连原生都没用")
+    # reorderTo 的静态负面检查：重排只许换顺序，碰 uid 就是让标注串块。
+    # 这里不重演算法（语义交给浏览器里真跑的那条），只查它有没有改写身份。
+    rb = js_body(app, "function reorderTo")
+    ck("app_reorder_exists", bool(rb), "app.js 里找不到 reorderTo")
+    ck("app_reorder_no_uid_mint", bool(rb) and "nextUid" not in rb,
+       "reorderTo 里调了 nextUid——重排绝不能重建身份")
+    ck("app_reorder_no_uid_write", bool(rb) and not re.search(r"\buid\b\s*=", rb),
+       "reorderTo 里给 uid 赋值——重排绝不能改写身份")
+    ck("app_undo_present", "lastDeleted" in app and "undoDelete" in app,
+       "缺单步撤销（lastDeleted / undoDelete）")
+
     dom_checks()
 
     print("PASS %d  FAIL %d" % (TOTAL[0] - len(FAILS), len(FAILS)))
@@ -244,6 +271,16 @@ def dom_checks():
            "应渲染 %d 条降级按钮，实际 %d"
            % (EXPECT_REJECTED, len(re.findall(r'<button data-rkey="[^"]+"', empty))))
         ck("dom_empty_hint", 'id="empty-hint"' in empty, "空画布没有提示")
+        hint = empty_hint_of(empty)
+        ck("dom_empty_hint_teaches_drag", "拖" in hint,
+           "空态引导还在教人用表单（只字未提「拖」）——"
+           "用户原话是「还是有点不太会用」：%r" % hint)
+        ck("dom_empty_hint_keeps_fallback", "做不到" in hint,
+           "空态引导丢了「做不到」列表的指引：%r" % hint)
+        ck("dom_empty_hint_keeps_scope", "顺序" in hint,
+           "空态引导没说明「积木顺序 = 面板顺序」，用户不知道为什么能重排：%r" % hint)
+        ck("dom_vocab_bar_teaches_drag", "拖动换位" in empty,
+           "控件架没有提示积木可以拖动换位")
         ck("dom_empty_no_nodes", 'class="note pnode' not in empty,
            "没点任何控件就不该有提案节点")
         # 可做但没收录的能力必须在提案视图里显形（Important 3）
@@ -375,8 +412,154 @@ def dom_checks():
         ck("dom_dup_adds_one", dup_last_node(dupd), "复制后块数应加一")
         ck("dom_dup_gets_new_uid", dup_gets_distinct_uid(dupd),
            "复制的积木必须是新 uid，否则焦点和标注会串到原块上")
+
+        # --- Task 10：拖拽 ---
+        # 每块积木都要能拖，拖拽视觉（手柄）也必须真的渲染出来。
+        # 期望值写死成字面量 21，不写成 count() == count()：两边同时为 0 时
+        # 恒真，只能靠别的断言兜底——依赖别人保证非空洞等于没保证。
+        ck("drag_dom_draggable_nodes",
+           cvs.count('draggable="true"') == EXPECT_WIDGETS + EXPECT_REJECTED,
+           "应有 %d 块积木带 draggable=true，实际 %d"
+           % (EXPECT_WIDGETS + EXPECT_REJECTED, cvs.count('draggable="true"')))
+        ck("drag_dom_handler_per_node",
+           cvs.count('class="drop-handler"') == EXPECT_WIDGETS + EXPECT_REJECTED,
+           "每块积木左侧都该有一个拖拽手柄，实际 %d"
+           % cvs.count('class="drop-handler"'))
+        drag_checks(dump(exe, url + "#proposal-drag", profile))
+        undo_checks(dump(exe, url + "#proposal-undo", profile), empty)
     finally:
         shutil.rmtree(profile, ignore_errors=True)
+
+
+def empty_hint_of(p):
+    """取空态引导那一句的正文。
+
+    不做「整份文档里有没有『拖』」的判断：控件按钮的 title 里也写着拖，
+    那样这条断言在引导文案一个字没改的情况下照样绿（不可证伪）。
+    """
+    m = re.search(r'<p id="empty-hint"[^>]*>(.*?)</p>', p, re.S)
+    if not m:
+        return ""
+    txt = m.group(1)
+    for a, b in (("&quot;", '"'), ("&#39;", "'"), ("&lt;", "<"),
+                 ("&gt;", ">"), ("&amp;", "&")):
+        txt = txt.replace(a, b)
+    return txt
+
+
+def drag_checks(p):
+    """拖拽排序：语义与清理都在浏览器里真跑一遍，不在 Python 侧重演算法。
+
+    「在 Python 侧重放 reorderTo 的语义」是靠不住的：源码能区分变体，
+    断言却仍可能恒真恒假（Task 7 的 SUBSTR in texts 就栽在这儿）。
+    这里直接派发真的 DragEvent，走的是用户拖鼠标时同一条代码路径。
+    """
+    at = report(p, "drag-report")
+    before = _uids(at, "before-uids")
+    after = _uids(at, "after-uids")
+    after2 = _uids(at, "after-fwd-uids")
+    want_n = EXPECT_WIDGETS + EXPECT_REJECTED
+    ck("drag_hook_ran",
+       len(before) == want_n and len(after) == want_n and len(after2) == want_n,
+       "拖拽钩子没跑起来或块数不对：before=%d after=%d after2=%d"
+       % (len(before), len(after), len(after2)))
+    if len(before) != want_n or len(after) != want_n or len(after2) != want_n:
+        return
+
+    # 拖起过程中必须有落位指示线；不画线的话用户根本不知道会落在哪。
+    ck("drag_line_shown_on_dragover", at.get("line-seen") == "1",
+       "dragover 期间画布上应恰好有一条放置指示线，实际 %s" % at.get("line-seen"))
+    # 语义一：把第 3 块拖到第 1 位 -> [3,1,2,4…]（往前拖）
+    want = [before[2], before[0], before[1]] + before[3:]
+    ck("drag_reorder_semantics", after == want,
+       "从第 3 块拖到第 1 位后顺序应为 %s，实际 %s" % (want, after))
+    # 语义二：再把第 1 块拖到第 4 位 -> [2,3,1,4…]（往后拖）。
+    # 这一条才是 at 里那个 -1 的照妖镜：源被取出后后面的元素已经往前挪了一位，
+    # 少减/多减一格都会在这里现形。只测「往前拖」的话这半边代码形同虚设。
+    want2 = [after[1], after[2], after[0]] + after[3:]
+    ck("drag_reorder_semantics_backward", after2 == want2,
+       "把第 1 块往后拖到第 4 位后顺序应为 %s，实际 %s" % (want2, after2))
+    # 身份不随位置变：uid 集合必须原样（重建 uid 的话标注会整片串块）。
+    ck("drag_reorder_keeps_uid", sorted(after) == sorted(before) and sorted(after2) == sorted(before),
+       "重排改写了 uid 集合：before=%d after=%d after2=%d 差集 %s"
+       % (len(before), len(after), len(after2),
+          sorted(set(before) ^ set(after) ^ set(after2))))
+    ck("drag_reorder_dom_matches", _uids(at, "dom-uids") == after2,
+       "重排后画布上渲染出来的 uid 顺序与数组不一致")
+    # 落位成功那条：drop 自己就要收干净，不许指望 dragend——
+    # drop 里 renderCanvas() 会把源节点摘掉，之后的 dragend 未必还冒泡得到。
+    ck("drag_drop_clears_line", at.get("line-after-drop") == "0",
+       "drop 之后放置指示线必须消失，实际 %s" % at.get("line-after-drop"))
+    ck("drag_drop_clears_state", at.get("state-after-drop") == "null",
+       "drop 之后 dragState 必须置空，实际 %s" % at.get("state-after-drop"))
+    # 取消那条：拖到一半按 Esc / 丢在画布外，只有 dragend 能收尾。
+    # 这三条就是「漏掉 dragend 清理」的照妖镜——漏了画布会永久卡在拖拽态。
+    ck("drag_cancel_clears_line", at.get("line-after-cancel") == "0",
+       "取消拖拽后放置指示线必须消失，实际 %s" % at.get("line-after-cancel"))
+    ck("drag_cancel_clears_dragging", at.get("dragging-after-cancel") == "0",
+       "取消拖拽后 .pnode.dragging 必须摘干净，实际还剩 %s 块"
+       % at.get("dragging-after-cancel"))
+    ck("drag_cancel_clears_state", at.get("state-after-cancel") == "null",
+       "取消拖拽后 dragState 必须置空，实际 %s" % at.get("state-after-cancel"))
+    ck("drag_cancel_keeps_order", at.get("order-after-cancel") == ",".join(before),
+       "取消拖拽不许改动任何积木的顺序")
+
+
+def undo_checks(p, empty):
+    """单步撤销：删除按钮紧挨复制、点错没有确认，误删要能救回来。"""
+    at = report(p, "undo-report")
+    before = _uids(at, "before-uids")
+    gone, back = _uids(at, "after-del-uids"), _uids(at, "after-undo-uids")
+    ck("undo_hook_ran",
+       len(before) == EXPECT_WIDGETS + EXPECT_REJECTED and
+       len(gone) == len(before) - 1 and len(back) == len(before),
+       "撤销钩子没跑起来：before=%d after-del=%d after-undo=%d"
+       % (len(before), len(gone), len(back)))
+    if len(back) != len(before) or len(gone) != len(before) - 1:
+        return
+    victim = at.get("victim-uid", "")
+    ck("undo_removes_then_restores", victim and victim not in gone and victim in back,
+       "被删的积木 %r 没有原样回到数组里" % victim)
+    ck("undo_restores_same_index", back == before,
+       "撤销必须放回原位（前后 uid 序列应完全一致），实际 %s" % back)
+    ck("undo_no_new_uid", sorted(back) == sorted(before),
+       "撤销不该领新 uid——它是把原对象放回去，不是新建一块")
+    ck("undo_dom_matches", _uids(at, "dom-uids") == back,
+       "撤销后画布上渲染出来的 uid 顺序与数组不一致")
+    ck("undo_button_enables_after_delete", at.get("enabled-after-del") == "true",
+       "删过东西之后撤销按钮必须可点，实际 enabled=%s" % at.get("enabled-after-del"))
+    ck("undo_button_disables_after_use", at.get("enabled-after-undo") == "false",
+       "单步撤销用过一次就该失效（不做撤销栈），实际 enabled=%s"
+       % at.get("enabled-after-undo"))
+    # 没删过东西时按钮必须 disabled，否则点了会静默无事发生。
+    m = re.search(r'<button[^>]*id="undo-del"[^>]*>', empty)
+    ck("undo_button_present", m is not None, "画布上没有撤销按钮 #undo-del")
+    if m:
+        ck("undo_button_disabled_initially", "disabled" in m.group(0),
+           "还没删过东西时撤销按钮应当是 disabled：%s" % m.group(0))
+
+
+def js_body(src, header):
+    """取 `header`（如 "function reorderTo"）之后按花括号配平的函数体。
+
+    只用于静态负面检查（reorderTo 里不该出现 uid 改写）。
+    不用它重演算法——重排语义由浏览器里真跑 reorderTo 的钩子判定。
+    """
+    i = src.find(header)
+    if i < 0:
+        return ""
+    j = src.find("{", i + len(header))
+    if j < 0:
+        return ""
+    depth = 0
+    for k in range(j, len(src)):
+        if src[k] == "{":
+            depth += 1
+        elif src[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[j + 1:k]
+    return ""
 
 
 def canvas_of(p):

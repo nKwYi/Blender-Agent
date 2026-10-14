@@ -129,6 +129,21 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
   background: var(--panel); color: var(--text-dim);
 }
 .perr { color: var(--text); font-size: 12px; }
+/* ---- 拖拽（原生 HTML5 draggable，没有任何拖拽库）----
+   主题里没有红也没有绿，所以「正在拖」和「会落在这」一律不靠颜色表达：
+   拖起来的块半透明 + 虚线边，落位靠一条实线。色值全部取自已声明的变量。 */
+.pnode .drop-handler {
+  cursor: grab; color: var(--text-dim); user-select: none;
+  font-family: Consolas, monospace; font-size: 12px; line-height: 1;
+}
+.pnode.dragging { opacity: .45; border-style: dashed; }
+.drop-line {
+  height: 3px; margin: 2px 0; border-radius: 2px;
+  background: var(--accent); border: 1px solid var(--text-dim);
+}
+/* 撤销按钮：disabled 时压暗。它不是「不可用的功能」，是「此刻没东西可救」，
+   压暗 + 原生 disabled 一起给，不靠红绿。 */
+#vocab-bar button:disabled { opacity: .45; cursor: default; }
 .pnode .pin {
   width: 100%; margin: 4px 0; background: var(--field); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 4px; font: inherit;
