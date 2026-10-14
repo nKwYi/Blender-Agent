@@ -1,25 +1,32 @@
 {
   "generated_for": "5.2.1 LTS",
+  "props_scope": "allowed_props 是精选子集，不是 UILayout 的全量参数表：只收录本工作台会用到的调用形式，清单外的参数会被按「自造/拼错」拦下",
   "widgets": [
     {
       "key": "row",
       "label": "横排",
       "uiloayout": "layout.row(align=True)",
       "allowed_props": [
-        "align"
+        "align",
+        "heading",
+        "heading_ctxt"
       ],
       "blocked_props": [],
-      "note": "当前代码用量 0，成本最低的层次工具"
+      "note": "当前代码用量 0，成本最低的层次工具",
+      "constraint_key": null
     },
     {
       "key": "column",
       "label": "竖排",
       "uiloayout": "layout.column(align=True)",
       "allowed_props": [
-        "align"
+        "align",
+        "heading",
+        "heading_ctxt"
       ],
       "blocked_props": [],
-      "note": ""
+      "note": "",
+      "constraint_key": null
     },
     {
       "key": "box",
@@ -29,17 +36,20 @@
         "alert"
       ],
       "blocked_props": [],
-      "note": "alert 是全 UI 唯一的红，只留给 FAILED"
+      "note": "alert 是全 UI 唯一的红，只留给 FAILED",
+      "constraint_key": null
     },
     {
       "key": "split",
       "label": "左右分栏",
       "uiloayout": "layout.split(factor=0.3)",
       "allowed_props": [
-        "factor"
+        "factor",
+        "align"
       ],
       "blocked_props": [],
-      "note": "返回单个 layout，不是二元组"
+      "note": "返回单个 layout，不是二元组",
+      "constraint_key": "two_col_split"
     },
     {
       "key": "grid_flow",
@@ -48,10 +58,12 @@
       "allowed_props": [
         "columns",
         "even_columns",
+        "even_rows",
         "row_major"
       ],
       "blocked_props": [],
-      "note": "当前已在设置页用于模型切换"
+      "note": "当前已在设置页用于模型切换",
+      "constraint_key": "grid_flow"
     },
     {
       "key": "panel",
@@ -59,10 +71,13 @@
       "uiloayout": "layout.panel(idname, default_closed)",
       "allowed_props": [
         "idname",
-        "default_closed"
+        "default_closed",
+        "layout_header",
+        "layout_body"
       ],
       "blocked_props": [],
-      "note": "消化长度的唯一手段，侧栏滚不了"
+      "note": "消化长度的唯一手段，侧栏滚不了",
+      "constraint_key": "collapsible_panel"
     },
     {
       "key": "label",
@@ -77,7 +92,8 @@
         "font",
         "color"
       ],
-      "note": "没有 size/color/font 参数；层次靠 icon 和 scale_y"
+      "note": "没有 size/color/font 参数；层次靠 icon 和 scale_y",
+      "constraint_key": null
     },
     {
       "key": "operator",
@@ -93,7 +109,8 @@
       "blocked_props": [
         "color"
       ],
-      "note": "emboss='NONE' 可去掉高光渐变"
+      "note": "emboss='NONE' 可去掉高光渐变",
+      "constraint_key": "flat_button"
     },
     {
       "key": "prop",
@@ -101,12 +118,17 @@
       "uiloayout": "layout.prop(data, prop, text=...)",
       "allowed_props": [
         "prop",
-        "text"
+        "text",
+        "icon",
+        "expand",
+        "slider",
+        "placeholder"
       ],
       "blocked_props": [
         "color"
       ],
-      "note": "配 use_property_split 得到原生两列"
+      "note": "配 use_property_split 得到原生两列",
+      "constraint_key": "property_split"
     },
     {
       "key": "textbox",
@@ -119,7 +141,8 @@
         "initial_visible_lines"
       ],
       "blocked_props": [],
-      "note": "中文 IME 只能靠原生 textbox，自绘拿不到拼音组合态"
+      "note": "中文 IME 只能靠原生 textbox，自绘拿不到拼音组合态",
+      "constraint_key": null
     },
     {
       "key": "separator",
@@ -127,7 +150,8 @@
       "uiloayout": "layout.separator()",
       "allowed_props": [],
       "blocked_props": [],
-      "note": ""
+      "note": "",
+      "constraint_key": null
     },
     {
       "key": "scale_y",
@@ -137,7 +161,8 @@
         "scale_y"
       ],
       "blocked_props": [],
-      "note": "字号不可调，层次只能靠撑高和缩进"
+      "note": "字号不可调，层次只能靠撑高和缩进",
+      "constraint_key": null
     }
   ],
   "rejected": [
@@ -194,6 +219,14 @@
       "label": "成功绿 wcol_state.success",
       "blocker": "同上，主题里有但 Python API 调不到",
       "fallback": "用 icon='CHECKMARK' 承载「成功」语义"
+    }
+  ],
+  "unmapped_ok": [
+    {
+      "key": "progress_bar",
+      "label": "进度条",
+      "uiloayout": "layout.progress()",
+      "evidence": "ui.functions.progress=True"
     }
   ]
 }

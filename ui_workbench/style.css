@@ -94,6 +94,13 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
   font: inherit;
 }
 .rrow { margin: 6px 0; }
+/* 「可做但词汇表尚未收录」的一行：不是控件按钮（点不了），是提醒 */
+.unmapped {
+  display: inline-block; border: 1px dashed var(--text-dim); border-radius: 4px;
+  padding: 4px 10px; margin: 0 6px 6px 0; color: var(--text-dim);
+  font-family: Consolas, monospace; font-size: 12px;
+}
+.scope { color: var(--text-dim); font-size: 11px; margin: 2px 0 6px; }
 .loaderr {
   background: var(--hover); border: 1px solid var(--mark); border-radius: 4px;
   padding: 8px; margin: 6px 0; color: var(--text);

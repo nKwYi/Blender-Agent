@@ -321,6 +321,7 @@ function loadVocab() {
     vocab = v;
     renderVocabBar();
     renderRejected();
+    renderUnmapped();
     renderCanvas();
     return v;
   });
@@ -343,6 +344,34 @@ function renderVocabBar() {
     b.onclick = function () { addWidget(w); };
     host.appendChild(b);
   });
+  if (vocab.props_scope) {
+    var sc = document.createElement("div");
+    sc.className = "scope";
+    sc.textContent = vocab.props_scope;
+    host.appendChild(sc);
+  }
+}
+
+/* 可做、但词汇表还没收录的能力。控件栏没有它、降级栏也不会有它，
+   不单列出来就等于在「落笔那一秒」彻底消失——用户只能去约束总表翻。 */
+function renderUnmapped() {
+  var host = el("prop-notes");
+  if (!vocab.unmapped_ok || !vocab.unmapped_ok.length) { return; }
+  var h = document.createElement("h3");
+  h.textContent = "Blender 做得到、但词汇表尚未收录（落笔时拿不到）：";
+  host.appendChild(h);
+  var row = document.createElement("div");
+  row.className = "rrow";
+  vocab.unmapped_ok.forEach(function (u) {
+    var s = document.createElement("span");
+    s.className = "unmapped";
+    s.dataset.ukey = u.key;
+    s.textContent = u.label + " " + u.uiloayout;
+    s.title = (u.evidence || "") + "\n词汇表里没有对应控件，也没进降级列表——" +
+      "要它得先往 dev/build_vocabulary.py 的 WIDGETS 里加一条。";
+    row.appendChild(s);
+  });
+  host.appendChild(row);
 }
 
 function renderRejected() {
@@ -436,11 +465,36 @@ function setParams(n, raw) {
     { key: n.wkey, label: n.label, uiloayout: n.uiloayout,
       allowed_props: n.allowed_props || [], blocked_props: n.blocked_props || [] },
     splitParams(raw));
+  // 参数每敲一个键就要重算 chips 和拦截文案，而重算的代价是整块画布重建。
+  // renderCanvas 负责把焦点和光标位置原样还回去，别在这里另想办法。
   renderCanvas();
+}
+
+/* 记下「谁在编辑哪个字段、光标在哪」，重建完再还回去。
+   不这么做的话，用户在被自己 oninput 摘掉的 input 里敲第二个字符时，
+   事件已经打到 body 去了：输 scale_y 只会留下 s，全靠粘贴才能输完。 */
+function captureFocus(host) {
+  var af = document.activeElement;
+  if (!af || !af.dataset || af.dataset.field == null) { return null; }
+  var box = host.querySelector('.pnode[data-idx="' + af.dataset.idx + '"]');
+  var f = box && box.querySelector('[data-field="' + af.dataset.field + '"]');
+  if (!f) { return null; }
+  return { idx: af.dataset.idx, field: af.dataset.field,
+           start: f.selectionStart, end: f.selectionEnd };
+}
+
+function restoreFocus(host, keep) {
+  if (!keep) { return; }
+  var box = host.querySelector('.pnode[data-idx="' + keep.idx + '"]');
+  var f = box && box.querySelector('[data-field="' + keep.field + '"]');
+  if (!f) { return; }
+  f.focus();
+  try { f.setSelectionRange(keep.start, keep.end); } catch (e) { /* 不支持就只聚焦 */ }
 }
 
 function renderCanvas() {
   var host = el("canvas");
+  var keep = captureFocus(host);
   host.innerHTML = "";
   if (!proposal.length) {
     var p = document.createElement("p");
@@ -451,9 +505,10 @@ function renderCanvas() {
     host.appendChild(p);
     return;
   }
-  proposal.forEach(function (n) {
+  proposal.forEach(function (n, i) {
     var box = document.createElement("div");
     box.className = "note pnode" + (n.downgraded ? " down" : (n.errors.length ? " blocked" : ""));
+    box.dataset.idx = String(i);
     box.dataset.wkey = n.wkey;
     box.dataset.downgraded = n.downgraded ? "1" : "0";
     box.dataset.status = n.downgraded ? "downgraded" : (n.errors.length ? "blocked" : "ok");
@@ -501,6 +556,8 @@ function renderCanvas() {
 
       var pin = document.createElement("input");
       pin.className = "pin pinp";
+      pin.dataset.field = "params";
+      pin.dataset.idx = String(i);
       pin.placeholder = "参数，逗号分隔（只认 " +
         ((n.allowed_props || []).join(", ") || "无") + "）";
       pin.value = n.params;
@@ -517,6 +574,8 @@ function renderCanvas() {
 
     var idIn = document.createElement("input");
     idIn.className = "pin";
+    idIn.dataset.field = "id";
+    idIn.dataset.idx = String(i);
     idIn.placeholder = "对应插件元素 ID（可空）";
     idIn.value = n.id;
     idIn.oninput = function () { n.id = idIn.value; };
@@ -524,26 +583,78 @@ function renderCanvas() {
 
     var ta = document.createElement("textarea");
     ta.className = "pnote";
+    ta.dataset.field = "note";
+    ta.dataset.idx = String(i);
     ta.placeholder = "想要什么？为什么？";
     ta.value = n.note;
     ta.oninput = function () { n.note = ta.value; };
     box.appendChild(ta);
     host.appendChild(box);
   });
+  restoreFocus(host, keep);
 }
 
-/* 无头验收钩子：#proposal-all / #proposal-blocked / #proposal-empty。
+/* 无头验收钩子：#proposal-all / #proposal-blocked / #proposal-empty / #proposal-typing。
    dev/test_proposal_vocab.py 用 headless Edge --dump-dom 核对「12 个控件点一遍
    全合法」与「label 写了违规参数会被拦」。这里刻意用 bs[i].click() 点真实按钮，
    而不是直接调 addWidget——否则验的就不是用户点的那条路径了。
    #proposal-empty 只切视图不插任何东西，用来核对空画布的初始样子
    （普通 #proposal 走不到提案视图：loadState 会把未知 hash 归一成状态名）。
    #proposal-blocked 会额外给文字（label）塞 size, color, scale, text：
-   前三个分别命中 blocked_props、blocked_props、允许清单之外，text 合法。 */
+   前三个分别命中 blocked_props、blocked_props、允许清单之外，text 合法。
+   #proposal-typing 走逐字符 input 事件，专治「重建画布把焦点弄丢」那类 bug。 */
+/* 逐字符敲参数框，派发真的 input 事件——刻意不复用 #proposal-blocked 那条
+   直接调 setParams 的捷径，因为那条绕开了用户实际会走的路径。
+   这里模拟浏览器的真实行为：只有元素仍然持有焦点，这次按键才会落进去；
+   节点一旦被 renderCanvas 摘出文档，后续按键就打到 body 上，字符会丢。
+   敲 "scale_ys"（比合法值多一个 s）是为了同时验两件事：字符没丢，
+   且最后那一下真的触发了拦截。 */
+function paramsInputOf(wkey) {
+  for (var i = 0; i < proposal.length; i++) {
+    if (proposal[i].wkey !== wkey) { continue; }
+    return el("canvas").querySelector('.pnode[data-idx="' + i + '"] [data-field="params"]');
+  }
+  return null;
+}
+
+function typeReport(wkey, text) {
+  var lost = 0;
+  // 先点一下输入框（用户就是这么开始打字的），否则第一次按键就会「丢失」，
+  // 测出来的就不是重建画布的锅，而是没人先把焦点放上去。
+  var first = paramsInputOf(wkey);
+  if (first) { first.focus(); }
+  text.split("").forEach(function (ch) {
+    var inp = paramsInputOf(wkey);
+    if (!inp || document.activeElement !== inp) { lost++; return; }
+    inp.value = inp.value + ch;
+    // 光标放在中间而不是末尾：用户会在已有内容中间插入，光标位置也得还原。
+    // 全放末尾的话这条断言不可证伪——新建的 input 本来就把光标放在末尾。
+    var mid = Math.floor(inp.value.length / 2);
+    inp.setSelectionRange(mid, mid);
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  var fin = paramsInputOf(wkey);
+  var node = fin && fin.closest ? fin.closest(".pnode") : null;
+  var rep = document.createElement("div");
+  rep.id = "typing-report";
+  rep.dataset.wkey = wkey;
+  rep.dataset.lost = String(lost);
+  rep.dataset.value = fin ? fin.value : "";
+  rep.dataset.focused = String(!!fin && document.activeElement === fin);
+  rep.dataset.caret = fin ? String(fin.selectionStart) : "-1";
+  rep.dataset.errors = node ? node.dataset.errors : "?";
+  rep.dataset.status = node ? node.dataset.status : "?";
+  rep.textContent = "逐字符输入 " + text + "：落下 " + (text.length - lost) + "/" +
+    text.length + " 字符，焦点" + (rep.dataset.focused === "true" ? "仍在" : "已丢") +
+    "，光标在 " + rep.dataset.caret;
+  el("canvas").appendChild(rep);
+}
+
 function runDemoHook(hash) {
   var h = String(hash || "").replace(/^#/, "");
   var kind = (h === "proposal-all") ? "all"
            : (h === "proposal-blocked") ? "blocked"
+           : (h === "proposal-typing") ? "typing"
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
   switchView("proposal");
@@ -552,9 +663,11 @@ function runDemoHook(hash) {
     el("prop-notes").innerHTML = "";
     renderVocabBar();
     renderRejected();
+    renderUnmapped();
     if (kind === "empty") { setStatus("DEMO empty 控件 0 降级 0"); return; }
     var bs = el("vocab-bar").querySelectorAll("button[data-wkey]");
     for (var i = 0; i < bs.length; i++) { bs[i].click(); }
+    if (kind === "typing") { typeReport("scale_y", "scale_ys"); return; }
     if (kind === "blocked") {
       var lab = proposal.filter(function (x) { return x.wkey === "label"; })[0];
       if (lab) { setParams(lab, "size, color, scale, text"); }

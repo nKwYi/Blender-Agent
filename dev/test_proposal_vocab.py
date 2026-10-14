@@ -67,11 +67,42 @@ def main():
     keys = [w["key"] for w in vocab["widgets"]]
     ck("gen_widget_keys_unique", len(set(keys)) == len(keys), "widget key 重复：%s" % keys)
     ck("gen_widget_schema", all(
-        set(w) == {"key", "label", "uiloayout", "allowed_props", "blocked_props", "note"}
+        set(w) == {"key", "label", "uiloayout", "allowed_props", "blocked_props",
+                   "note", "constraint_key"}
         for w in vocab["widgets"]), "widget 字段集不对")
+    # docstring 承诺「只有 native_ok=true 的能力才能进词汇表」，这条断言把它钉死：
+    # 声称依赖某条判定的控件，那条判定必须真的是 native_ok=true
+    reg = {e["key"]: e for e in cons["entries"]}
+    ck("gen_constraint_key_resolves", all(
+        (w["constraint_key"] is None) or (w["constraint_key"] in reg)
+        for w in vocab["widgets"]), "有 widget 指向 constraints 里不存在的判定")
+    ck("gen_constraint_key_is_ok", all(
+        (w["constraint_key"] is None) or reg[w["constraint_key"]]["native_ok"]
+        for w in vocab["widgets"]),
+       "有 widget 依赖的判定已不是 native_ok=true：%s"
+       % [w["key"] for w in vocab["widgets"]
+          if w["constraint_key"] and not reg[w["constraint_key"]]["native_ok"]])
+    # 而且承诺必须真的被强制：把 constraints 里那条翻脸，build() 要停下来
+    bad = json.loads(json.dumps(cons))
+    for e in bad["entries"]:
+        if e["key"] == "grid_flow":
+            e["native_ok"] = False
+            e["blocker"] = "翻脸了"
+            e["fallback"] = "改用别的"
+    try:
+        bv.build(bad)
+        raised = False
+        why = "build() 照发不误"
+    except bv.VocabularyError as exc:
+        raised = True
+        why = str(exc)
+    ck("gen_enforces_native_ok", raised, why)
     ck("gen_props_disjoint", all(
         not (set(w["allowed_props"]) & set(w["blocked_props"])) for w in vocab["widgets"]),
         "同一控件的允许清单与拦截清单有交集")
+    ck("gen_props_scope_says_subset", bool(vocab.get("props_scope")) and
+       "精选子集" in vocab["props_scope"],
+       "缺少「allowed_props 是精选子集不是全量 API」的说明")
     ck("gen_reject_schema", all(
         set(r) == {"key", "label", "blocker", "fallback"} for r in vocab["rejected"]),
         "rejected 字段集不对")
@@ -90,6 +121,21 @@ def main():
                                           if not re.search(r"layout\.|icon=|alert|分页|折叠|active|enabled|#[0-9a-fA-F]{6}", r["fallback"])])
     ck("gen_blocker_verbatim", all(r["blocker"] and r["blocker"] in src for r in vocab["rejected"]),
        "有 blocker 不是 constraints.json 的原句或为空")
+
+    # 「可做、但词汇表没收录」的能力不许无声消失（Important 3）：
+    # progress_bar 在 constraints 里 native_ok=true，却既不在 12 个控件里、
+    # 也不在 rejected 里，只能靠这张表在提案视图里显式说出来。
+    mapped = set(w["constraint_key"] for w in vocab["widgets"] if w["constraint_key"])
+    want_unmapped = sorted(e["key"] for e in cons["entries"]
+                           if e["native_ok"] and e["key"] not in mapped)
+    ck("gen_unmapped_ok", sorted(u["key"] for u in vocab["unmapped_ok"]) == want_unmapped,
+       "unmapped_ok 应为 %s，实际 %s"
+       % (want_unmapped, [u["key"] for u in vocab["unmapped_ok"]]))
+    ck("gen_unmapped_schema", all(
+        set(u) == {"key", "label", "uiloayout", "evidence"} for u in vocab["unmapped_ok"]),
+        "unmapped_ok 字段集不对")
+    ck("gen_progress_bar_visible", "progress_bar" in want_unmapped,
+       "progress_bar 是 native_ok=true 却没人映射，提案视图里会彻底消失")
 
     # ---------- 落盘产物 ----------
     vp = os.path.join(WB, "vocabulary.json")
@@ -179,7 +225,11 @@ def dump(exe, url, profile):
 def dom_checks():
     exe = find_browser()
     if not exe:
-        print("WARN 找不到 Edge/Chrome，跳过 DOM 检查（渲染未验证）")
+        # 不能只 WARN 就 return：那样 12 条真正证明「拦截会触发」的断言会全部
+        # 蒸发，而 rc 仍然是 0——这正是全局约束禁掉的假绿。默认记失败；
+        # 确实没有浏览器的机器可以显式设 UW_SKIP_DOM=1 承认这一点。
+        ck("dom_browser_present", os.environ.get("UW_SKIP_DOM") == "1",
+           "找不到 Edge/Chrome，渲染腿整条没跑（UW_SKIP_DOM=1 可显式承认）")
         return
     url = pathlib.Path(os.path.join(WB, "index.html")).as_uri()
     profile = tempfile.mkdtemp(prefix="uw_proposal_")
@@ -196,18 +246,25 @@ def dom_checks():
         ck("dom_empty_hint", 'id="empty-hint"' in empty, "空画布没有提示")
         ck("dom_empty_no_nodes", 'class="note pnode' not in empty,
            "没点任何控件就不该有提案节点")
+        # 可做但没收录的能力必须在提案视图里显形（Important 3）
+        ck("dom_unmapped_row", 'data-ukey="progress_bar"' in empty,
+           "提案视图没有列出「可做但词汇表尚未收录」的能力")
+        ck("dom_unmapped_note", "尚未收录" in empty,
+           "缺少「尚未收录」的说明文案")
+        ck("dom_props_scope", "精选子集" in empty,
+           "没有说明 allowed_props 是精选子集，容易被当成全量 API")
 
         allp = dump(exe, url + "#proposal-all", profile)
         nodes = re.findall(r'<div class="note pnode[^"]*"[^>]*>', allp)
         ck("dom_all_count", len(nodes) == EXPECT_WIDGETS + EXPECT_REJECTED,
            "点击后应有 %d 个提案节点，实际 %d" % (EXPECT_WIDGETS + EXPECT_REJECTED, len(nodes)))
         # 12 个控件全部 status=ok / errors=0 —— 这是「词汇表内全部合法」的判定
-        wnodes = re.findall(r'<div class="note pnode" data-wkey="([^"]*)" data-downgraded="0" '
+        wnodes = re.findall(r'<div class="note pnode"[^>]*data-wkey="([^"]*)" data-downgraded="0" '
                             r'data-status="([^"]*)" data-errors="([^"]*)"', allp)
         ck("dom_all_widgets_ok", len(wnodes) == EXPECT_WIDGETS and
            all(s == "ok" and e == "0" for _, s, e in wnodes),
            "词汇表内控件应全部合法，实际 %s" % [(k, s, e) for k, s, e in wnodes if s != "ok" or e != "0"])
-        dnodes = re.findall(r'<div class="note pnode down" data-wkey="__downgraded__" '
+        dnodes = re.findall(r'<div class="note pnode down"[^>]*data-wkey="__downgraded__" '
                             r'data-downgraded="1" data-status="downgraded" data-errors="0" '
                             r'data-rkey="([^"]*)"', allp)
         ck("dom_all_downgraded", len(dnodes) == EXPECT_REJECTED and
@@ -229,12 +286,13 @@ def dom_checks():
         ck("dom_all_strike", canvas.count('class="strike"') == EXPECT_REJECTED,
            "原需求删除线应出现 %d 次，实际 %d"
            % (EXPECT_REJECTED, canvas.count('class="strike"')))
-        ck("dom_all_uilayout", allp.count("layout.") >= EXPECT_WIDGETS,
-           "12 个控件的 UILayout 调用没都渲染出来")
+        ck("dom_all_uilayout", canvas.count("layout.") >= EXPECT_WIDGETS,
+           "12 个控件的 UILayout 调用没都渲染进画布（必须数 canvas 切片："
+           "按钮 title 里也有一份，数整份文档的话这条不可证伪）")
 
         blk = dump(exe, url + "#proposal-blocked", profile)
-        m = re.search(r'<div class="note pnode blocked" data-wkey="label" data-downgraded="0" '
-                      r'data-status="blocked" data-errors="(\d+)"', blk)
+        m = re.search(r'<div class="note pnode blocked"[^>]*data-wkey="label" '
+                      r'data-downgraded="0" data-status="blocked" data-errors="(\d+)"', blk)
         ck("dom_block_label", m is not None,
            "label 写了违规参数后没有被标成 blocked")
         if m:
@@ -246,8 +304,8 @@ def dom_checks():
            "size/color 应各报一次「不被支持」，实际 %d" % blk.count("不被 UILayout 支持"))
         ck("dom_block_msg_allowlist", blk.count("不在「") == 1,
            "scale 应报一次「不在允许清单」，实际 %d" % blk.count("不在「"))
-        lab = blk.split('<div class="note pnode blocked" data-wkey="label"')[1].split("</textarea>")[0] \
-            if '<div class="note pnode blocked" data-wkey="label"' in blk else ""
+        lab = blk.split('<div class="note pnode blocked"')[-1].split("</textarea>")[0] \
+            if '<div class="note pnode blocked"' in blk else ""
         chips_ok = lab.count('<span class="chip">text</span>')
         chips_bad = len(re.findall(r'<span class="chip bad">[^<]*✗</span>', lab))
         ck("dom_block_chip_ok", chips_ok == 1,
@@ -259,6 +317,28 @@ def dom_checks():
         ck("dom_block_others_ok", len(re.findall(
             r'data-wkey="[^"]*" data-downgraded="0" data-status="ok" data-errors="0"', blk)) == 11,
            "除 label 外其余 11 个控件仍应合法")
+
+        # --- Important 1：真 input 事件下的焦点与字符完整性 ---
+        # #proposal-blocked 走的是 setParams() 直调，绕开了用户真正会走的那条路。
+        # 这里派发真的 input 事件逐字符敲，模拟浏览器的真实行为：
+        # 元素一旦被 renderCanvas 摘出文档，后续按键就打到 body，字符会丢。
+        typ = dump(exe, url + "#proposal-typing", profile)
+        rep = re.search(r'<div id="typing-report"([^>]*)>', typ)
+        ck("dom_typing_report", rep is not None, "没有拿到逐字符输入报告")
+        if rep:
+            at = dict(re.findall(r'data-([a-z]+)="([^"]*)"', rep.group(1)))
+            ck("dom_typing_no_char_lost", at.get("lost") == "0",
+               "有 %s 个字符被吞掉（每敲一个键都重建画布，输入框失焦）"
+               % at.get("lost"))
+            ck("dom_typing_value", at.get("value") == "scale_ys",
+               "输入框最终值应为 scale_ys，实际 %r" % at.get("value"))
+            ck("dom_typing_focus", at.get("focused") == "true",
+               "输入完焦点已丢，后续按键会打到 body")
+            ck("dom_typing_caret", at.get("caret") == str(len(at.get("value", "")) // 2),
+               "光标位置没还原到插入点（应在中间），实际在 %s" % at.get("caret"))
+            ck("dom_typing_blocked", at.get("status") == "blocked" and at.get("errors") == "1",
+               "多敲的那个 s 应被判违规，实际 status=%s errors=%s"
+               % (at.get("status"), at.get("errors")))
     finally:
         shutil.rmtree(profile, ignore_errors=True)
 
@@ -281,11 +361,12 @@ def _fb_for_blocker(rkey):
     return "<missing>"
 
 
-try:
-    main()
-except Exception as exc:            # 汇总行不能被异常吞掉：rc=0 是假绿
-    import traceback
-    traceback.print_exc()
-    ck("harness_no_exception", False, "测试自身抛异常：%r" % (exc,))
-    print("PASS %d  FAIL %d" % (TOTAL[0] - len(FAILS), len(FAILS)))
-    sys.exit(1)
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:            # 汇总行不能被异常吞掉：rc=0 是假绿
+        import traceback
+        traceback.print_exc()
+        ck("harness_no_exception", False, "测试自身抛异常：%r" % (exc,))
+        print("PASS %d  FAIL %d" % (TOTAL[0] - len(FAILS), len(FAILS)))
+        sys.exit(1)
