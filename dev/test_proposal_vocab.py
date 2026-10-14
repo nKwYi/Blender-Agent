@@ -212,7 +212,7 @@ def main():
     ck("app_reorder_exists", bool(rb), "app.js 里找不到 reorderTo")
     ck("app_reorder_no_uid_mint", bool(rb) and "nextUid" not in rb,
        "reorderTo 里调了 nextUid——重排绝不能重建身份")
-    ck("app_reorder_no_uid_write", bool(rb) and not re.search(r"\buid\b\s*=", rb),
+    ck("app_reorder_no_uid_write", bool(rb) and not re.search(r"\buid\b\s*=(?!=)", rb),
        "reorderTo 里给 uid 赋值——重排绝不能改写身份")
     ck("app_undo_present", "lastDeleted" in app and "undoDelete" in app,
        "缺单步撤销（lastDeleted / undoDelete）")
@@ -279,8 +279,15 @@ def dom_checks():
            "空态引导丢了「做不到」列表的指引：%r" % hint)
         ck("dom_empty_hint_keeps_scope", "顺序" in hint,
            "空态引导没说明「积木顺序 = 面板顺序」，用户不知道为什么能重排：%r" % hint)
-        ck("dom_vocab_bar_teaches_drag", "拖动换位" in empty,
-           "控件架没有提示积木可以拖动换位")
+        bar = vocab_bar_of(empty)
+        ck("dom_vocab_bar_head_teaches_drag",
+           "拖动换位" in "".join(re.findall(r"<b>(.*?)</b>", bar, re.S)),
+           "控件架的标题没提示积木可以拖动换位：%r" % bar[:160])
+        btitles = re.findall(r'<button data-wkey="[^"]*" title="([^"]*)"', bar)
+        ck("dom_vocab_bar_button_title_teaches_drag",
+           len(btitles) == EXPECT_WIDGETS and all("拖动换位" in t for t in btitles),
+           "12 个控件按钮的 title 里，有 %d 个没说明可拖动换位（抓到 %d 个按钮）"
+           % (sum(1 for t in btitles if "拖动换位" not in t), len(btitles)))
         ck("dom_empty_no_nodes", 'class="note pnode' not in empty,
            "没点任何控件就不该有提案节点")
         # 可做但没收录的能力必须在提案视图里显形（Important 3）
@@ -431,6 +438,19 @@ def dom_checks():
         shutil.rmtree(profile, ignore_errors=True)
 
 
+def vocab_bar_of(p):
+    """取 #vocab-bar 宿主的切片。
+
+    上一版这条断言扫的是整份 dump，而空态引导的文案里就含「拖动换位」——
+    把 renderVocabBar 的标题和按钮 title 全改回原文，它照样绿。
+    同一个坑本文件的 canvas_of docstring 早就记过一次，这里是第二次。
+    #canvas 在 index.html 里紧跟在 #vocab-bar 后面，按这对标记切最省事。
+    """
+    if '<div id="vocab-bar"' not in p or '<div id="canvas"' not in p:
+        return ""
+    return p.split('<div id="vocab-bar"')[1].split('<div id="canvas"')[0]
+
+
 def empty_hint_of(p):
     """取空态引导那一句的正文。
 
@@ -503,6 +523,20 @@ def drag_checks(p):
        "取消拖拽后 dragState 必须置空，实际 %s" % at.get("state-after-cancel"))
     ck("drag_cancel_keeps_order", at.get("order-after-cancel") == ",".join(before),
        "取消拖拽不许改动任何积木的顺序")
+
+    # reorderTo 的负 toIdx 守卫。UI 走不到这条路（dropIndexAt 只给 0..n），
+    # 所以这里直接调那个被明确导出为「拖拽与测试共用」的入口。
+    # 不夹紧的话 splice(-1, 0, item) 会把最后一块插回倒数第二位——
+    # 顺序看上去纹丝不动，正是最难被发现的那种错。
+    gb, ga = _uids(at, "guard-before-uids"), _uids(at, "guard-after-uids")
+    moved = at.get("guard-moved-uid", "")
+    ck("reorder_negative_to_idx_is_clamped",
+       bool(gb) and len(gb) == len(ga) and bool(moved) and
+       ga[0] == moved and sorted(ga) == sorted(gb),
+       "reorderTo(n-1, -1) 应把最后一块移到最前（实际首位 %r，目标 %r）；"
+       "长度 %d -> %d" % (ga[0] if ga else None, moved, len(gb), len(ga)))
+    ck("reorder_negative_to_idx_dom_matches", _uids(at, "guard-dom-uids") == ga,
+       "负 toIdx 重排后画布上渲染出来的 uid 顺序与数组不一致")
 
 
 def undo_checks(p, empty):

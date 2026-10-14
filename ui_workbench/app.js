@@ -332,12 +332,27 @@ var lastDeleted = null; // {node: object, index: int}
    要减一——那个位置上的元素在源被取出后已经往前挪了一位。
 
    只动数组顺序，绝不重建 uid：uid 是标注不串块的唯一依据，
-   一旦在这里调用 nextUid()，用户标注过的积木就集体换了身份。 */
+   一旦在这里调用 nextUid()，用户标注过的积木就集体换了身份。
+
+   toIdx 一律夹到 [0, 块数]，与 delNode 对称。夹的不是防御性冗余：
+   不夹的话 reorderTo(2, -1) 会走到 proposal.splice(-1, 0, item)，
+   把积木静默插到最后一个元素之前——正是 delNode 当初要加守卫的那一类。
+   今天 UI 走不到（dropIndexAt 只给 0..n），但本函数被明确导出为
+   「拖拽与测试共用」的入口，只有兄弟一半的守卫纪律说不过去。 */
 function reorderTo(fromIdx, toIdx) {
-  if (fromIdx === toIdx || fromIdx < 0 || fromIdx >= proposal.length) { return; }
+  if (fromIdx === toIdx) { return; }        // 拖回自己的原位：正常无事，不是异常
+  if (fromIdx < 0 || fromIdx >= proposal.length) {
+    // 拖起和落下之间数组变了（有人先删了东西）。静默弹回去会让用户以为
+    // 拖拽坏了——undoDelete 对同类 no-op 会说话，这里也得说。
+    setStatus("这块积木在拖动期间已经不在画布上了，顺序没变");
+    return;
+  }
   var item = proposal.splice(fromIdx, 1)[0];
-  if (!item) { return; }
-  var at = toIdx > fromIdx ? toIdx - 1 : toIdx;
+  if (!item) {
+    setStatus("这块积木在拖动期间已经不在画布上了，顺序没变");
+    return;
+  }
+  var at = Math.max(0, Math.min(toIdx > fromIdx ? toIdx - 1 : toIdx, proposal.length));
   proposal.splice(at, 0, item);
   renderCanvas();
 }
@@ -489,7 +504,8 @@ function renderUndoBar() {
   b.dataset.act = "undo";
   b.textContent = "撤销上一次删除";
   b.title = lastDeleted
-    ? "把刚删掉的「" + lastDeleted.node.label + "」放回原位（身份不变，只救这一次）"
+    ? "把刚删掉的「" + lastDeleted.node.label + "」放回画布" +
+      "（位置会尽量靠近删除处；要是删除之后又拖动过别的积木，就不一定还在原位）"
     : "还没有删过东西";
   b.disabled = !lastDeleted;
   b.onclick = function () { undoDelete(); };
@@ -1043,9 +1059,23 @@ function dragReport() {
   fireDrag(canvas, "dragover", y3, dt);
   fireDrag(canvas, "drop", y3, dt);
 
+  var fwdOrder = uidListOf(proposal);
   var boxes = canvas.querySelectorAll(".pnode[data-uid]");
   var domUids = [];
   for (var i = 0; i < boxes.length; i++) { domUids.push(boxes[i].dataset.uid); }
+
+  /* --- 4) reorderTo 自己的守卫：负的 toIdx ---
+     拖拽路径上 dropIndexAt 只给 0..n，UI 永远走不到负数，所以这条路只能
+     直接调 reorderTo 验——它本来就被明确导出为「拖拽与测试共用」的入口。
+     不夹紧的话 splice(-1, 0, item) 会把最后一块静默插回倒数第二位，
+     也就是「看起来什么都没动」——比报错更难发现。 */
+  var guardBefore = uidListOf(proposal);
+  var guardMoved = proposal[proposal.length - 1].uid;
+  reorderTo(proposal.length - 1, -1);
+  var guardAfter = uidListOf(proposal);
+  var gBoxes = canvas.querySelectorAll(".pnode[data-uid]");
+  var guardDom = [];
+  for (var j = 0; j < gBoxes.length; j++) { guardDom.push(gBoxes[j].dataset.uid); }
 
   appendReport("drag-report", {
     beforeUids: before,
@@ -1057,7 +1087,11 @@ function dragReport() {
     lineAfterDrop: String(lineAfterDrop),
     stateAfterDrop: stateAfterDrop,
     afterUids: midOrder,
-    afterFwdUids: uidListOf(proposal),
+    afterFwdUids: fwdOrder,
+    guardBeforeUids: guardBefore,
+    guardMovedUid: guardMoved,
+    guardAfterUids: guardAfter,
+    guardDomUids: guardDom.join(","),
     domUids: domUids.join(",")
   });
   setStatus("DEMO drag 重排后剩 " + proposal.length + " 块");
