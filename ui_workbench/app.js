@@ -98,16 +98,20 @@ function renderTree() {
   if (!tree) { return; }
   // 根节点不保证是消息流：Task 4 的导出以 chat.stream 为根、chat.tabbar 是它
   // 的第一个子节点，所以这里只做通用递归，不对根做特殊假设。
-  host.appendChild(node(tree, 0));
+  host.appendChild(node(tree, 0, "0"));
 }
 
-function akey(eid, nth) {
-  // 同一状态里 element_id 会重复（options 有 3 个 chat.options），标注必须按
-  // 第 n 次出现来定位，否则三张卡共用一条标注。
-  return cur + "|" + (eid || "?") + (nth > 1 ? "#" + nth : "");
+/* 标注键 = 状态 | element_id | DFS 路径。
+   路径是必须的：树里同一 element_id 会重复（options 有 3 个 chat.options），
+   而没有 element_id 的节点更多（options 24 个节点里 16 个没有 ID）——只按 ID
+   计数会让所有无名节点塌缩到同一个 "state|?"，互相覆盖标注。
+   路径形如 0 / 0.2 / 0.2.1，是这个节点在本次 DFS 里的下标路径，唯一且不依赖 ID。
+   第 n 次出现（nth）只用于树上显示 #2 / #3，不参与定键。 */
+function akey(eid, path) {
+  return cur + "|" + (eid || "?") + "@" + path;
 }
 
-function node(n, depth, seen) {
+function node(n, depth, path, seen) {
   seen = seen || {};
   var d = document.createElement("div");
   d.className = "node";
@@ -117,9 +121,10 @@ function node(n, depth, seen) {
 
   var eid = n.element_id || "";
   var nth = eid ? (seen[eid] = (seen[eid] || 0) + 1) : 0;
-  var key = akey(eid, nth);
+  var key = akey(eid, path);
   d.dataset.eid = eid;
   d.dataset.akey = key;
+  d.dataset.path = path;
   d.dataset.nth = String(nth);
   if ((annotations[key] || {}).want) { d.className += " noted"; }
 
@@ -133,6 +138,13 @@ function node(n, depth, seen) {
     i.className = "id";
     i.textContent = eid + (nth > 1 ? " #" + nth : "") + " ";
     d.appendChild(i);
+  } else {
+    // 无名节点在树上标出路径，否则十几个 "box" / "row" 长得一模一样，
+    // 标注挂在谁身上全靠猜。
+    var a2 = document.createElement("span");
+    a2.className = "id";
+    a2.textContent = "?" + "@" + path + " ";
+    d.appendChild(a2);
   }
   (n.texts || []).forEach(function (t) {
     var s = document.createElement("span");
@@ -176,11 +188,13 @@ function node(n, depth, seen) {
     d.className += " sel";
     renderAnnot();
   };
-  (n.children || []).forEach(function (c) { d.appendChild(node(c, depth + 1, seen)); });
+  (n.children || []).forEach(function (c, ci) {
+    d.appendChild(node(c, depth + 1, path + "." + ci, seen));
+  });
   return d;
 }
 
-/* 树里同一 ID 会出现多次，靠 data-akey 精确定位到某一次出现 */
+/* 树里同一 ID 会出现多次、无名节点还有十几个，靠 data-akey 精确定位 */
 function selectedNode() { return document.querySelector("#tree .node.sel"); }
 
 function renderAnnot() {
@@ -191,7 +205,7 @@ function renderAnnot() {
 
   var h = document.createElement("h3");
   h.textContent = sel
-    ? "标注 · " + (sel.dataset.eid || "（无 ID）") +
+    ? "标注 · " + (sel.dataset.eid || "（无 ID " + sel.dataset.path + "）") +
       (Number(sel.dataset.nth) > 1 ? " 第 " + sel.dataset.nth + " 处" : "") +
       "  [" + key + "]"
     : "标注 · （先在右侧点一个元素）";
