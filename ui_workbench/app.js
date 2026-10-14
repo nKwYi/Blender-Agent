@@ -253,6 +253,11 @@ function switchView(name) {
   ["mirror", "proposal", "constraints"].forEach(function (v) {
     el("view-" + v).hidden = (v !== name);
   });
+  // 状态胶片条只对镜像视图有意义：那一排 7 个按钮切的是实机状态截图。
+  // 提案视图里它挂在控件架正上方，用户会以为「得先选个状态才能提案」——
+  // 那是镜像视图的心智模型，套到提案视图上只会挡路。这里是唯一该管它的地方：
+  // 切到别的视图一律恢复，免得从提案视图切回来之后胶片条凭空消失。 */
+  el("filmstrip").hidden = (name === "proposal");
   var bs = document.querySelectorAll("#views button");
   for (var i = 0; i < bs.length; i++) {
     bs[i].className = (bs[i].dataset.view === name) ? "on" : "";
@@ -408,7 +413,10 @@ function bindCanvasDnd() {
   canvas.addEventListener("dragstart", function (e) {
     // 在参数框 / 备注框里拖选文本也会冒泡出 dragstart。不挡掉的话，
     // 用户只是在选中一段文字，整个积木却跟着半透明起来，像卡住了。
-    if (e.target && e.target.closest && e.target.closest("input, textarea")) { return; }
+    // button 同样要挡：这一轮把「整块可拖」放开（不必瞄 ⋮⋮）之后，
+    // 从展开 / 复制 / 删除按钮上按下就会变成一次拖拽，点按钮变成点不动。
+    if (e.target && e.target.closest &&
+        e.target.closest("input, textarea, button")) { return; }
     var box = e.target && e.target.closest ? e.target.closest(".pnode") : null;
     if (!box) { return; }
     dragState = { uid: box.dataset.uid, fromIdx: idxByUid(box.dataset.uid) };
@@ -472,7 +480,7 @@ function renderVocabBar() {
     var b = document.createElement("button");
     b.dataset.wkey = w.key;
     b.textContent = w.label;
-    b.title = "点一下加到画布最下面；搭好后按住积木左侧的手柄可拖动换位\n" +
+    b.title = "点一下加到画布最下面；搭好后按住积木上的空白处可拖动换位\n" +
       w.uiloayout +
       (w.allowed_props.length ? "\n可用参数：" + w.allowed_props.join(", ") : "\n无参数") +
       (w.blocked_props.length ? "\n被拦参数：" + w.blocked_props.join(", ") : "") +
@@ -597,6 +605,7 @@ function addWidget(w) {
     id: "",
     note: "",
     errors: [],
+    expanded: false,   // 默认折叠：三块输入框不在 DOM 里，积木只占一行
     downgraded: false
   });
   renderCanvas();
@@ -617,6 +626,7 @@ function addRejected(r) {
     id: "",
     note: "",
     errors: [],
+    expanded: false,
     downgraded: true
   });
   renderCanvas();
@@ -628,6 +638,12 @@ function setParams(n, raw) {
     { key: n.wkey, label: n.label, uiloayout: n.uiloayout,
       allowed_props: n.allowed_props || [], blocked_props: n.blocked_props || [] },
     splitParams(raw));
+  /* 拦截时自动展开，把违规摊开给用户看。
+     注意是「把状态置为展开」，不是在渲染时拿 errors.length 强行盖掉显示状态：
+     后者会让「一有错就弹开」变成不可逆的——用户收起之后，下一次 renderCanvas
+     又给它弹回去，没人能把它折上。写成状态赋值就只是「第一次拦到时帮他打开」，
+     之后点「收起」是真的收得起来。 */
+  if (n.errors.length) { n.expanded = true; }
   // 参数每敲一个键就要重算 chips 和拦截文案，而重算的代价是整块画布重建。
   // renderCanvas 负责把焦点和光标位置原样还回去，别在这里另想办法。
   renderCanvas();
@@ -677,6 +693,11 @@ function dupNode(idx) {
   // 再 slice 一次只是不共享数组，不是在修 bug。真正会打破前提的是
   // 「逐块参数覆盖」那种新功能，不是重排。
   copy.errors = (src.errors || []).slice();
+  /* expanded 走浅拷贝，即「复制当前这块的样子」——原块折着、副本也折着，
+     原块开着、副本也开着。之所以不强制复位：复制的意义是「再来一块一样的」，
+     折叠态也是这块的一部分。强制 copy.expanded = false 的话，复制一块配好的
+     积木会把刚抄过来的参数又藏回折叠态（用户得多点一次才看得见自己复制了什么），
+     而复制一块刚建、还没配置的积木反倒会弹开——两头的直觉都是反的。 */
   proposal.splice(idx + 1, 0, copy);
   renderCanvas();
 }
@@ -712,8 +733,10 @@ function renderEmptyHint() {
   var p = document.createElement("p");
   p.id = "empty-hint";
   p.className = "hint";
-  p.textContent = "点上面的控件，它就落到画布最下面；搭好之后，按住积木左侧的手柄" +
-    "可以随时拖动换位，也可以复制一块、或删掉重来。积木从上到下的顺序，" +
+  p.textContent = "点上面的控件，它就落到画布最下面；搭好之后，按住积木上" +
+    "按钮以外的空白处可以随时拖动换位，也可以复制一块、或删掉重来。" +
+    "积木默认是折起来的，点「展开」才出现参数、元素 ID 和备注三个输入框。" +
+    "积木从上到下的顺序，"+
     "就是插件里面板从上到下的顺序。挑不到想要的效果时，看下方「做不到」列表——" +
     "点它插入的是降级方案，原需求会被标成做不到。搭好后切回镜像视图，对着真实截图比。";
   return p;
@@ -739,15 +762,19 @@ function renderCanvas() {
     box.dataset.status = n.downgraded ? "downgraded" : (n.errors.length ? "blocked" : "ok");
     box.dataset.errors = String(n.errors.length);
     if (n.rkey) { box.dataset.rkey = n.rkey; }
+    // data-expanded 必须写在最后：既有断言按 data-errors（末尾）或
+    // data-errors -> data-rkey 的顺序做正则匹配，插在中间会把它们打断。
+    box.dataset.expanded = n.expanded ? "1" : "0";
 
     var head = document.createElement("div");
     head.className = "phead";
-    /* 拖拽手柄。整个 .pnode 都可拖，但手柄是「这里能拖」的视觉承诺——
-       没有它，积木看着像个表单卡片，用户不会想到可以换位。 */
+    /* 拖拽手柄。整个 .pnode 都可拖（按钮和输入框上按下除外），
+       手柄只是「这里能拖」的视觉承诺——没有它，积木看着像个表单卡片，
+       用户不会想到可以换位。 */
     var grip = document.createElement("span");
     grip.className = "drop-handler";
     grip.textContent = "⋮⋮";
-    grip.title = "按住这块积木拖动，可以换位置";
+    grip.title = "按住这块积木的空白处拖动，可以换位置";
     head.appendChild(grip);
     var tag = document.createElement("span");
     tag.className = "ptag";
@@ -759,6 +786,21 @@ function renderCanvas() {
     var code = document.createElement("code");
     code.textContent = n.uiloayout;
     head.appendChild(code);
+
+    /* 展开 / 收起。折叠时那三个输入框根本不进 DOM，画布才从「一张大表单」
+       变回「一列积木」；细节点开才展开。
+       按钮直接翻转 n.expanded——它和「被拦截所以自动展开」是两条独立的路：
+       setParams 只会把它置成 true，不会替用户再按回去。 */
+    var foldB = document.createElement("button");
+    foldB.className = "chip";
+    foldB.dataset.act = "fold";
+    foldB.dataset.uid = n.uid;
+    foldB.textContent = n.expanded ? "收起" : "展开";
+    foldB.title = n.expanded
+      ? "把参数 / 元素 ID / 备注这三个输入框折起来"
+      : "展开这一块，改参数、对应插件元素 ID、想做什么";
+    foldB.onclick = function () { n.expanded = !n.expanded; renderCanvas(); };
+    head.appendChild(foldB);
 
     /* 复制 / 删除。
        主题里没有红也没有绿（见文件头），所以「删除」不靠红色表达：
@@ -786,6 +828,8 @@ function renderCanvas() {
 
     box.appendChild(head);
 
+    /* 降级块的理由两行不随折叠藏起来：它是「这条原需求做不到 + 这样改」的
+       记录，不是待填的输入，藏起来等于让用户以为这块还没搭。 */
     if (n.downgraded) {
       var fb = document.createElement("div");
       fb.className = "pfb";
@@ -797,7 +841,16 @@ function renderCanvas() {
       alt.textContent = "降级方案：" + n.fallback;
       fb.appendChild(alt);
       box.appendChild(fb);
-    } else {
+    }
+
+    /* 以下全部只在展开时渲染。折叠态还留着标题行那个「违规 N 项」徽标，
+       所以收起之后用户依然看得出这块被拦了，只是被拦的理由不占地方。 */
+    if (!n.expanded) {
+      host.appendChild(box);
+      return;
+    }
+
+    if (!n.downgraded) {
       var chips = document.createElement("div");
       chips.className = "chips";
       var ps = splitParams(n.params);
@@ -860,7 +913,9 @@ function renderCanvas() {
    #proposal-blocked 会额外给文字（label）塞 size, color, scale, text：
    前三个分别命中 blocked_props、blocked_props、允许清单之外，text 合法。
    #proposal-typing 走逐字符 input 事件，专治「重建画布把焦点弄丢」那类 bug。
-   #proposal-del / #proposal-dup 点真实的删除 / 复制按钮，核对块数与 uid 身份。 */
+   #proposal-del / #proposal-dup 点真实的删除 / 复制按钮，核对块数与 uid 身份。
+   #proposal-fold 点真实的展开按钮，走一遍「默认折叠 -> 展开 -> 收起 ->
+   拦截自动展开 -> 还能再收起」，专治「一有错就永久弹开」。 */
 /* 按 wkey 找到数组下标，再拿这块的 uid 去 DOM 里捞输入框——
    两头都靠 uid，数组重排或中间被删掉都不会捞错块。 */
 function paramsInputOf(wkey) {
@@ -961,8 +1016,22 @@ function dupReport() {
    节点一旦被 renderCanvas 摘出文档，后续按键就打到 body 上，字符会丢。
    敲 "scale_ys"（比合法值多一个 s）是为了同时验两件事：字符没丢，
    且最后那一下真的触发了拦截。 */
+function foldButtonOf(wkey) {
+  for (var i = 0; i < proposal.length; i++) {
+    if (proposal[i].wkey !== wkey) { continue; }
+    return el("canvas").querySelector('.pnode[data-uid="' + proposal[i].uid + '"] [data-act="fold"]');
+  }
+  return null;
+}
+
 function typeReport(wkey, text) {
   var lost = 0;
+  // 积木默认折叠，参数框不在 DOM 里——先点「展开」再打字，走的就是
+  // 用户自己要点的那一下，不走后门。
+  if (!paramsInputOf(wkey)) {
+    var fb = foldButtonOf(wkey);
+    if (fb) { fb.click(); }
+  }
   // 先点一下输入框（用户就是这么开始打字的），否则第一次按键就会「丢失」，
   // 测出来的就不是重建画布的锅，而是没人先把焦点放上去。
   var first = paramsInputOf(wkey);
@@ -1017,6 +1086,15 @@ function dragReport() {
   var canvas = el("canvas");
   var before = uidListOf(proposal);
   var dt = new DataTransfer();
+
+  // --- 0) 按钮上按下不许触发拖拽 ---
+  // 整块可拖是这一轮才放开的（不必瞄 ⋮⋮）。放开的前提就是把按钮排除掉：
+  // 否则「复制」和「删除」点下去会变成一次拖拽，按钮等于废掉。
+  var dupBtn = canvas.querySelector('.pnode [data-act="dup"]');
+  fireDrag(dupBtn, "dragstart", 0, dt);
+  var stateAfterBtn = String(dragState);
+  var draggingAfterBtn = canvas.querySelectorAll(".pnode.dragging").length;
+  clearDrag();
 
   // --- 1) 取消 ---
   var b1 = canvas.querySelectorAll(".pnode");
@@ -1079,6 +1157,8 @@ function dragReport() {
 
   appendReport("drag-report", {
     beforeUids: before,
+    stateAfterBtn: stateAfterBtn,
+    draggingAfterBtn: String(draggingAfterBtn),
     lineSeen: String(lineSeen),
     lineAfterCancel: String(lineAfterCancel),
     draggingAfterCancel: String(draggingAfterCancel),
@@ -1130,6 +1210,51 @@ function undoReport() {
   setStatus("DEMO undo 恢复后剩 " + proposal.length + " 块");
 }
 
+/* #proposal-fold：折叠 / 展开 / 拦截自动展开这三条规则一次跑完。
+   每一步都用画布上真实的「展开」按钮点，并把「这块里到底有没有那几个输入框」
+   连同 data-expanded 一起报出去——只报数组字段的话，「状态对了但 DOM 里
+   根本没渲染输入框」照样全绿。
+   取 label 是因为它有明确的 blocked 参数（size），造得出拦截。 */
+function countFields(uid) {
+  var box = el("canvas").querySelector('.pnode[data-uid="' + uid + '"]');
+  if (!box) { return "?"; }
+  return [box.querySelectorAll('[data-field="params"]').length,
+          box.querySelectorAll('[data-field="id"]').length,
+          box.querySelectorAll('[data-field="note"]').length,
+          box.querySelectorAll(".perr").length,
+          box.dataset.expanded].join("/");
+}
+
+function foldReport() {
+  var canvas = el("canvas");
+  var target = proposal.filter(function (x) { return x.wkey === "label"; })[0];
+  if (!target) { setStatus("DEMO fold 没找到 label"); return; }
+  var uid = target.uid;
+  var foldBtn = canvas.querySelector('.pnode[data-uid="' + uid + '"] [data-act="fold"]');
+
+  var before = countFields(uid);            // 默认折叠
+  foldBtn.click();
+  var opened = countFields(uid);            // 手动展开
+  foldBtn.click();
+  var recollapsed = countFields(uid);        // 手动收起
+  setParams(target, "size");                // 拦截 -> 自动展开
+  var afterBlock = countFields(uid);
+  foldBtn.click();                          // 还能再收起来吗
+  var afterCollapse = countFields(uid);
+
+  appendReport("fold-report", {
+    uid: uid,
+    before: before,
+    opened: opened,
+    recollapsed: recollapsed,
+    afterBlock: afterBlock,
+    afterCollapse: afterCollapse,
+    errorCount: String(target.errors.length),
+    expandedNodes: String(canvas.querySelectorAll(".pnode[data-expanded='1']").length)
+  });
+  setStatus("DEMO fold 剩 " + proposal.length + " 块");
+}
+
 function runDemoHook(hash) {
   var h = String(hash || "").replace(/^#/, "");
   var kind = (h === "proposal-all") ? "all"
@@ -1139,6 +1264,7 @@ function runDemoHook(hash) {
            : (h === "proposal-dup") ? "dup"
            : (h === "proposal-drag") ? "drag"
            : (h === "proposal-undo") ? "undo"
+           : (h === "proposal-fold") ? "fold"
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
   switchView("proposal");
@@ -1162,6 +1288,7 @@ function runDemoHook(hash) {
     if (kind === "dup") { dupReport(); return; }
     if (kind === "drag") { dragReport(); return; }
     if (kind === "undo") { undoReport(); return; }
+    if (kind === "fold") { foldReport(); return; }
     var down = proposal.filter(function (x) { return x.downgraded; }).length;
     var blocked = proposal.filter(function (x) { return x.errors.length > 0; }).length;
     setStatus("DEMO " + kind + " 控件 " + (proposal.length - down) +

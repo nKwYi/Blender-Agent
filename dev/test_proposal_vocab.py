@@ -217,6 +217,42 @@ def main():
     ck("app_undo_present", "lastDeleted" in app and "undoDelete" in app,
        "缺单步撤销（lastDeleted / undoDelete）")
 
+    # ---------- Task 11：折叠积木 / 整块可拖 / 提案视图隐藏胶片条 ----------
+    # 静态侧钉的是「谁负责」，DOM 侧钉的是「实际长什么样」，两边都要。
+    # 先抹掉 CSS 注释再扫。style.css 顶上那段解释「为什么需要 !important」的
+    # 注释里就写着 [hidden]{display:none} 这个字面量——不抹的话，
+    # 把真规则删掉这条断言照样绿（变异验证实测过：删掉规则，142 条全过）。
+    css_scan = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    ck("css_hidden_rule",
+       re.search(r"\[hidden\]\s*\{[^}]*display:\s*none", css_scan) is not None,
+       "style.css 必须有 [hidden]{display:none} —— .filmstrip 声明了 display:flex，"
+       "会盖掉 UA 的 [hidden]{display:none}，hidden=true 就不生效")
+    ck("css_pnode_grab_cursor",
+       re.search(r"\.pnode\s*\{[^}]*cursor:\s*grab", css_scan) is not None,
+       "整块可拖必须让光标说清楚（.pnode 上的 cursor: grab），否则用户读不出可拖")
+    aw = js_body(app, "function addWidget")
+    ck("app_addwidget_defaults_collapsed", bool(aw) and re.search(r"expanded\s*:\s*false", aw),
+       "新建积木必须 expanded: false —— 默认不折叠的话，每块仍是 3 个常驻输入框")
+    sp = js_body(app, "function setParams")
+    ck("app_setparams_auto_expands",
+       bool(sp) and re.search(r"errors\.length\)\s*\{\s*n\.expanded\s*=\s*true", sp),
+       "拦截时必须把 n.expanded 置成 true（自动展开给你看违规在哪）")
+    rb2 = js_body(app, "function dupNode")
+    ck("app_dup_keeps_expanded",
+       bool(rb2) and not re.search(r"\bexpanded\b\s*=(?!=)", rb2),
+       "dupNode 不该复位 expanded —— 复制的是「当前这块的样子」，"
+       "复制一块配好的积木不该把参数又藏回折叠态")
+    # dragstart 的按钮豁免：整块可拖放开之后，这条守卫就是复制 / 删除还能不能点的命。
+    ds = js_body(app, "function bindCanvasDnd")
+    ck("app_dragstart_skips_buttons",
+       bool(ds) and re.search(r'closest\("input,\s*textarea,\s*button"\)', ds) is not None,
+       "dragstart 必须排除 button —— 不挡的话点「复制」「删除」会变成一次拖拽")
+    sw = js_body(app, "function switchView")
+    ck("app_switchview_hides_filmstrip",
+       bool(sw) and "filmstrip" in sw,
+       "胶片条归 switchView 管：提案视图下那 7 个状态按钮毫无意义，"
+       "却会让人以为得先选状态才能提案")
+
     dom_checks()
 
     print("PASS %d  FAIL %d" % (TOTAL[0] - len(FAILS), len(FAILS)))
@@ -297,6 +333,32 @@ def dom_checks():
            "缺少「尚未收录」的说明文案")
         ck("dom_props_scope", "精选子集" in empty,
            "没有说明 allowed_props 是精选子集，容易被当成全量 API")
+
+        # --- Task 11-C：提案视图下的胶片条 ---
+        # 必须切到「提案视图」和「镜像视图」各渲染一次来比：
+        # 只看提案视图那份，删掉整行胶片条和「没藏起来」长得一模一样。
+        mirror = dump(exe, url, profile)
+        ptag, mtag = tag_of(empty, "filmstrip"), tag_of(mirror, "filmstrip")
+        ck("filmstrip_tag_found", bool(ptag) and bool(mtag),
+           "两份 dump 里都该找得到 #filmstrip，实际 %r / %r" % (ptag, mtag))
+        ck("filmstrip_hidden_in_proposal", bool(ptag) and "hidden" in ptag,
+           "提案视图下状态胶片条必须隐藏：那 7 个按钮切的是镜像视图的实机截图，"
+           "放在提案视图上方会让人以为要先选状态：%r" % ptag)
+        ck("filmstrip_visible_in_mirror", bool(mtag) and "hidden" not in mtag,
+           "切回镜像视图后胶片条必须恢复：%r" % mtag)
+        # 隐藏 ≠ 清空：两份 dump 里的按钮数应当一样多，变的只是 hidden。
+        # 拿「同一个数互相比」而不是写死 7，镜像视图以后加减状态也不会误报。
+        pbtns = len(re.findall(r"<button", filmstrip_of(empty)))
+        mbtns = len(re.findall(r"<button", filmstrip_of(mirror)))
+        ck("filmstrip_hidden_not_emptied",
+           mbtns > 0 and pbtns == mbtns,
+           "胶片条应当只是被藏起来，不是被清空：镜像 %d 个按钮 / 提案 %d 个"
+           % (mbtns, pbtns))
+        # 视图本体本身不许被连带藏掉：藏胶片条不能顺手把镜像视图也藏了
+        mv = re.search(r'<section id="view-mirror"[^>]*>', mirror)
+        ck("filmstrip_does_not_hide_mirror_view",
+           mv is not None and "hidden" not in mv.group(0),
+           "镜像视图本体在默认状态下必须可见：%r" % (mv.group(0) if mv else "<missing>"))
 
         allp = dump(exe, url + "#proposal-all", profile)
         nodes = re.findall(r'<div class="note pnode[^"]*"[^>]*>', allp)
@@ -402,6 +464,22 @@ def dom_checks():
         ck("dom_dup_button_per_node", cvs.count('data-act="dup"') == EXPECT_WIDGETS + EXPECT_REJECTED,
            "应有 %d 个复制按钮，实际 %d"
            % (EXPECT_WIDGETS + EXPECT_REJECTED, cvs.count('data-act="dup"')))
+        ck("fold_button_per_node", cvs.count('data-act="fold"') == EXPECT_WIDGETS + EXPECT_REJECTED,
+           "应有 %d 个展开/收起按钮，实际 %d"
+           % (EXPECT_WIDGETS + EXPECT_REJECTED, cvs.count('data-act="fold"')))
+
+        # --- Task 11-A：默认折叠 ---
+        # 12 块常驻输入框 = 1800px 的滚动，这就是它读起来还像表单的原因。
+        # 这里数 canvas 切片里 data-field 的出现次数：折叠时它们一个都不该在 DOM 里。
+        # 期望值写死成 0（不是 count()==count()），两边同时为 0 时那种恒真不许出现。
+        ck("fold_default_no_fields_in_dom",
+           cvs.count('data-field="params"') == 0 and
+           cvs.count('data-field="id"') == 0 and
+           cvs.count('data-field="note"') == 0 and
+           cvs.count('data-expanded="1"') == 0,
+           "点完控件后积木应当全是折叠的：params=%d id=%d note=%d 已展开=%d"
+           % (cvs.count('data-field="params"'), cvs.count('data-field="id"'),
+              cvs.count('data-field="note"'), cvs.count('data-expanded="1"')))
 
         # 删除：#proposal-del 里点的是画布上真实的删除按钮
         dele = dump(exe, url + "#proposal-del", profile)
@@ -434,6 +512,7 @@ def dom_checks():
            % cvs.count('class="drop-handler"'))
         drag_checks(dump(exe, url + "#proposal-drag", profile))
         undo_checks(dump(exe, url + "#proposal-undo", profile), empty)
+        fold_checks(dump(exe, url + "#proposal-fold", profile))
     finally:
         shutil.rmtree(profile, ignore_errors=True)
 
@@ -465,6 +544,24 @@ def empty_hint_of(p):
                  ("&gt;", ">"), ("&amp;", "&")):
         txt = txt.replace(a, b)
     return txt
+
+
+def tag_of(p, eid):
+    """取 id=`<eid>` 那个元素的起始标签（含全部属性）。
+
+    胶片条这条断言要看的是 hidden 属性——而 hidden 是设在外层
+    #filmstrip 上的，只看内层第一个 <button> 就会把「藏了」判成「没藏」。
+    找不到返回空串：后续 `X in ""` 恒为 False，判定必红，不会蒙过去。
+    """
+    m = re.search(r'<[a-z]+[^>]*\bid="%s"[^>]*>' % re.escape(eid), p)
+    return m.group(0) if m else ""
+
+
+def filmstrip_of(p):
+    """取 #filmstrip 的内容切片（#view-mirror 是它的下一个兄弟）。"""
+    if '<div id="filmstrip"' not in p or '<section id="view-mirror"' not in p:
+        return ""
+    return p.split('<div id="filmstrip"')[1].split('<section id="view-mirror"')[0]
 
 
 def drag_checks(p):
@@ -524,6 +621,15 @@ def drag_checks(p):
     ck("drag_cancel_keeps_order", at.get("order-after-cancel") == ",".join(before),
        "取消拖拽不许改动任何积木的顺序")
 
+    # 整块可拖之后，按钮上按下不许触发拖拽——不然复制 / 删除就点不动了。
+    ck("drag_button_press_not_drag", at.get("state-after-btn") == "null",
+       "在复制按钮上按下必须被 dragstart 挡掉，实际 dragState=%s"
+       % at.get("state-after-btn"))
+    ck("drag_button_press_no_dragging_class",
+       at.get("dragging-after-btn") == "0",
+       "在按钮上按下不该给积木挂上 .dragging，实际 %s 块"
+       % at.get("dragging-after-btn"))
+
     # reorderTo 的负 toIdx 守卫。UI 走不到这条路（dropIndexAt 只给 0..n），
     # 所以这里直接调那个被明确导出为「拖拽与测试共用」的入口。
     # 不夹紧的话 splice(-1, 0, item) 会把最后一块插回倒数第二位——
@@ -537,6 +643,44 @@ def drag_checks(p):
        "长度 %d -> %d" % (ga[0] if ga else None, moved, len(gb), len(ga)))
     ck("reorder_negative_to_idx_dom_matches", _uids(at, "guard-dom-uids") == ga,
        "负 toIdx 重排后画布上渲染出来的 uid 顺序与数组不一致")
+
+
+# 折叠 / 展开 / 拦截自动展开。
+# 每个读数都是 "params/id/note/perr/expanded" 五段：前四段数的是这块积木的
+# DOM 里到底有没有那几个输入框与拦截文案。数组字段对了但 DOM 没渲染的话，
+# 只有这一串抓得住。
+def _fields(at, key):
+    v = at.get(key, "")
+    return v.split("/") if v else []
+
+
+FOLDED = ["0", "0", "0", "0", "0"]           # params/id/note/perr/expanded
+OPENED = ["1", "1", "1", "0", "1"]           # 没写参数 -> 没有拦截文案
+
+
+def fold_checks(p):
+    at = report(p, "fold-report")
+    ck("fold_hook_ran", bool(at.get("uid")) and bool(at.get("before")),
+       "折叠钩子没跑起来：%s" % at)
+    if not at.get("uid"):
+        return
+    ck("fold_default_collapsed", _fields(at, "before") == FOLDED,
+       "新建的积木应当默认折叠（三个输入框都不在 DOM 里），实际 %r" % at.get("before"))
+    ck("fold_expand_shows_fields", _fields(at, "opened") == OPENED,
+       "点「展开」后参数 / 元素 ID / 备注三个输入框都该在，实际 %r" % at.get("opened"))
+    ck("fold_manual_collapse", _fields(at, "recollapsed") == FOLDED,
+       "再点一次「收起」应当真的折回去，实际 %r" % at.get("recollapsed"))
+    ck("fold_block_auto_expands", _fields(at, "after-block") == ["1", "1", "1", "1", "1"],
+       "塞进违规参数后应当自动展开并露出拦截文案（size 是 label 的 blocked 参数，"
+       "所以 errors 应为 1），实际 %r" % at.get("after-block"))
+    ck("fold_block_can_still_collapse", _fields(at, "after-collapse") == FOLDED,
+       "自动展开之后用户必须还能手动收起来——实际 %r" % at.get("after-collapse"))
+    # 「一有错就弹开」的照妖镜：label 这时仍然带着 1 条拦截，
+    # 可整块画布上不该有任何一块处于展开态。
+    ck("fold_block_not_stuck_open",
+       at.get("error-count") == "1" and at.get("expanded-nodes") == "0",
+       "label 仍有 %s 条拦截，画布上却还有 %s 块处于展开态"
+       % (at.get("error-count"), at.get("expanded-nodes")))
 
 
 def undo_checks(p, empty):
@@ -582,17 +726,23 @@ def js_body(src, header):
     i = src.find(header)
     if i < 0:
         return ""
-    j = src.find("{", i + len(header))
-    if j < 0:
+    # 先把 /* */ 注释抹掉再切函数体。app.js 里到处是解释「为什么这么写」的
+    # 长注释，其中不少直接写着被禁用的写法（比如 dupNode 那段里的
+    # "copy.expanded = false"）。不抹的话，负面检查扫的是注释而不是代码——
+    # 断言会因为一句解释而变红，人还得去猜是哪行代码写错了。
+    body = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    i = body.find(header)
+    j = body.find("{", i + len(header))
+    if i < 0 or j < 0:
         return ""
     depth = 0
-    for k in range(j, len(src)):
-        if src[k] == "{":
+    for k in range(j, len(body)):
+        if body[k] == "{":
             depth += 1
-        elif src[k] == "}":
+        elif body[k] == "}":
             depth -= 1
             if depth == 0:
-                return src[j + 1:k]
+                return body[j + 1:k]
     return ""
 
 

@@ -23,6 +23,10 @@
   --fill: #545454;    /* wcol_regular.inner，neutral 填充按钮 */
 }
 * { box-sizing: border-box; }
+/* [hidden] 必须在 display 之后、且带 !important：.filmstrip 声明了
+   display:flex，会盖掉 UA 样式表里 [hidden]{display:none} 那条，
+   于是 el("filmstrip").hidden = true 看着设了，实际还占着一条。 */
+[hidden] { display: none !important; }
 body {
   margin: 0; background: var(--panel); color: var(--text);
   font: 13px/1.6 "Microsoft YaHei", sans-serif;
@@ -124,6 +128,14 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
   padding: 0 6px; margin: 0 6px 4px 0; font-size: 11px;
   font-family: Consolas, monospace; color: var(--text);
 }
+/* .chip 原本只当 <span> 用（参数 chip），没管过背景。挂到 <button> 上时
+   UA 默认的 buttonface 白底会透出来，配上 --text 的浅色字就成了白底浅字——
+   「展开」「复制」两个字直接看不见，等于这个按钮不存在。
+   选择器写 button.chip（0,1,1）而不是 .pnode button.chip（0,2,1）：
+   后者比 .chip.bad（0,2,0）更具体，会把「删除」该有的深底 + 删除线一起盖掉。 */
+button.chip {
+  background: var(--fill); color: var(--text);
+}
 .chip.bad {
   text-decoration: line-through; border-color: var(--mark);
   background: var(--panel); color: var(--text-dim);
@@ -148,3 +160,14 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
   width: 100%; margin: 4px 0; background: var(--field); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 4px; font: inherit;
 }
+/* ---- 折叠 / 拖拽的手感 ----
+   整块可拖，不必精确瞄准 ⋮⋮：标题行的空白处一按就能拖。
+   手柄符号保留，它是「这一整块都能拖」的视觉承诺——⋮⋮ 只有 12px，
+   光靠它自己，用户永远想不到可以拖。
+   光标跟着可拖区域走：空白处是 grab，按钮上是 pointer，输入框里是 text。
+   从按钮 / 输入框上按下不会触发拖拽，那条守卫在 app.js 的 dragstart 里，
+   这里只负责让它「看起来」也是分区的。 */
+.pnode { cursor: grab; }
+.pnode .phead { cursor: grab; }
+.pnode input, .pnode textarea { cursor: text; }
+.pnode button { cursor: pointer; }
