@@ -17,6 +17,7 @@
 判定依据只有日志里的 SHOTS 行：Blender 5.2.1 的 -P 脚本即使抛未捕获异常，
 进程退出码仍然是 0。
 """
+import bpy
 import hashlib
 import os
 import sys
@@ -27,11 +28,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
-
-import bpy
-import blender_deepseek_agent as bda
-from blender_deepseek_agent import ui as U  # noqa: F401  注册面板用
-from dev.states import STATE_NAMES, apply_spec, build
 
 OUT_DIR = os.path.join(ROOT, "ui_workbench", "data", "shots")
 OUT_LOG = os.path.join(HERE, "out", "shots_log.txt")
@@ -49,6 +45,44 @@ def log(*a):
             fh.write("\n".join(_lines))
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# 安全网：必须排在下面那堆 import 之前注册。
+# blender_deepseek_agent 和 dev.states（工作区本地模块）任何一处出错，脚本都会
+# 在"还没注册任何定时器"的状态下中止——GUI 窗口开着、最小化、永远不关，
+# 而退出码照样是 0，外层 Start-Process -Wait 连超时都判断不出来。
+# 先挂一个兜底定时器：只要 disarm 没被解除，90 秒后无条件把进程带走。
+# ---------------------------------------------------------------------------
+_ARMED = [True]
+SAFETY_SECONDS = 90.0  # 正常跑完约 25s，90s 是宽裕上限
+
+
+def _safety_net():
+    if _ARMED[0]:
+        log("SAFETY_EXIT -- import 失败或中途卡死，强制退出，不留残余进程")
+        sys.stdout.flush()
+        os._exit(3)
+    return None
+
+
+bpy.app.timers.register(_safety_net, first_interval=SAFETY_SECONDS)
+
+
+def bail(msg, detail=""):
+    """收尾并硬退出：解除安全网、打日志、立刻走人（不等 wm.quit_blender）。"""
+    log(msg, detail)
+    _ARMED[0] = False
+    sys.stdout.flush()
+    os._exit(3)
+
+
+try:
+    import blender_deepseek_agent as bda
+    from blender_deepseek_agent import ui as U  # noqa: F401  注册面板用
+    from dev.states import STATE_NAMES, apply_spec, build
+except Exception:
+    bail("IMPORT_FAIL", traceback.format_exc())
 
 
 # 面板 draw 期间会读配置（模型名 / Key 状态等）。GUI 里没有真实 Key，
@@ -187,11 +221,28 @@ def finish():
         log("CAPTURE_SHOTS_OK count=%d" % len(_state["taken"]))
     else:
         log("CAPTURE_SHOTS_BAD count=%d" % len(_state["taken"]))
+    # 正常收尾：解除安全网，再挂 6 秒硬退出兜底，最后请 Blender 自己退。
+    _ARMED[0] = False
     bpy.app.timers.register(_force_exit, first_interval=6.0)
     try:
         bpy.ops.wm.quit_blender()
     except Exception as exc:
         log("QUIT_FAIL", repr(exc))
+
+
+def assert_workspace_source():
+    """★ 必须加载工作区源码，不能是用户安装的 0.4.7 那份。
+
+    光 print MODULE_FILE 是不够的：不加 --factory-startup 重跑时，
+    bda.register() 会被 hasattr 守卫跳过，脚本照样打出
+    CAPTURE_SHOTS_OK count=7，而截图其实来自已安装副本——与
+    ui_workbench/data/layout 不同源。这条约束要由代码强制，不只写在文档里。
+    """
+    mod = os.path.realpath(bda.__file__)
+    if os.path.realpath(ROOT) not in mod:
+        log("CAPTURE_SHOTS_BAD loaded_not_workspace", mod)
+        bail("WORKSPACE_SOURCE_FAIL", mod)
+    log("workspace source OK", mod)
 
 
 def main():
@@ -202,6 +253,7 @@ def main():
         log("addon registered from", bda.__file__)
     else:
         log("addon already registered")
+    assert_workspace_source()
     try:
         bda.config.get_config = lambda: dict(_CFG)
     except Exception as exc:
@@ -215,10 +267,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except SystemExit:
+        raise
     except Exception:
-        log("HARNESS_FAIL", traceback.format_exc())
-        bpy.app.timers.register(_force_exit, first_interval=2.0)
-        try:
-            bpy.ops.wm.quit_blender()
-        except Exception:
-            pass
+        # 异常发生在安全网解除之前，必须硬退出，不能只 quit_blender——
+        # 实测 quit_blender 在最小化窗口的 timer 回调里可能不生效。
+        bail("HARNESS_FAIL", traceback.format_exc())
