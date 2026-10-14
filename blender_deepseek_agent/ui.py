@@ -6,6 +6,11 @@ import bpy
 from . import config, worker
 from .config import PACKAGE_ID, redact
 from .state import BUSY, Err, Phase, guide
+from .ui_ids import (
+    mark, CHAT_TABBAR, CHAT_STATUSBAR, CHAT_STREAM, CHAT_COMPOSER,
+    CHAT_SEND, CHAT_STOP, CHAT_ACTION_ROW, CHAT_OPTIONS,
+    CHAT_RESULT_TABS, CHAT_HISTORY,
+)
 from .worker import CONTROLLER
 
 PHASE_VIEW = {
@@ -790,6 +795,7 @@ def wrap_text(text, max_chars=26):
 
 def draw_chat_content(layout, context, state, run):
     busy = getattr(state, "busy", False) or CONTROLLER.busy
+    mark(layout, CHAT_STREAM)
 
     # 1) 任务进行中指示 / 审批状态
     if busy:
@@ -897,6 +903,7 @@ def draw_chat_content(layout, context, state, run):
                     else:
                         for q_idx, q in enumerate(questions):
                             qbox = abox.box()
+                            mark(qbox, CHAT_OPTIONS)
                             qbox.label(text=f"细节 {q_idx + 1}：{q.get('title', '')}", icon='QUESTION')
                             for opt in q.get("options", []):
                                 val = opt.get("value") or opt.get("label", "")
@@ -938,6 +945,7 @@ def draw_chat_content(layout, context, state, run):
             target_row.operator("deepseek.quick_pill", text=pill).action = pill
 
     cbox = layout.box()
+    mark(cbox, CHAT_COMPOSER)
     crow = cbox.row(align=True)
     crow.label(text="输入建模指令:", icon='TEXT')
     # 拖动右侧数字改输入框高度；textbox 自身右下角也有原生拖拽角
@@ -947,12 +955,17 @@ def draw_chat_content(layout, context, state, run):
 
     brow = cbox.row(align=True)
     brow.scale_y = 1.3
+    # 发送与终止是同一个 row 的两个互斥分支，不是两行；所以按分支
+    # 挂不同的 ID，同一次 draw 里只会命中其中一个。
     if not busy:
+        mark(brow, CHAT_SEND)
         brow.operator("deepseek.run_prompt", text="发送指令", icon='PLAY')
     else:
+        mark(brow, CHAT_STOP)
         brow.operator("deepseek.stop", text="终止任务", icon='CANCEL')
 
     arow = cbox.row(align=True)
+    mark(arow, CHAT_ACTION_ROW)
     if can_undo(state):
         arow.operator("deepseek.undo_task", text="回退操作", icon='LOOP_BACK')
     arow.operator("deepseek.new_task", text="新建任务", icon='ADD')
@@ -974,6 +987,7 @@ class DEEPSEEK_PT_chat(bpy.types.Panel):
 
         # 模式切换（对话 / 详情 / 设置）
         trow = layout.row(align=True)
+        mark(trow, CHAT_TABBAR)
         trow.prop(state, "active_tab", expand=True)
 
         if state.active_tab == 'DETAIL':
