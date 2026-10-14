@@ -1,0 +1,332 @@
+{
+  "blender_version": "5.2.1 LTS",
+  "entries": [
+    {
+      "blocker": "UILayout 无任何 hover 回调；Blender 内部有 _inner_sel 配色但插件调不到",
+      "evidence": "ui.negatives.hover_hook=false",
+      "fallback": "改用 enabled / active 二态表达状态；把 hover 语义重写为「点击后进入」",
+      "key": "hover",
+      "native_ok": false,
+      "title": "鼠标悬停态"
+    },
+    {
+      "blocker": "UILayout 无 color 属性，只能置 layout.alert=True 触发主题红",
+      "evidence": "ui.negatives.arbitrary_rgb=false",
+      "fallback": "只用 box.alert 表达失败；成功/警告改用图标与文案区分，不依赖颜色",
+      "key": "custom_rgb",
+      "native_ok": false,
+      "title": "任意 RGB 颜色"
+    },
+    {
+      "blocker": "label() 只有 text / text_ctxt / translate / icon / icon_value 五个参数",
+      "evidence": "ui.negatives.font_size=false",
+      "fallback": "用 layout.scale_y 配合空 label 撑出层次；标题感靠 icon 与分隔线建立",
+      "key": "font_size",
+      "native_ok": false,
+      "title": "自定义字号与字重"
+    },
+    {
+      "blocker": "面板无阴影 API，theme 只有 menu_shadow_fac 作用于菜单",
+      "evidence": "ui 符号均不存在: shadow shadow_fac drop_shadow",
+      "fallback": "用底色明度差分层：面板 #3d3d3d 对内盒 #1d1d1d",
+      "key": "box_shadow",
+      "native_ok": false,
+      "title": "卡片阴影"
+    },
+    {
+      "blocker": "侧栏滚轮实测不滚动（UI打磨执行书 v0.2.1 实测：200 行面板滚轮零变化）",
+      "evidence": "ui 符号均不存在: scroll scrollbar scroll_to",
+      "fallback": "用 layout.panel() 折叠消化长度；对话记录只保留最近 N 条，其余折叠或分页",
+      "key": "real_scroll",
+      "native_ok": false,
+      "title": "侧栏真实滚动"
+    },
+    {
+      "blocker": "插件无动画 API",
+      "evidence": "ui 符号均不存在: animation animate interpolation",
+      "fallback": "改用 layout.panel() 的原生折叠箭头，动效由 Blender 内置提供",
+      "key": "anim_transition",
+      "native_ok": false,
+      "title": "展开/收起动效"
+    },
+    {
+      "evidence": "ui.functions.panel=True",
+      "key": "collapsible_panel",
+      "native_ok": true,
+      "title": "可折叠子面板",
+      "uiloayout": "layout.panel()"
+    },
+    {
+      "evidence": "ui.properties.use_property_split=True",
+      "key": "property_split",
+      "native_ok": true,
+      "title": "规范两列属性行",
+      "uiloayout": "layout.use_property_split"
+    },
+    {
+      "evidence": "ui.properties.emboss=True",
+      "key": "flat_button",
+      "native_ok": true,
+      "title": "扁平按钮（去高光渐变）",
+      "uiloayout": "layout.emboss"
+    },
+    {
+      "evidence": "ui.functions.grid_flow=True",
+      "key": "grid_flow",
+      "native_ok": true,
+      "title": "网格流式按钮排布",
+      "uiloayout": "layout.grid_flow()"
+    },
+    {
+      "evidence": "ui.functions.progress=True",
+      "key": "progress_bar",
+      "native_ok": true,
+      "title": "进度条",
+      "uiloayout": "layout.progress()"
+    },
+    {
+      "evidence": "ui.functions.split=True",
+      "key": "two_col_split",
+      "native_ok": true,
+      "title": "左右分栏",
+      "uiloayout": "layout.split()"
+    },
+    {
+      "blocker": "5.2.1 实测 UILayout.context_menu 已移除，116 个函数中不存在",
+      "evidence": "ui.functions.context_menu=False",
+      "fallback": "改用 layout.menu_pie() 或 layout.popover() 承载右键入口",
+      "key": "context_menu",
+      "native_ok": false,
+      "title": "右键上下文菜单"
+    },
+    {
+      "blocker": "主题里有该色但 UILayout 不暴露 ThemeWidgetColors",
+      "evidence": "ui 符号均不存在: color theme_color",
+      "fallback": "用 icon='ERROR' 与文案承载「注意」语义，不靠颜色",
+      "key": "warn_color",
+      "native_ok": false,
+      "title": "警告橙 wcol_state.warning"
+    },
+    {
+      "blocker": "同上，主题里有但 Python API 调不到",
+      "evidence": "ui 符号均不存在: color theme_color",
+      "fallback": "用 icon='CHECKMARK' 承载「成功」语义",
+      "key": "ok_color",
+      "native_ok": false,
+      "title": "成功绿 wcol_state.success"
+    }
+  ],
+  "generated_for": "5.2.1 LTS",
+  "generated_from": "dev/build_constraints.py",
+  "icon_count": 1033,
+  "palette": {
+    "wcol_box": {
+      "inner": "#1d1d1d",
+      "inner_sel": "#545454",
+      "item": "#191919",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_curve": {
+      "inner": "#545454",
+      "outline": "#727272",
+      "outline_sel": "#9a9a9a",
+      "roundness": 0.4,
+      "text": "#080808",
+      "text_sel": "#c9c9c9"
+    },
+    "wcol_list_item": {
+      "inner": "#ffffff",
+      "inner_sel": "#4772b3",
+      "item": "#ffffff",
+      "outline": "#2d2d2d",
+      "outline_sel": "#2d2d2d",
+      "roundness": 0.4,
+      "text": "#cccccc",
+      "text_sel": "#ffffff"
+    },
+    "wcol_menu": {
+      "inner": "#282828",
+      "inner_sel": "#4772b3",
+      "item": "#d9d9d9",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_menu_back": {
+      "inner": "#181818",
+      "inner_sel": "#4772b3",
+      "item": "#d9d9d9",
+      "outline": "#242424",
+      "outline_sel": "#242424",
+      "roundness": 0.4,
+      "text": "#999999",
+      "text_sel": "#ffffff"
+    },
+    "wcol_menu_item": {
+      "inner": "#181818",
+      "inner_sel": "#4772b3",
+      "item": "#ffffff",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#dddddd",
+      "text_sel": "#ffffff"
+    },
+    "wcol_num": {
+      "inner": "#545454",
+      "inner_sel": "#222222",
+      "item": "#4772b3",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_numslider": {
+      "inner": "#545454",
+      "inner_sel": "#222222",
+      "item": "#4772b3",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_option": {
+      "inner": "#545454",
+      "inner_sel": "#4772b3",
+      "item": "#ffffff",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_pie_menu": {
+      "inner": "#181818",
+      "inner_sel": "#4772b3",
+      "item": "#545454",
+      "outline": "#242424",
+      "outline_sel": "#242424",
+      "roundness": 0.4,
+      "text": "#d9d9d9",
+      "text_sel": "#ffffff"
+    },
+    "wcol_progress": {
+      "inner": "#222222",
+      "inner_sel": "#4772b3",
+      "item": "#4772b3",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_pulldown": {
+      "inner": "#222222",
+      "inner_sel": "#ffffff",
+      "item": "#ffffff",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#d9d9d9",
+      "text_sel": "#ffffff"
+    },
+    "wcol_radio": {
+      "inner": "#545454",
+      "inner_sel": "#4772b3",
+      "item": "#252525",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_regular": {
+      "inner": "#545454",
+      "inner_sel": "#4772b3",
+      "item": "#1d1d1d",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_scroll": {
+      "inner": "#222222",
+      "inner_sel": "#ffffff",
+      "item": "#545454",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 1.0,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_tab": {
+      "inner": "#1d1d1d",
+      "inner_sel": "#303030",
+      "item": "#1d1d1d",
+      "outline": "#1d1d1d",
+      "outline_sel": "#1d1d1d",
+      "roundness": 0.4,
+      "text": "#989898",
+      "text_sel": "#ffffff"
+    },
+    "wcol_text": {
+      "inner": "#1d1d1d",
+      "inner_sel": "#181818",
+      "item": "#ffffff",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_toggle": {
+      "inner": "#545454",
+      "inner_sel": "#4772b3",
+      "item": "#252525",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_tool": {
+      "inner": "#545454",
+      "inner_sel": "#4772b3",
+      "item": "#ffffff",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_toolbar_item": {
+      "inner": "#282828",
+      "inner_sel": "#4772b3",
+      "item": "#ffffff",
+      "outline": "#3d3d3d",
+      "outline_sel": "#3d3d3d",
+      "roundness": 0.4,
+      "text": "#e6e6e6",
+      "text_sel": "#ffffff"
+    },
+    "wcol_tooltip": {
+      "inner": "#1d1d1d",
+      "inner_sel": "#4772b3",
+      "item": "#d9d9d9",
+      "outline": "#242424",
+      "outline_sel": "#242424",
+      "roundness": 0.4,
+      "text": "#d9d9d9",
+      "text_sel": "#ffffff"
+    }
+  }
+}
