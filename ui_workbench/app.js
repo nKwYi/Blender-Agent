@@ -492,8 +492,12 @@ function setParams(n, raw) {
 }
 
 /* 删一块。参数是数组下标（调用方当场就该知道位置），块本身的身份靠 uid 自保——
-   剩下的积木不会被重新编号，删中间一块也不会把后面的焦点拽走。 */
+   剩下的积木不会被重新编号，删中间一块也不会把后面的焦点拽走。
+   idx < 0 守卫不能省：idxByUid 未命中时返回 -1，而 proposal.splice(-1, 1)
+   在 JS 里是合法的、会把最后一块静默删掉。今天点不出这个路径（闭包节点
+   一定还在数组里），但拖拽排序一行就会踩到，所以与 dupNode 一样挡掉。 */
 function delNode(idx) {
+  if (idx < 0) { return; }
   proposal.splice(idx, 1);
   renderCanvas();
 }
@@ -506,7 +510,12 @@ function dupNode(idx) {
   var copy = {};
   for (var k in src) { if (src.hasOwnProperty(k)) { copy[k] = src[k]; } }
   copy.uid = nextUid();
-  copy.errors = (src.errors || []).slice();   // 不共享同一个数组，否则两块永远同步
+  // 其余字段是浅拷贝：allowed_props / blocked_props 仍与原块共享引用。
+  // 这是安全的——这两个字段全文件只读不写（checkProp 里只有 indexOf），
+  // errors 才是唯一被改的字段，而 setParams 每次整体重新赋值，
+  // 再 slice 一次只是不共享数组，不是在修 bug。真正会打破前提的是
+  // 「逐块参数覆盖」那种新功能，不是重排。
+  copy.errors = (src.errors || []).slice();
   proposal.splice(idx + 1, 0, copy);
   renderCanvas();
 }
@@ -693,27 +702,56 @@ function appendReport(id, attrs) {
   el("canvas").appendChild(rep);
 }
 
-/* #proposal-del：点画布上真实的删除按钮，核对「块数减一」与「其余块身份不动」。
-   先删最后一块（splice 越界与否在这里现形），再删中间一块（看后面的积木
-   会不会被重排挤掉身份）。 */
+/* #proposal-del：点画布上真实的删除按钮，核对三件事。
+   1) 过期按钮点了不做事——先摘下第一块的删除按钮，真删掉它，再点同一个
+      （元素引用还在，闭包还在，但 uid 已经不在数组里，idxByUid 只能给 -1）。
+      没有守卫的话 proposal.splice(-1, 1) 会静默删掉最后一块。
+   2) 删最后一块，块数必须减一（splice 越界与否在这里现形）。
+   3) 删中间一块，其余块的身份必须原封不动，且「渲染出来的 uid」与数组一致。 */
 function delReport() {
   var before = uidListOf(proposal);
   var all = el("canvas").querySelectorAll(".pnode");
+  var firstUid = proposal[0].uid;
+
+  // 1) 摘下第一块的删除按钮（元素引用脱离文档后依然可点，闭包也还在）
+  var staleBtn = all[0].querySelector('[data-act="del"]');
+  staleBtn.click();
+  var afterFirst = proposal.length;
+  var afterFirstUids = uidListOf(proposal);
+
+  // 同一个按钮再点一次：这次它代表的块已经不存在了
+  staleBtn.click();
+  var afterStale = proposal.length;
+
+  // 2) 删最后一块
   var lastUid = proposal[proposal.length - 1].uid;
-  all[all.length - 1].querySelector('[data-act="del"]').click();
+  el("canvas").querySelector('.pnode[data-uid="' + lastUid + '"]')
+    .querySelector('[data-act="del"]').click();
   var afterLast = proposal.length;
 
+  // 3) 删中间一块
   var midUid = proposal[Math.floor(proposal.length / 2)].uid;
-  var box = el("canvas").querySelector('.pnode[data-uid="' + midUid + '"]');
-  box.querySelector('[data-act="del"]').click();
+  el("canvas").querySelector('.pnode[data-uid="' + midUid + '"]')
+    .querySelector('[data-act="del"]').click();
+
+  // 数组对了还不够——把 DOM 上真实渲染出来的 uid 也报出去，让测试逐位比对。
+  // 只报数组的话，「数组删对了但画布上存活积木的 uid 是错的或空的」照样全绿。
+  var boxes = el("canvas").querySelectorAll(".pnode[data-uid]");
+  var domUids = [];
+  for (var i = 0; i < boxes.length; i++) { domUids.push(boxes[i].dataset.uid); }
 
   appendReport("del-report", {
     before: String(all.length),
     beforeUids: before,
-    afterLast: String(afterLast),
+    firstUid: firstUid,
+    afterFirst: String(afterFirst),
+    afterFirstUids: afterFirstUids,
+    afterStale: String(afterStale),
     lastUid: lastUid,
+    afterLast: String(afterLast),
     midUid: midUid,
-    afterUids: uidListOf(proposal)
+    afterUids: uidListOf(proposal),
+    domUids: domUids.join(",")
   });
   setStatus("DEMO del 剩 " + proposal.length + " 块");
 }

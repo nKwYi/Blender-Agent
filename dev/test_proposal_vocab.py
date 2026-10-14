@@ -348,20 +348,27 @@ def dom_checks():
            % (len(uids), EXPECT_WIDGETS + EXPECT_REJECTED))
         ck("dom_uid_unique_all", bool(uids) and all(uids) and len(set(uids)) == len(uids),
            "uid 重复或为空：%s" % uids)
-        # 每块一个删除、一个复制按钮，且只数画布切片（点按钮才出得了这些）
+        # 每块一个删除、一个复制按钮。
+        # 期望值写死成字面量 21，不写成 node_count()：两边同时为 0 时
+        # 0 == 0 恒真，只能靠别的断言兜底——依赖别人保证非空洞等于没保证。
         cvs = canvas_of(allp)
-        ck("dom_del_button_per_node", cvs.count('data-act="del"') == node_count(allp),
-           "每个积木都要有一个删除按钮，实际 %d / 共 %d 块"
-           % (cvs.count('data-act="del"'), node_count(allp)))
-        ck("dom_dup_button_per_node", cvs.count('data-act="dup"') == node_count(allp),
-           "每个积木都要有一个复制按钮，实际 %d / 共 %d 块"
-           % (cvs.count('data-act="dup"'), node_count(allp)))
+        ck("dom_del_button_per_node", cvs.count('data-act="del"') == EXPECT_WIDGETS + EXPECT_REJECTED,
+           "应有 %d 个删除按钮，实际 %d"
+           % (EXPECT_WIDGETS + EXPECT_REJECTED, cvs.count('data-act="del"')))
+        ck("dom_dup_button_per_node", cvs.count('data-act="dup"') == EXPECT_WIDGETS + EXPECT_REJECTED,
+           "应有 %d 个复制按钮，实际 %d"
+           % (EXPECT_WIDGETS + EXPECT_REJECTED, cvs.count('data-act="dup"')))
 
         # 删除：#proposal-del 里点的是画布上真实的删除按钮
         dele = dump(exe, url + "#proposal-del", profile)
+        ck("dom_delete_noop_on_stale_uid", del_on_stale_uid_is_noop(dele),
+           "块已经被删掉后再点它那个过期按钮，必须什么都不做——"
+           "idxByUid 返回 -1，proposal.splice(-1, 1) 会静默删掉最后一块")
         ck("dom_delete_removes_one", del_last_node(dele), "删除最后一块后块数应减一")
         ck("dom_delete_no_uid_reuse", del_last_node_then_check_uid(dele),
            "删掉中间一块后，其余积木的 uid 必须原样保留（身份不等于位置）")
+        ck("dom_delete_dom_uids_match", del_dom_uids_match_array(dele),
+           "删除后渲染出来的存活积木 uid 必须与数组一致（否则焦点/标注会串到别的块）")
 
         # 复制：副本必须拿到全新 uid，否则焦点和标注会串回原块
         dupd = dump(exe, url + "#proposal-dup", profile)
@@ -383,10 +390,6 @@ def canvas_of(p):
     return p.split('<div id="canvas"')[1].split('<div id="prop-notes"')[0]
 
 
-def node_count(p):
-    return len(re.findall(r'<div class="note pnode[^"]*"', canvas_of(p)))
-
-
 def report(p, rid):
     """读无头钩子吐出来的 <div id="..."> 报告，读不到就返回空 dict（判定必红）。"""
     m = re.search(r'<div id="%s"([^>]*)>' % re.escape(rid), p)
@@ -400,33 +403,69 @@ def _uids(at, key):
     return v.split(",") if v else []
 
 
-def del_last_node(p):
-    """点最后一块的删除按钮 -> 块数减一。"""
+def del_on_stale_uid_is_noop(p):
+    """块已经不在数组里了，再点它那个「过期」的删除按钮，必须什么都不做。
+
+    钉的是 delNode 的负下标守卫：idxByUid 未命中返回 -1，
+    而 proposal.splice(-1, 1) 在 JS 里是合法的、会静默删掉最后一块。
+    审查员指出这是一条静默的数据丢失路径（今天点不出来，拖拽排序一行就能踩到），
+    补守卫还不够——这条断言必须让没守卫的写法变红。
+    """
     at = report(p, "del-report")
-    if not at.get("before") or not at.get("after-last"):
+    if not at.get("after-first") or not at.get("after-stale"):
         return False
-    return int(at["after-last"]) == int(at["before"]) - 1
+    return int(at["after-stale"]) == int(at["after-first"])
+
+
+def del_last_node(p):
+    """点最后一块的删除按钮 -> 块数减一。
+
+    基线取 after-stale（= 第一次真删之后的块数），不取 before：
+    before 是 DOM 节点数、before-uids 是数组长度，数组与 DOM 一旦失步，
+    拿 before 当基线会把「渲染失败」误报成「删除失败」。这里两处读数
+    都来自同一次 hook 内的数组快照，基线与被测值同源。
+    """
+    at = report(p, "del-report")
+    if not at.get("after-stale") or not at.get("after-last"):
+        return False
+    return int(at["after-last"]) == int(at["after-stale"]) - 1
 
 
 def del_last_node_then_check_uid(p):
     """删掉中间一块后，其余积木的身份必须原封不动。
 
     钉的是「uid 是身份不是位置」：剩下的 uid 序列必须正好等于
-    原序列去掉被点的两块（最后一块 + 中间一块），且顺序不变、数量只少二。
-    若实现改用重排后的下标重新发 uid，或者复用被删的 uid，这里必红。
+    原序列去掉被点的三块（第一块 + 最后一块 + 中间一块），顺序不变、
+    数量只少三。若实现改用重排后的下标重新发 uid，或者复用被删的 uid，
+    这里必红。
     """
     at = report(p, "del-report")
     before, after = _uids(at, "before-uids"), _uids(at, "after-uids")
-    mid, last = at.get("mid-uid", ""), at.get("last-uid", "")
-    if not before or not after or not mid or not last:
+    gone = (at.get("first-uid", ""), at.get("last-uid", ""), at.get("mid-uid", ""))
+    if not before or not after or not all(gone):
         return False
-    if len(after) != len(before) - 2:
+    if len(after) != len(before) - 3:
         return False
-    if mid not in before or last not in before or mid == last:
+    if any(u not in before for u in gone) or len(set(gone)) != 3:
         return False
     if len(set(after)) != len(after):
         return False                     # 出现重复 uid = 身份被复用
-    return after == [u for u in before if u not in (mid, last)]
+    return after == [u for u in before if u not in gone]
+
+
+def del_dom_uids_match_array(p):
+    """删除后「渲染出来的那几块」的 uid，必须与数组里的完全一致。
+
+    beforeUids / afterUids 都是 hook 从 proposal 数组里读的，从来没碰过 DOM——
+    一个「数组删对了、但存活积木渲染出的 uid 是错的或空的」的变异体照样全绿。
+    这里把 DOM 上 .pnode[data-uid] 按文档顺序抓下来，与数组逐位比对：
+    少一块、错一个 uid、顺序不同，三种都抓得住。
+    """
+    at = report(p, "del-report")
+    after, dom = _uids(at, "after-uids"), _uids(at, "dom-uids")
+    if not after or not dom:
+        return False
+    return dom == after
 
 
 def dup_last_node(p):
