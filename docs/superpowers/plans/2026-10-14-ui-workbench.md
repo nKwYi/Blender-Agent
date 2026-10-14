@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 造一个本地 HTML 工作台，把 `blender_deepseek_agent` 的【AI 对话】tab 做成「镜像视图（实机截图 + 布局树并排、双向高亮）」+「提案视图（受限词汇表拼装、落笔即校验可行性）」，覆盖 7 个关键状态的完整序列。
+**Goal:** 造一个本地 HTML 工作台，把 `blender_deepseek_agent` 的【AI 对话】tab 做成「镜像视图（实机截图 + 布局树并排，点树节点高亮截图中的对应标注）+「提案视图（受限词汇表拼装、落笔即校验可行性）」，覆盖 7 个关键状态的完整序列。
+
+> **交付口径更正（2026-10-14 最终评审后）：** 本计划初版在此处写的是「双向高亮」，实际交付只有**单向**（树 → 截图标注高亮，`app.js` 的 `selectNode`）。反向高亮（点截图里的标注去选中树节点）**未交付，且以当前数据管线不可能交付**：`dev/layout_recorder.py` 的 `to_dict()` 不输出任何几何，`dev/capture_shots.py` 是整窗截图、不采集元素级坐标，`index.html` 的 `#shot` 只有一个裸 `<img>`、没有覆盖层。补齐它需要新的一轮 GUI 录制：按元素边界取坐标并写进 JSON，再加一个覆盖层。本计划不包含该录制轮次；双向高亮显式记为**延期项**，不是已完成项。
 
 **Architecture:** 离线数据管线，无常驻服务。布局树由无头 Blender 注入录制器导出 JSON；实机截图由一次最小化 GUI 运行批量产出。HTML 单页 `file://` 直开，无构建无依赖。约束注册表由实测的 `native_api.json` 生成，是提案视图唯一的可行性判据来源。
 
@@ -1518,6 +1520,7 @@ python dev\test_workbench_data.py
   --inner: #1d1d1d;
   --text: #e6e6e6;
   --text-dim: #989898;
+  --text-id: #c9c9c9;   /* wcol_curve.text_sel */
   --accent: #4772b3;
   --hover: #545454;
   --sel-text: #ffffff;
@@ -1557,7 +1560,7 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
 }
 .node:hover { background: #181818; }
 .node.sel { background: var(--accent); }
-.node .id { color: #7cb87c; font-family: Consolas, monospace; }
+.node .id { color: var(--text-id); font-family: Consolas, monospace; }
 .node .txt { color: var(--text); }
 .node .kind { color: var(--text-dim); font-size: 11px; margin-right: 6px; }
 /* alert 节点：没有可测量的红色，改用明度更暗的底 + 左侧实线竖条表达 */
@@ -2177,7 +2180,7 @@ function renderCanvas() {
     }
     n.errors.forEach(function (e) {
       var er = document.createElement("div");
-      er.style.color = "#e0716a";
+      er.style.color = "var(--text)";
       er.textContent = "违规：" + e;
       box.appendChild(er);
     });
@@ -2373,7 +2376,7 @@ powershell -ExecutionPolicy Bypass -File dev\run_all.ps1 2>&1 | Tee-Object dev\o
 |:---|:---|
 | Q1 双模式（镜像 + 提案） | Task 6 建镜像，Task 7 建提案 |
 | Q2 死守原生 UILayout | Global Constraints + Task 1 把 GPU 能力全部判为 blocked |
-| Q3 双轨（截图 + 布局树） | Task 4 出布局树，Task 5 出截图，Task 6 双栏并排 + 双向高亮 |
+| Q3 双轨（截图 + 布局树） | Task 4 出布局树，Task 5 出截图，Task 6 双栏并排 + 单向高亮（树→截图）；**双向高亮延期**——`to_dict()` 无几何、整窗截图无元素级坐标，需要一轮新的元素级录制，不在本计划内 |
 | Q4 受限词汇表、落笔即拦截 | Task 1 出约束，Task 7 出词汇表 + `validateWidget` |
 | Q5 区块与可交互控件埋点 | Task 3 的 `ui_ids.py` + Task 4 校验 `ids >= 5` |
 | Q6 只做【AI 对话】7 状态 | `dev/states.py` 的 `STATE_NAMES` |

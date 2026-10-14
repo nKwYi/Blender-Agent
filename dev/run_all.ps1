@@ -121,7 +121,9 @@ $TESTS = @(
     # The next two each spawn headless Edge 7-8 times (--headless=new --dump-dom)
     # to read the rendered DOM. Measured 4-5s each on this machine; a cold first
     # Edge launch (fresh profile) can take a minute. A quiet console here is normal.
-    # Their dom_* assertions go RED when no browser is found on purpose -- no fake green.
+    # No fake green: BOTH record a FAILing dom_browser_present assertion when no
+    # browser is found (UW_SKIP_DOM=1 is the explicit opt-out). Neither one may
+    # WARN-and-return with its dom_* assertions silently dropped while rc stays 0.
     @{ name = 'test_workbench_data'; summary = 'PASS [1-9]\d*\s+FAIL 0';              mustMatch = $true; engine = 'py'  },
     @{ name = 'test_proposal_vocab'; summary = 'PASS [1-9]\d*\s+FAIL 0';              mustMatch = $true; engine = 'py'  }
 )

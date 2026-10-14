@@ -193,8 +193,11 @@ def dom_key_check():
     """
     exe = find_browser()
     if not exe:
-        print("WARN 找不到 Edge/Chrome，跳过 dom_key_check"
-              "（渲染键唯一性未被验证）")
+        # 不能只 WARN 就 return：那样下面 31 条 dom_* 断言会全部蒸发，而 rc 仍
+        # 是 0——这正是全局约束禁掉的假绿（test_proposal_vocab.py:231 同理）。
+        # 默认记一条失败；确实没有浏览器的机器显式设 UW_SKIP_DOM=1 承认这一点。
+        ck("dom_browser_present", os.environ.get("UW_SKIP_DOM") == "1",
+           "找不到 Edge/Chrome，渲染键唯一性整条没跑（UW_SKIP_DOM=1 可显式承认）")
         return
     url_base = pathlib.Path(os.path.join(WB, "index.html")).as_uri()
     profile = tempfile.mkdtemp(prefix="uw_dom_")

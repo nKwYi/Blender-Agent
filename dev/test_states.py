@@ -40,6 +40,13 @@ EXPECTED = ["idle", "clarify", "options", "running", "done", "partial", "failed"
 # 断言非空洞：把 failed 状态混进循环里就会 FAIL。
 FAILED_MARK = "任务执行中断"
 
+# running 的忙碌文案。states.py:155 设的相位是 Phase.TOOL_RUNNING，calls 末位是
+# 带 spin 的 execute_blender_code，所以命中 ui.py:136-139 的 TOOL_RUNNING 分支。
+# 只断言 stop 按钮是没用的：REQUESTING 同属 BUSY（state.py:22），按钮断言在两个
+# 相位下都成立，相位回退不会被发现——文案才是相位真正落到画面的证据。
+BUSY_RUNNING_TEXT = "正在执行旋转车削一体化成型"
+BUSY_REQUESTING_TEXT = "正在构思三维几何结构与物理尺度"
+
 
 class _PanelStub(object):
     """DEEPSEEK_PT_chat.draw 只用到 self.layout，其余是类属性。"""
@@ -173,6 +180,13 @@ def main():
            (any(FAILED_MARK in t for t in texts)) == (name == "failed"),
            "失败文案与状态不符：含 %s=%s"
            % (FAILED_MARK, any(FAILED_MARK in t for t in texts)))
+
+        # 7) running 的忙碌文案必须锁在 TOOL_RUNNING 分支。
+        if name == "running":
+            ck("busy_text_running", BUSY_RUNNING_TEXT in texts,
+               "running 没渲染出 TOOL_RUNNING 分支文案，实际 %s" % texts)
+            ck("busy_not_requesting", BUSY_REQUESTING_TEXT not in texts,
+               "running 渲染出 REQUESTING 文案，run.phase 被回退了：%s" % texts)
 
     print("PASS %d  FAIL %d" % (TOTAL[0] - len(FAILS), len(FAILS)))
     sys.exit(1 if FAILS else 0)

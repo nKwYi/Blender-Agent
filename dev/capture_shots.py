@@ -14,8 +14,9 @@
 
 --background 下 bpy.app.timers 一次都不触发，所以本脚本只能 GUI 模式跑。
 
-判定依据只有日志里的 SHOTS 行：Blender 5.2.1 的 -P 脚本即使抛未捕获异常，
-进程退出码仍然是 0。
+判定依据：日志里的 SHOTS 行（正常路径）。Blender 5.2.1 的 -P 脚本即使抛未捕获
+异常，进程退出码仍然是 0，所以成功时不能只看 rc；反之 bail() 与安全网会
+os._exit(3)，rc=3 就是「没拍完/卡死」，必须当失败看。
 """
 import bpy
 import hashlib
