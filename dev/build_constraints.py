@@ -133,7 +133,18 @@ def main():
     print("total=%d allowed=%d blocked=%d" % (len(reg["entries"]), len(allowed), len(blocked)))
     print("ALLOWED %s" % " ".join(allowed))
     print("BLOCKED %s" % " ".join(blocked))
-    print("PASS %d  FAIL 0" % len(reg["entries"]))
+    # 汇总行必须由真实检查派生：生成器没有会失败的断言，但可以报出实际缺口，
+    # 让人 grep 不到"PASS"时看到的是事实而不是硬编码的 0。
+    no_ev = [e["key"] for e in reg["entries"] if not e.get("evidence")]
+    incomplete = [e["key"] for e in reg["entries"]
+                  if not e["native_ok"] and not (e.get("blocker") and e.get("fallback"))]
+    print("ENTRIES %d  evidence_ok %d  blocked_complete %d"
+          % (len(reg["entries"]), len(reg["entries"]) - len(no_ev),
+             len(blocked) - len(incomplete)))
+    if no_ev:
+        print("MISSING_EVIDENCE %s" % " ".join(no_ev))
+    if incomplete:
+        print("INCOMPLETE_BLOCKED %s" % " ".join(incomplete))
     return 0
 
 

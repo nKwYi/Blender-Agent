@@ -45,7 +45,12 @@ def main():
             ck("blocker_%s" % key, bool(e.get("blocker")), "blocked 项必须有 blocker")
             ck("fallback_%s" % key, bool(e.get("fallback")), "blocked 项必须有 fallback")
 
-    by_key = {e["key"]: e for e in entries}
+    # 不能裸取 e["key"]：缺 key 的条目必须已经被记录过，而不是在这里抛
+    # KeyError 吞掉末尾的汇总行。重复 key 会静默折叠，必须显式断言。
+    keys = [e.get("key", "") for e in entries]
+    dup = sorted({k for k in keys if k and keys.count(k) > 1})
+    ck("unique_keys", not dup, "重复 key: %s" % " ".join(dup))
+    by_key = {e["key"]: e for e in entries if e.get("key")}
 
     # 2026-10-14 实测的三条禁止项，必须全部判定为 blocked
     for key in ("hover", "custom_rgb", "font_size"):
@@ -57,6 +62,12 @@ def main():
     ck("blocked_real_scroll",
        "real_scroll" in by_key and by_key["real_scroll"]["native_ok"] is False,
        "侧栏滚轮实测不滚动，必须 blocked")
+
+    # 争议判定锁定：5.2.1 的 116 个 UILayout 函数中已无 context_menu（5.2 移除，
+    # 改由 menu_pie / popover 承担）。若有人把 call 改成 menu_pie 放行，此处必须变红。
+    ck("blocked_context_menu",
+       "context_menu" in by_key and by_key["context_menu"]["native_ok"] is False,
+       "context_menu 实测不存在，必须保持 blocked")
 
     # 原生可用项必须给出具体 API
     for key in ("collapsible_panel", "property_split", "flat_button", "grid_flow"):
