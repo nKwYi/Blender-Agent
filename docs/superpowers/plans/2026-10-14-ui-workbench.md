@@ -1560,7 +1560,8 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
 .node .id { color: #7cb87c; font-family: Consolas, monospace; }
 .node .txt { color: var(--text); }
 .node .kind { color: var(--text-dim); font-size: 11px; margin-right: 6px; }
-.node.alert { border-left-color: var(--alert); }
+/* alert 节点：没有可测量的红色，改用明度更暗的底 + 左侧实线竖条表达 */
+.node.alert { border-left-color: #727272; background: var(--alert-surrogate); }
 .node.disabled { opacity: .45; }
 .constraints { margin-top: 16px; border-top: 1px solid #545454; padding-top: 12px; }
 .constraints table { border-collapse: collapse; width: 100%; }
@@ -1568,10 +1569,12 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
   border: 1px solid #545454; padding: 4px 8px; text-align: left; vertical-align: top;
 }
 .badge { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; }
-.badge.ok { background: var(--ok); color: #fff; }
-.badge.no { background: var(--alert); color: #fff; }
+/* 可做 / 做不到 也只能用实测色区分——没有可测量的绿和红。
+   用底色明度 + 边框表达，不要编造红绿。 */
+.badge.ok { background: #222222; color: #e6e6e6; border: 1px solid #545454; }
+.badge.no { background: #1d1d1d; color: #d9d9d9; border: 1px dashed #545454; text-decoration: line-through; }
 .note { background: #181818; border: 1px solid #545454; border-radius: 4px; padding: 8px; margin: 6px 0; }
-.note.blocked { border-color: var(--alert); }
+.note.blocked { border-style: dashed; border-color: #727272; }
 textarea { width: 100%; min-height: 60px; background: var(--inner); color: var(--text);
            border: 1px solid #545454; border-radius: 4px; padding: 6px; }
 ```
