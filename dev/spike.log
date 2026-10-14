@@ -1,0 +1,38 @@
+Registered MACHIN3tools1.13.8 with 21 tools,10 pie menus
+Reloading external rigs...
+Reloading external metarigs...
+MP7Tools Restore Preferences v2.4.4
+MP7Tools Registered 22 keymaps
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_run', bl_idname 'deepseek.run_prompt' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_stop', bl_idname 'deepseek.stop' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_approve', bl_idname 'deepseek.approve' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_undo_task', bl_idname 'deepseek.undo_task' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_show', bl_idname 'deepseek.show_call' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_export', bl_idname 'deepseek.export' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_clear', bl_idname 'deepseek.clear' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_new_task', bl_idname 'deepseek.new_task' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_fetch_models', bl_idname 'deepseek.fetch_models' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_set_model', bl_idname 'deepseek.set_model' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_quick_pill', bl_idname 'deepseek.quick_pill' 已被注册过, 注销先前的
+register_class(...):
+信息: Registering operator class: 'DEEPSEEK_OT_submit_selection', bl_idname 'deepseek.submit_selection' 已被注册过, 注销先前的
+register_class(...):
+信息: 注册面板类： 'DEEPSEEK_PT_chat', bl_idname 'DEEPSEEK_PT_chat' 已被注册过, 注销先前的
+register_class(...):
+信息: 注册面板类： 'DEEPSEEK_PT_detail', bl_idname 'DEEPSEEK_PT_detail' 已被注册过, 注销先前的
+register_class(...):
+信息: 注册面板类： 'DEEPSEEK_PT_settings', bl_idname 'DEEPSEEK_PT_settings' 已被注册过, 注销先前的
+register_class(...):
+警告: 'SP_PT' 不包含带有前缀和后缀的 '_PT_'
+SPIKE_READY tab='UNSUPPORTED' handlers={"UI": "added", "WINDOW": "added"}

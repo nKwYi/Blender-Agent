@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek Agent · 新版 UI 需求与交互原型（交接给设计方）</title>
+<style>
+  :root{
+    --bg:#191919; --bg2:#202020; --panel:#2b2b2b; --panel2:#3a3a3a; --box:#252525;
+    --line:#141414; --line2:#3a3a3a; --txt:#dcdcdc; --dim:#8f8f8f; --dim2:#6b6b6b;
+    --blue:#4772b3; --blue2:#2f4b73; --orange:#ed9a21; --green:#7cb87c; --red:#e0716a; --cyan:#4ec9d4;
+    --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  a{color:#8fb6e8}
+  code{font:12.5px var(--mono);background:#151515;border:1px solid #2c2c2c;border-radius:3px;padding:0 4px;color:#cfe3ff}
+  header{padding:26px 30px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#252525,#191919)}
+  h1{margin:0 0 4px;font-size:21px}
+  h2{margin:34px 30px 12px;font-size:16px;color:var(--orange);letter-spacing:.4px}
+  h2 .n{color:var(--dim2);font-weight:400;font-size:13px;margin-left:8px}
+  .lead{color:var(--dim);font-size:13px;max-width:1180px}
+  .hard{margin:16px 0 0;padding:12px 15px;border-left:3px solid var(--red);background:#241f1f;max-width:1180px;font-size:13px}
+  .hard b{color:var(--red)}
+  .bar-top{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+  .btn{background:#545454;border:1px solid var(--line);border-radius:3px;padding:4px 11px;font-size:12.5px;color:#eee;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:#626262}
+  .btn.blue{background:var(--blue2)} .btn.blue:hover{background:#3a5c8c}
+  .btn.red{background:#5a2f2c} .btn.red:hover{background:#6d3935}
+  .btn.on{background:var(--blue);color:#fff;border-color:#1d2f47}
+  main{padding-bottom:90px}
+  section{max-width:1400px}
+  /* ---------- 能力契约 ---------- */
+  .cap{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;margin:0 30px}
+  .cap>div{background:var(--bg2);border:1px solid var(--line2);border-radius:5px;padding:13px 15px}
+  .cap h3{margin:0 0 8px;font-size:13.5px;letter-spacing:.4px}
+  .cap h3.ok{color:var(--green)} .cap h3.no{color:var(--red)} .cap h3.tbd{color:var(--orange)}
+  .cap ul{margin:0;padding-left:17px;font-size:12.8px}
+  .cap li{margin:3px 0}
+  .cap li b{color:#fff;font-weight:600}
+  .ev{font:10.5px/1.4 var(--mono);color:var(--dim2)}
+  /* ---------- 状态机沙盒 ---------- */
+  .lab{display:flex;gap:18px;margin:0 30px;align-items:flex-start;flex-wrap:wrap}
+  .side{flex:0 0 232px;background:var(--bg2);border:1px solid var(--line2);border-radius:5px;padding:10px;max-height:820px;overflow:auto}
+  .side .grp{font:11px/1.5 var(--mono);color:var(--dim2);letter-spacing:1px;margin:12px 0 4px;text-transform:uppercase}
+  .side button{display:block;width:100%;text-align:left;background:transparent;border:0;border-left:2px solid transparent;color:#c6c6c6;font-size:12.3px;padding:3px 7px;cursor:pointer;border-radius:0 3px 3px 0}
+  .side button:hover{background:#2c2c2c}
+  .side button.on{background:var(--blue2);border-left-color:var(--orange);color:#fff}
+  .stage{flex:1;min-width:520px}
+  .why{background:#20262e;border:1px solid #2c3a4a;border-left:3px solid var(--blue);border-radius:4px;padding:10px 13px;font-size:12.8px;margin-bottom:14px}
+  .why b{color:#a9c8ee}
+  .why .ask{margin-top:6px;color:var(--orange);font-size:12.3px}
+  .viewport{position:relative;background:#3d3d3d;border:1px solid var(--line);border-radius:4px 4px 0 0;height:118px;overflow:hidden}
+  .viewport .gizmo{position:absolute;right:12px;top:9px;font:10px var(--mono);color:#9a9a9a}
+  .viewport .cube{position:absolute;left:38%;top:30px;width:52px;height:52px;background:#bcbcbc;border-radius:2px;transform:rotate(-13deg) skewY(6deg)}
+  .viewport .cube.red{background:#c0392b}
+  .viewport .hudslot{position:absolute;left:8px;right:8px;bottom:8px}
+  .bpwrap{display:flex;align-items:stretch;background:var(--bg2);border:1px solid var(--line);border-top:0;border-radius:0 0 4px 4px;padding:8px;gap:6px}
+  .bp{background:#2d2d2d;border:1px solid var(--line);border-radius:3px;overflow:hidden;transition:width .18s}
+  .bp-h{padding:5px 9px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:12.5px;display:flex;align-items:center;gap:6px}
+  .bp-h:before{content:"⌄";color:var(--dim);font-size:10px}
+  .bp-h .r{margin-left:auto;font:10.5px var(--mono);color:#9a9a9a;display:flex;align-items:center;gap:5px}
+  .bp-b{padding:8px}
+  .tabs{display:flex;flex-direction:column;gap:2px;padding-top:6px}
+  .tabs span{writing-mode:vertical-rl;font-size:10px;padding:8px 2px;border-radius:2px;background:#2d2d2d;color:var(--dim);border:1px solid var(--line)}
+  .tabs span.on{background:var(--blue);color:#fff}
+  .row{display:flex;align-items:center;gap:6px;margin:4px 0;font-size:12.4px}
+  .lbl{color:#c8c8c8} .dim{color:var(--dim)} .small{font-size:11px}
+  .inp{flex:1;background:#181818;border:1px solid var(--line);border-radius:3px;padding:3px 6px;color:#e4e4e4;font-size:12px;white-space:pre-wrap;word-break:break-all}
+  .inp.area{min-height:58px;line-height:1.5}
+  .inp.ro{color:#9a9a9a}
+  .box{background:var(--box);border:1px solid var(--line);border-radius:3px;padding:7px;margin:6px 0}
+  .box.alert{border-left:3px solid var(--red);background:#2a2323}
+  .box.ok{border-left:3px solid var(--green)}
+  .box.warn{border-left:3px solid var(--orange);background:#2a2620}
+  .box.dis{opacity:.45}
+  .hd{font:11px/1.4 var(--mono);color:var(--dim);letter-spacing:.7px;margin:9px 0 3px;text-transform:uppercase;display:flex;align-items:center;gap:5px;cursor:default}
+  .hd.tog{cursor:pointer} .hd.tog:hover{color:#c6c6c6}
+  .stat{display:flex;align-items:center;gap:5px;font-size:12px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:#555}
+  .dot.g{background:var(--green)} .dot.r{background:var(--red)} .dot.o{background:var(--orange)}
+  .dot.c{background:var(--cyan);animation:pulse 1.2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .ring{width:12px;height:12px;border-radius:50%;border:2px solid #4a4a4a;border-top-color:var(--orange);display:inline-block;flex:0 0 auto}
+  .ring.spin{animation:sp .9s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .bar{height:6px;background:#181818;border:1px solid #101010;border-radius:3px;overflow:hidden;flex:1;min-width:40px}
+  .bar i{display:block;height:100%;background:var(--blue)}
+  .bar i.warn{background:var(--orange)} .bar i.bad{background:var(--red)}
+  .msg{margin:5px 0;font-size:12px}
+  .msg .who{font:10px/1.5 var(--mono);color:var(--dim2);letter-spacing:.5px}
+  .msg .txt{background:var(--box);border:1px solid var(--line);border-radius:4px;padding:5px 7px;color:#d6d6d6;word-break:break-all}
+  .msg.me .txt{background:#2f3a4a;border-color:#1b232e}
+  .msg.sys .txt{background:#202020;color:#9a9a9a;font-size:11.5px}
+  .trow{display:flex;align-items:center;gap:5px;font:11.6px/1.5 var(--mono);color:#bdbdbd;cursor:pointer;padding:2px 3px;border-radius:2px}
+  .trow:hover{background:#333}
+  .trow .ic{width:13px;text-align:center;flex:0 0 auto}
+  .ic.ok{color:var(--green)} .ic.er{color:var(--red)} .ic.run{color:var(--orange)} .ic.dis{color:var(--dim2)}
+  .out{display:none;background:#131313;border:1px solid #0d0d0d;border-radius:3px;padding:5px 7px;font:11px/1.5 var(--mono);color:#8fbf8f;white-space:pre-wrap;margin:2px 0 4px 18px;word-break:break-all}
+  .out.on{display:block}
+  .thumb{width:56px;height:40px;background:linear-gradient(135deg,#5a6b7d,#2c333a);border:1px solid var(--line);border-radius:2px;position:relative}
+  .thumb:after{content:"";position:absolute;left:18px;top:13px;width:20px;height:15px;background:#c0392b;transform:rotate(-10deg)}
+  /* HUD */
+  .hud{background:rgba(26,26,26,.97);border:1px solid #000;border-radius:7px;position:relative;box-shadow:0 8px 22px rgba(0,0,0,.55);cursor:default}
+  .hud:before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);border-radius:7px 7px 0 0}
+  .hud-h{display:flex;align-items:center;gap:7px;padding:6px 9px 0;font:10px/1 var(--mono);color:#8f8f8f;letter-spacing:1px;cursor:move}
+  .hud-h .grip{margin-left:auto;color:#5a5a5a;letter-spacing:0}
+  .hud-i{display:flex;align-items:center;gap:6px;padding:6px 9px}
+  .hud-t{flex:1;font-size:11.6px;color:#cfcfcf;background:#121212;border:1px solid #000;border-radius:4px;padding:4px 6px;min-height:32px}
+  .cur{display:inline-block;width:1px;height:12px;background:var(--cyan);vertical-align:-2px;animation:pulse 1s steps(1) infinite}
+  .hud-f{padding:0 9px 7px;font-size:10px;color:#6f6f6f}
+  /* 需求卡 */
+  .reqs{margin:0 30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(520px,1fr));gap:14px}
+  .req{background:var(--bg2);border:1px solid var(--line2);border-radius:5px;padding:13px 15px}
+  .req h3{margin:0 0 7px;font-size:14px;display:flex;align-items:center;gap:8px}
+  .req .id{font:11px var(--mono);color:#fff;background:var(--blue2);border-radius:3px;padding:1px 6px}
+  .req .id.p1{background:#4a3a6a} .req .id.p2{background:#5a3f2a}
+  .req dl{margin:0;font-size:12.7px}
+  .req dt{float:left;clear:both;width:74px;color:var(--dim2);font-size:11.5px;padding-top:2px}
+  .req dd{margin:0 0 5px 80px}
+  .req dd b{color:#fff;font-weight:600}
+  .cost{margin-left:auto;font:11px var(--mono);padding:1px 7px;border-radius:9px;border:1px solid #3a3a3a;color:var(--dim)}
+  .cost.lo{border-color:#3d5a3d;color:#9d9} .cost.md{border-color:#5a5a3d;color:#dd9} .cost.hi{border-color:#5a3535;color:#d99}
+  /* 交付要求 */
+  .dd{margin:0 30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:16px}
+  .dd>div{background:var(--bg2);border:1px solid var(--line2);border-radius:5px;padding:13px 15px}
+  .dd h3{margin:0 0 8px;font-size:13.5px}
+  .dd ul{margin:0;padding-left:18px;font-size:12.8px}
+  .dd li{margin:4px 0}
+  .tpl{margin:14px 30px 0;background:#131313;border:1px solid var(--line2);border-radius:5px;padding:14px 16px;font:12px/1.7 var(--mono);color:#b9c9b9;white-space:pre-wrap;max-width:1340px}
+  .foot{margin:34px 30px 0;padding:13px 15px;background:#202020;border:1px solid var(--line2);font-size:12.4px;color:var(--dim);max-width:1340px}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#2f4b73;color:#eaf1ff;padding:7px 16px;border-radius:16px;font-size:12.5px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+  .toast.on{opacity:1}
+  .filter{display:flex;gap:6px;margin:0 30px 12px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>DeepSeek Agent · 新版 UI 需求与交互原型</h1>
+  <div class="lead">这份文件是<b>交接物</b>：给设计方（人或 AI）做新版界面设计用。里面 ① 锁死了 Blender 5.2 真实能用什么控件 ② 列了全部界面状态（可点） ③ 逐条需求带控件级实现约束和验收标准 ④ 交付格式要求。<b>右侧沙盒里的每个小面板都是"用 Blender 真做得出来的样子"画的，不是网页效果图。</b></div>
+  <div class="hard">
+    <b>最重要的一条硬约束：</b>Blender 面板<b>没有颜色系统、没有字体控制、没有 CSS 动画</b>。可表达的状态色只有两种——<code>layout.alert = True</code>（红）与 <code>active/enabled</code>（灰）。图标只能用内置枚举（<b>5.2 共 1033 个，名字写错会让整块面板从那一行起静默截断</b>，这是我们踩过的真实事故）。任何"渐变卡片、圆角气泡、悬浮层、淡入动画、品牌色"的方案都<b>无法实现</b>，请直接不要提。
+  </div>
+  <div class="bar-top">
+    <button class="btn blue" id="copyBrief">📋 复制给设计方的任务书</button>
+    <span class="dim small">面板宽度：</span>
+    <button class="btn on" data-w="272">默认（bl_ui_units_x=0）</button>
+    <button class="btn" data-w="360">加宽（bl_ui_units_x≈24）</button>
+    <button class="btn" data-w="200">极窄（侧栏被拖窄时）</button>
+    <span class="dim small" id="liveNote"></span>
+  </div>
+</header>
+
+<main>
+<!-- ============ 1 能力契约 ============ -->
+<h2>① 能力契约 <span class="n">全部在 Blender 5.2.1 上用 RNA 探针实测；标"未验证"的不要当依据</span></h2>
+<div class="cap">
+  <div>
+    <h3 class="ok">✓ 可用（已实测）</h3>
+    <ul>
+      <li><b>多行输入</b> <code>UILayout.textbox(data,"prop", initial_visible_lines=3, placeholder=…, text_ctxt=…, translate=)</code> —— 属性侧<b>没有</b> MULTILINE，多行框在布局侧</li>
+      <li><b>进度</b> <code>row.progress(type='RING'|'BAR', factor=0..1)</code>（枚举只有这两个）</li>
+      <li><b>列表</b> <code>template_list</code> + <code>bpy.types.UIList</code> + <code>CollectionProperty</code></li>
+      <li><b>显示图片</b> <code>template_icon(icon_value=…, scale=)</code>、<code>template_icon_view(data,property,show_labels,scale,scale_popup)</code>；<code>image.preview</code> 存在（实例属性）</li>
+      <li><b>布局</b> <code>split / column_flow / grid_flow / box / row / column / separator / label / icon / panel / panel_prop</code></li>
+      <li><b>可写样式</b> <code>alert, active, enabled, emboss, alignment, direction, scale_x, scale_y, ui_units_x, ui_units_y, use_property_split, operator_context, activate_init</code></li>
+      <li><b>面板形态</b> <code>Panel.bl_ui_units_x</code>（最小宽度）、<code>bl_parent_id</code>（子面板）、<code>bl_options = DEFAULT_CLOSED | HIDE_HEADER | INSTANCED | HEADER_LAYOUT_EXPAND</code>、<code>use_pin</code>、<code>is_popover</code>、<code>bl_category</code>、<code>bl_icon</code></li>
+      <li><b>弹层</b> <code>wm.invoke_popup</code>、<code>prop_with_popover</code>、<code>prop_with_menu</code>、<code>menu_pie</code>、<code>operator_menu_enum</code>、<code>operator_enum</code>、<code>prop_search</code>、<code>props_enum</code></li>
+      <li><b>文本块承载长内容</b> <code>template_ID(space,"text")</code> + <code>bpy.data.texts</code>（面板里塞不下长 JSON 时的正解）</li>
+      <li><b>视口自绘</b> <code>SpaceView3D.draw_handler_add</code> + <code>gpu.types.GPUShader</code> + <code>gpu_extras.batch.batch_for_shader</code> + <code>blf</code> → 所以"视口内 HUD 命令条"技术上成立</li>
+      <li><b>异步与定时</b> <code>bpy.app.timers.register</code>（0.05 s tick 是同行用的节奏）</li>
+      <li><b>快捷键</b> <code>window_manager.keyconfigs.addon.keymaps</code> 存在 → 能做，那几家不做是选择不是不能</li>
+      <li><b>纯文本 tooltip</b> 任何属性的 <code>description=</code></li>
+    </ul>
+  </div>
+  <div>
+    <h3 class="no">✗ 不可用（已实测不存在，别再设计上去）</h3>
+    <ul>
+      <li><code>StringProperty(subtype='MULTILINE')</code> —— 合法 subtype 只有 <code>FILE_PATH / DIR_PATH / FILE_NAME / BYTE_STRING / PASSWORD / NONE</code></li>
+      <li><code>UILayout.menu_enum</code>、<code>operator_search</code>、<code>toolbar_item</code>、<code>constraint</code></li>
+      <li><code>Panel.bl_options</code> 里<b>没有</b> <code>SCROLLABLE</code> 之类的枚举；Panel 属性表里没有任何滚动开关</li>
+      <li>任意 RGB 颜色 / 字体 / 字号 / 行高 / 圆角 / 阴影 / 透明度 / 动画时长 —— 只有 <code>alert</code> 与 <code>scale_*</code></li>
+      <li><b>图标名黑名单（实测不存在）</b>：<code>PREFS</code>（正确是 <code>PREFERENCES</code>）、<code>DOC</code>、<code>NETWORK</code>、<code>TOKEN</code></li>
+      <li><b>图标名白名单（实测存在，可直接点名用）</b>：<code>CHECKMARK · ERROR · TIME · INFO · TEXT · CONSOLE · PLAY · CANCEL · X · PREFERENCES · SETTINGS · OPTIONS · FILE_TICK · ADD · REMOVE · TRASH · ARROW_LEFTRIGHT · EYEDROPPER · DUPLICATE · LINKED · UNLINKED · HELP · URL · FUND · PLUGIN · PROJECT · MENU_PANEL · GRIP · RADIOBUT_ON/OFF · CHECKBOX_HLT · TRIA_DOWN/RIGHT/UP/LEFT · DISCLOSURE_TRI_DOWN · STATUS_INFO · STATUS_WARNING · STATUS_ERROR · RECOVER_LAST · FILE_SCRIPT · ASSET_MANAGER</code></li>
+    </ul>
+  </div>
+  <div>
+    <h3 class="tbd">? 需要 GUI 实测后才能定（别猜）</h3>
+    <ul>
+      <li><b>侧栏内容超高时到底能不能滚</b>：RNA 里没有 scrollable，但界面实测可能整块 UI 区可滚。这直接决定"转录区最多放多少行"。<span class="ev">测法：注册一个画 200 行 label 的 Panel，开 GUI 看。</span></li>
+      <li><code>textbox</code> 里 <kbd>Enter</kbd> / <kbd>Shift+Enter</kbd> 的实际行为（提交？换行？）—— 决定"执行"按钮要不要保留。</li>
+      <li><code>label</code> 文本被<b>从中间裁断</b>的确切触发宽度（同行项目实测存在此现象，故长文本必须自己折行）。</li>
+      <li><code>template_list</code> 的行高、能否显示多行折行内容、有没有滚动条。</li>
+      <li><b>本机环境约束：</b>无头渲染全黑（EEVEE 无 GL 上下文）、<code>render.opengl</code> 无头直接报错 → <b>任何"截图回传给模型"的功能只能在有 GUI 时用，必须设计降级</b>。</li>
+      <li>本机走系统代理 <code>127.0.0.1:7890</code>；代理没开时报的是 <b>502</b> 而不是连接失败 → 错误态文案必须覆盖这一类。</li>
+    </ul>
+  </div>
+  <div>
+    <h3 style="color:#a9c8ee">◉ 产品前提（不是界面，但会影响设计）</h3>
+    <ul>
+      <li>模型：<code>deepseek-flash</code>（<code>deepseek-v4-flash</code> 已被官方标记弃用）；模型名在偏好设置里可改。</li>
+      <li>实测一条指令：<b>4 轮 / 3.9 秒 / 输入 1576 token（缓存命中 1408）/ 输出 61 token ≈ ¥0.0004</b>。→ <b>不要为省 token 牺牲多轮历史</b>，钱不是约束。</li>
+      <li>当前只有 5 个工具：<code>get_scene_info / create_primitive / set_material / transform_object / execute_blender_code</code>。</li>
+      <li>网络请求<b>同步阻塞主线程</b>（MVP 决定）。所以"停止"只能停在<b>轮与轮之间</b>，中断不了正在飞的那一次 HTTP 读——<b>界面文案必须诚实，不能画一个像"立即取消"的按钮</b>。</li>
+      <li>Key 存在 Blender 偏好设置里，<b>明文</b>；<code>PASSWORD</code> 子类型只是显示打码。</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ 2 状态机 ============ -->
+<h2>② 全部界面状态 <span class="n">点左边任意一个，右边面板切到那个态；标 ★ 的是必须做的设计难点</span></h2>
+<div class="lab">
+  <div class="side" id="stateList"></div>
+  <div class="stage">
+    <div class="why" id="whyBox"></div>
+    <div class="viewport" id="vp">
+      <div class="gizmo">X Y Z</div><div class="cube" id="vpCube"></div>
+      <div class="hudslot" id="hudSlot"></div>
+    </div>
+    <div class="bpwrap">
+      <div class="bp" id="bp" style="width:272px"><div class="bp-h">DeepSeek Agent<span class="r" id="bpHead"></span></div><div class="bp-b" id="bpBody"></div></div>
+      <div class="tabs"><span class="on">AI Agent</span><span>工具</span><span>视图</span><span>选项</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3 需求清单 ============ -->
+<h2>③ 需求清单 <span class="n">每条都写了"必须用哪个控件实现"和"怎么算做完"</span></h2>
+<div class="filter">
+  <span class="dim small">筛选：</span>
+  <button class="btn on" data-f="all">全部</button>
+  <button class="btn" data-f="p0">P0 只改 ui.py</button>
+  <button class="btn" data-f="p1">P1 加逻辑</button>
+  <button class="btn" data-f="p2">P2 抢眼的但贵</button>
+</div>
+<div class="reqs" id="reqList"></div>
+
+<!-- ============ 4 交付要求 ============ -->
+<h2>④ 给设计方的要求</h2>
+<div class="dd">
+  <div>
+    <h3 style="color:var(--green)">必须做到</h3>
+    <ul>
+      <li>输出<b>控件级</b>方案：每个元素点名用哪个 Blender API（<code>textbox</code> / <code>progress</code> / <code>template_list</code> / <code>operator</code> + 具体图标名…）。只给视觉效果图视为未完成。</li>
+      <li>图标只能从上面<b>白名单</b>里选，且必须写出名字。</li>
+      <li>同时给<b>默认宽 / 加宽 / 极窄</b>三档（顶部按钮可切，注意 <code>word-break</code> 后中文不溢出）。</li>
+      <li>每个状态给<b>完整中文文案</b>（含错误态下一步动作），不要留 <code>Lorem</code> 或"待定"。</li>
+      <li>长文本必须设计折行方案（Blender 会把过长 label 从中间裁断）。</li>
+      <li>状态优先级：<b>忙态与错误态</b> 是这次重做的核心目标，不能只美化空闲态。</li>
+    </ul>
+  </div>
+  <div>
+    <h3 style="color:var(--red)">不要做</h3>
+    <ul>
+      <li>不要 hover 效果、不要 CSS 动画/过渡、不要自定义字体或颜色、不要圆角阴影渐变。</li>
+      <li>不要假设能滚动面板（见"未验证"清单），除非你把"实测方法"一起写进去。</li>
+      <li>不要设计"立即取消正在发送的请求"这类做不到的交互。</li>
+      <li>不要引入登录/账号/云同步（用户明确拒绝鉴权类设计）。</li>
+      <li>不要把对话挪到外部客户端 —— 本项目就是要在 Blender 里做完。</li>
+      <li>不要新增需要 pip 安装的第三方依赖（Blender 内嵌 Python 里装不了 <code>openai</code>，这是实测结论）。</li>
+    </ul>
+  </div>
+  <div>
+    <h3 style="color:#a9c8ee">必须回答的问题</h3>
+    <ul>
+      <li>28 个状态里，哪些能合并进同一屏而不靠折叠隐藏？（折叠=看不见=等于没有）</li>
+      <li>多轮历史堆到 20 条时，这一屏怎么排？给三种方案。</li>
+      <li>"可撤销回执"放在哪一层，才能让人在<b>提交后 1 秒内</b>看到它改了什么？</li>
+      <li>视口截图缩略图（<code>template_icon</code>）值不值得占这一格？它只在有 GUI 时可用。</li>
+      <li>错误态怎么在不使用颜色的前提下区分"我能自己重试"和"你得去改设置"？</li>
+    </ul>
+  </div>
+  <div>
+    <h3 style="color:var(--orange)">真数据（用这些设计，别编）</h3>
+    <ul>
+      <li>成功回复：<i>"我在场景中创建了一个 1 米见方的立方体 RedCube（位于 [2, 0, 0.5]，避免与原有 Cube 重叠），并赋予了纯红色（[1,0,0]）、非金属、中等粗糙度的 PBR 材质。"</i></li>
+      <li>工具返回：<code>{"status":"ok","object_name":"RedCube","material":"MAT_RedCube","base_color":[1,0,0,1],"inputs_set":["Base Color","Metallic","Roughness"]}</code></li>
+      <li>usage：<code>{"prompt_tokens":1576,"completion_tokens":61,"prompt_cache_hit_tokens":1408,"prompt_cache_miss_tokens":168}</code></li>
+      <li>缺 Key：<i>"未配置 DeepSeek API Key：编辑 → 偏好设置 → 插件 → Blender DeepSeek Agent 里填入，或设置环境变量 DEEPSEEK_API_KEY"</i></li>
+      <li>断网：<i>"连不上 DeepSeek：&lt;urlopen error …&gt;（当前走系统代理 http://127.0.0.1:7890，确认它还开着）"</i></li>
+      <li>墙钟耗尽：<i>"已达到最大对话轮次或超时预算，操作可能只做了一半。"</i></li>
+      <li>exec 崩溃：<code>{"error":"ZeroDivisionError: division by zero","type":"ZeroDivisionError","stdout":""}</code></li>
+    </ul>
+  </div>
+</div>
+<div class="tpl" id="outTpl"></div>
+
+<div class="foot">
+  <b>证据来源。</b>①②③ 里所有"已实测"条目，都是我在 <b>Blender 5.2.1 LTS</b>（本机 <code>D:\blender-4.5.5-windows-x64\blender5.2</code>，内嵌 CPython 3.13.13）上用 RNA 探针逐条查出来的：控件方法取自 <code>UILayout.bl_rna.functions</code>，可写属性取自 <code>UILayout.bl_rna.properties</code>，图标名取自 <code>…functions['operator'].parameters['icon'].enum_items</code>（共 1033 项），面板枚举取自 <code>Panel.bl_rna.properties['bl_options']</code>。真数据取自 2026-10-08 一次真实端到端运行（<code>dev/out/real_api.json</code>）。<br>
+  <b>已知的自家缺陷，设计时请一并考虑：</b>当前 v0.1 无多轮历史（每条指令都是全新对话）、执行期间界面卡死且无忙态证据、工具返回压成一行 <code>→ ok</code>、错误混在回复正文里、token 数据有但没画。
+</div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= 状态定义 ================= */
+const S = {};
+function hd(t, extra){ return '<div class="hd">'+t+(extra||'')+'</div>'; }
+function box(cls, html){ return '<div class="box '+(cls||'')+'">'+html+'</div>'; }
+function row(html){ return '<div class="row">'+html+'</div>'; }
+function msg(who, txt, cls){ return '<div class="msg '+(cls||'')+'"><div class="who">'+who+'</div><div class="txt">'+txt+'</div></div>'; }
+function trow(name, st, out, dur){
+  const ic = st==='ok'?'✓':st==='er'?'✕':st==='run'?'◷':'·';
+  return '<div class="trow" data-out="'+encodeURIComponent(out||'')+'"><span class="ic '+st+'">'+ic+'</span>'+name+
+         ' <span class="dim small">'+(st==='run'?'running…':(dur?dur+'s · ':'')+'展开')+'</span></div>'+
+         '<div class="out">'+(out||'')+'</div>';
+}
+function key(ok, src){ return row('<span class="dot '+(ok?'g':'r')+'"></span><span class="lbl">'+(ok?'Key 已配置（'+src+'）':'缺少 API Key')+'</span>'); }
+function budget(pct, cls){ return row('<span style="font:11px var(--mono)">≈'+(pct*80/100).toFixed(1)+'k / 8k</span><div class="bar"><i class="'+(cls||'')+'" style="width:'+pct+'%"></i></div><span class="small">'+pct+'%</span>'); }
+function receipt(a,b,extra){ return box('ok', hd('可撤销','')+ '<div style="font:11px var(--mono);color:#b9b9b9">objects: '+a+' → '+b+(extra||'')+'</div>'); }
+const RUNHDR = '<span class="ring spin"></span>';
+
+const STATES = [
+  {g:'配置态', n:'1 未配 Key ★', why:'现在：只有一行红字提示，用户不知道下一步点哪。<br><b>设计目标：把"去哪填"变成一次点击就能到的动作</b>，并说清"存明文"这件事。',
+   body:()=> key(false)+box('alert','填了 Key 才能用')+row('<button class="btn blue" style="flex:1">⚙ 去偏好设置里填</button>')+box('','<div class="small dim">提示：这个值会以明文写进 Blender 偏好设置文件，打码只是显示层。不想落盘可留空并改用环境变量 <code>DEEPSEEK_API_KEY</code>。</div>')},
+  {g:'配置态', n:'2 Key 来自偏好设置', why:'要能区分 Key 从哪来 —— 排查"为什么换机器就不能用"时这是第一现场。', body:()=> key(true,'偏好设置')+row('<span class="dim small">模型: deepseek-flash</span>')+row('<div class="inp">创建一个红色立方体</div>')+row('<button class="btn blue" style="flex:1">▶ 执行</button>')},
+  {g:'配置态', n:'3 Key 来自环境变量', why:'同一屏要能表达两种来源，不能只显示"已配置"。', body:()=> key(true,'环境变量')+row('<span class="dim small">模型: deepseek-flash</span>')+row('<div class="inp">创建一个红色立方体</div>')+row('<button class="btn blue" style="flex:1">▶ 执行</button>')},
+  {g:'配置态', n:'4 Key 无效 401 ★', why:'现在错误混在回复正文里。401 的下一步动作是"去改设置"，不是"重试"——<b>两类错误必须在无颜色的情况下可区分</b>。',
+   body:()=> key(true,'偏好设置')+box('alert','<div class="small"><b>DeepSeek 返回 401（API Key 无效）：</b>Authentication Fails</div>'+row('<button class="btn">⚙ 改 Key</button><span class="dim small">重试无意义，必须改设置</span>'))},
+  {g:'配置态', n:'5 余额不足 402', why:'402 的下一步是"去充值"，界面上要能给出 URL 动作。', body:()=> key(true,'偏好设置')+box('alert','<div class="small"><b>DeepSeek 返回 402：</b>余额不足</div>'+row('<button class="btn">↗ 打开充值页</button><button class="btn">↻ 充完重试</button>'))},
+
+  {g:'空闲 / 输入', n:'6 空闲（现状基线）', why:'这是 v0.1 实际长什么样 —— 信息其实都有，但全糊成纯文本，没有层级。',
+   body:()=> key(true,'偏好设置')+row('<span class="dim small">模型: deepseek-flash</span>')+row('<div class="inp">创建一个红色立方体</div><span class="dim">✕</span>')+row('<button class="btn blue" style="flex:1">▶ 执行</button>')+hd('回复')+box('','<div class="small">我在场景中创建了一个 1 米见方的立方体 RedCube（位于 [2, 0, 0.5]，避免与原有 Cube 重叠），并赋予了纯红色 PBR 材质。</div>')+hd('工具调用')+box('','<div style="font:11px/1.7 var(--mono);color:#b0b0b0">4 轮 · 3.9 秒<br>token：输入 1576（缓存命中 1408），输出 61<br>1. get_scene_info → ok<br>2. create_primitive → ok<br>3. set_material → ok</div>')+row('<button class="btn">✕ 清空</button>')},
+  {g:'空闲 / 输入', n:'7 输入中（多行 textbox）★', why:'单行装不下复合指令。textbox 是唯一的多行输入控件（已实测存在）。',
+   body:()=> key(true,'偏好设置')+hd('指令')+row('<div class="inp area">建一个 2 米的球放在 (3,0,1)，<br>给它金属材质 roughness 0.2，<br>再复制 3 个排成一排<span class="cur"></span></div><span class="dim small">72</span>')+row('<button class="btn blue" style="flex:1">▶ 执行</button><button class="btn">↺</button>')},
+  {g:'空闲 / 输入', n:'8 场景为空', why:'模型第一句永远是 get_scene_info；空场景时界面上应给出可用示例，降低"不知道能说什么"。',
+   body:()=> row('<span class="dot"></span><span class="dim small">场景里 0 个物体</span>')+box('','<div class="small dim">试试：<br>· 创建一个红色立方体<br>· 建一个平面当地面<br>· 加一盏三点布光</div>')+row('<div class="inp">创建一个红色立方体</div>')+row('<button class="btn blue" style="flex:1">▶ 执行</button>')},
+  {g:'空闲 / 输入', n:'9 全局撤销未开 ★', why:'AI 改完东西，用户最想要的是"退回"。Blender 的全局撤销关掉时改动无法回退 —— 此时应<b>阻断发送</b>并一键打开，而不是事后道歉。',
+   body:()=> box('alert','<div class="small"><b>全局撤销已关闭</b>，AI 的改动将无法用 Ctrl+Z 退回。</div>'+row('<button class="btn blue">✓ 打开全局撤销</button><button class="btn dis">▶ 执行</button>'))+row('<div class="inp">创建一个红色立方体</div>')},
+
+  {g:'执行中', n:'10 请求中 · 第 1 轮', why:'忙态证据的最小版本：让人知道"在等网络"，不是卡死。',
+   body:()=> row(RUNHDR+'<span class="small">与 DeepSeek 往返 1/4 轮</span><span class="dim small" style="margin-left:auto">2s</span>')+row('<div class="inp area ro">创建一个红色立方体</div>')+row('<button class="btn red" style="flex:1">✕ 停止</button>')+box('','<div class="small dim">停止只能停在轮与轮之间，中断不了正在飞的这次请求。</div>')},
+  {g:'执行中', n:'11 工具执行中 ★', why:'每一步要能看见"正在做哪个"，而不是最后一起报。',
+   body:()=> row(RUNHDR+'<span class="small">3/4 轮</span><span class="dim small" style="margin-left:auto">7s</span>')+hd('工具调用')+trow('get_scene_info','ok','{"total_objects":3,"returned":3,"truncated":false,"objects":[{"name":"Cube","type":"MESH","location":[0,0,0],"has_material":true}],"active_object":"Cube","mode":"OBJECT"}',0.3)+trow('create_primitive','ok','{"status":"ok","object_name":"RedCube","object_type":"MESH","size":1,"location":[0,0,0]}',0.5)+trow('set_material','run','')+row('<button class="btn red" style="flex:1">✕ 停止</button>')},
+  {g:'执行中', n:'12 轮次/墙钟耗尽（做了一半）★', why:'诚实态。必须说清"哪些已经改了"，否则用户面对一个被改了一半的场景。',
+   body:()=> box('warn','<div class="small"><b>已达到最大轮次或 45 秒预算，操作可能只做了一半。</b>下面列出已生效的改动。</div>')+hd('已生效')+trow('create_primitive','ok','RedCube 已创建',0.4)+trow('mesh_boolean','er','工具不存在（当前只有 5 个工具）',0)+row('<button class="btn">↻ 从断点继续</button><button class="btn">✕ 撤销本次改动</button>')},
+
+  {g:'结果', n:'13 成功（完整形态）★', why:'目标形态：回执 + 逐步可展开 + 预算条，三层信息各归各位。',
+   body:()=> row('<span class="dot g"></span><span class="small">4 轮 · 3.9 秒</span><span class="dim small" style="margin-left:auto">缓存命中 89%</span>')+receipt(3,4,'<br>materials: +1')+hd('对话')+msg('你','创建一个红色立方体','me')+msg('AI','建了 RedCube（1 米，纯红 PBR），没动原有 Cube。')+hd('工具调用')+trow('get_scene_info','ok','{"total_objects":3}',0.3)+trow('create_primitive','ok','{"object_name":"RedCube","size":1}',0.5)+trow('set_material','ok','{"base_color":[1,0,0,1]}',0.4)+budget(25)+row('<button class="btn blue" style="flex:1">▶ 执行</button><button class="btn">✕</button>')},
+  {g:'结果', n:'14 工具部分失败（模型自我修正）', why:'工具失败回喂给模型是设计特性，界面上要把"失败过但已修正"和"一路顺利"区分开。',
+   body:()=> hd('对话')+msg('你','把立方体切成两半','me')+msg('AI','第一次参数写错，已修正：用 execute_blender_code 做了布尔切割。')+hd('工具调用（点行看返回）')+trow('transform_object','er','{"error":"找不到物体 \'Cube.001\'，可先调用 get_scene_info 查看场景里的物体名"}',0)+trow('get_scene_info','ok','{"total_objects":3}',0.2)+trow('execute_blender_code','ok','{"status":"ok","stdout":""}',1.1)},
+  {g:'结果', n:'15 全失败（模型放弃）', why:'模型直接说"做不到"时，界面要给出<b>能做什么</b>的出口，而不是只复读它的拒绝。',
+   body:()=> box('alert','<div class="small"><b>AI：</b>这个需要修改网格拓扑，我手上的工具做不到。</div>')+row('<button class="btn">📋 复制它的代码思路</button><button class="btn">⚙ 允许 execute_blender_code</button>')+row('<div class="inp">创建一个红色立方体</div>')+row('<button class="btn blue" style="flex:1">▶ 执行</button>')},
+  {g:'结果', n:'16 单请求超时', why:'超时和断网要分开：超时可能是模型在想要重试，断网是本机出网问题（本机走代理）。',
+   body:()=> box('alert','<div class="small"><b>第 2 轮请求超时（20 秒）。</b>这一轮还没开始改场景，重试不会重复扣费。</div>')+row('<button class="btn blue">↻ 重试</button><button class="btn">⚙ 把超时改成 40 秒</button>')+trow('get_scene_info','ok','',0.3)+trow('—','dis','请求超时')},
+  {g:'结果', n:'17 断网 / 代理没开', why:'实测：代理在时端口不通会返回 502 而不是连接失败。文案必须带上代理地址，否则用户会去怀疑 Key。',
+   body:()=> box('alert','<div class="small"><b>连不上 DeepSeek：</b>HTTP Error 502<br>（当前走系统代理 http://127.0.0.1:7890，确认它还开着）</div>')+row('<button class="btn">↻ 重试</button><button class="btn">🌐 检查代理</button>')},
+  {g:'结果', n:'18 exec 崩溃回喂', why:'execute_blender_code 崩了不中断会话，错误回喂给模型。界面要显示 Python  traceback 摘要。',
+   body:()=> hd('工具调用')+trow('execute_blender_code','er','{"error":"ZeroDivisionError: division by zero","type":"ZeroDivisionError","stdout":"step 1 ok"}')+msg('AI','换成用 bmesh 来做，已修正。')+trow('execute_blender_code','ok','{"stdout":"step 1 ok\\nvolume=2.0"}')},
+
+  {g:'多轮与上下文', n:'19 多轮历史 ★', why:'<b>当前最大的功能缺口</b>：现在每条指令都是全新对话，模型看不见上一句，也记不住自己刚改了什么。',
+   body:()=> hd('对话（4 条 · 本文件）')+msg('你','建一个立方体','me')+msg('AI','建了 Cube.A。')+msg('你','再红一点','me')+msg('AI','把 MAT_Cube.A 的 Base Color 从 (0.7,0,0) 提到 (1,0,0)。')+row('<button class="btn">＋ 新会话</button><button class="btn">⇊ 压缩历史</button><button class="btn">⌫ 清空</button>')+row('<div class="inp">移到 (2,0,0)</div>')+row('<button class="btn blue" style="flex:1">▶ 执行</button>')},
+  {g:'多轮与上下文', n:'20 历史已压缩', why:'压缩要留证据（压了什么、省了多少），否则用户不敢点。',
+   body:()=> box('','<div class="small dim">前 12 条已压缩为 1 条摘要（省 ≈3.1k token）。原始记录仍在本机文件里。</div>')+msg('Sys','摘要：用户在做一颗红色金属球，已建 3 个物体，材质 roughness 0.2。','sys')+budget(18)+row('<button class="btn">↺ 恢复完整历史</button>')},
+  {g:'多轮与上下文', n:'21 上下文接近上限', why:'>80% 要变橙（alert 只能变红，所以这里用 progress + 文案），并主动给出口。',
+   body:()=> box('warn','<div class="small"><b>上下文已用 87%。</b>继续加轮次可能被截断。</div>')+budget(87,'warn')+row('<button class="btn">⇊ 压缩历史</button><button class="btn">＋ 新会话</button>')},
+
+  {g:'视觉反馈', n:'22 视口截图回传成功', why:'让模型"看得见"场景。缩略图用 template_icon(icon_value=image.preview.icon_id) —— 已实测可用。',
+   body:()=> row('<span class="dot g"></span><span class="small">看一眼视口：开</span><span class="dim small" style="margin-left:auto">最近 3.9 秒前</span>')+row('<div class="thumb"></div><div class="dim small">480×342 · 已随第 2 轮发给模型</div>')+hd('工具调用')+trow('get_viewport_screenshot','ok','{"view":"front","bytes":38412}',0.8)+trow('create_primitive','ok','',0.4)},
+  {g:'视觉反馈', n:'23 视口截图降级（无 GL）★', why:'硬约束：本机无头渲染全黑、render.opengl 无头直接报错。必须设计降级，不能假装总能拿到图。',
+   body:()=> box('warn','<div class="small"><b>这次拿不到视口图</b>（后台模式无 GL 上下文）。已退回用文字描述场景。</div>')+row('<span class="dot o"></span><span class="small">看一眼视口：自动降级</span>')+trow('get_viewport_screenshot','er','{"error":"Cannot use OpenGL render in background mode"}')},
+
+  {g:'安全与回滚', n:'24 还原点列表', why:'P2：比 Ctrl+Z 更靠得住的是显式快照。列表要显示"什么时候、哪条指令、改了几个物体"。',
+   body:()=> hd('还原点（3）')+row('<button class="btn" style="flex:1;text-align:left">14:22 · 建红球 · objects 3→4</button><span class="dim small">当前</span>')+row('<button class="btn" style="flex:1;text-align:left">14:19 · 布尔切割 · objects 4→6</button><button class="btn">↩</button>')+row('<button class="btn" style="flex:1;text-align:left">14:11 · 会话开始 · objects 3→3</button><button class="btn">↩</button>')+row('<span class="dim small">回滚会丢弃其后所有改动</span>')},
+  {g:'安全与回滚', n:'25 已回滚', why:'回滚后必须留痕，否则用户不知道场景为什么突然变了。',
+   body:()=> box('','<div class="small"><b>已回到 14:19 的还原点。</b>之后的 2 条指令仍在对话历史里，可重发。</div>')+msg('Sys','objects: 6 → 4，materials: -1','sys')},
+
+  {g:'形态', n:'26 视口 HUD 命令条', why:'P2：技术上成立（已实测 SpaceView3D.draw_handler_add + gpu + blf 都在）。代价是几百行手写绘制与命中测试，且<b>只能画输入条，画不出可滚动转录</b>。可以拖。',
+   body:()=> box('','<div class="small dim">面板退化成"开关 + 高级设置"，输入搬到视口浮层。<br>可拖（按住标题栏）、可缩放。</div>')+row('<span class="dot g"></span><span class="small">视口命令条：开</span>')+row('<button class="btn blue" style="flex:1">▶ 在视口里输入</button>'),
+   hud:true},
+  {g:'形态', n:'27 气泡转录（UIList）', why:'P2：template_list + UIList 能做出逐条气泡，但行高/折行/滚动都要实测（见未验证清单）。',
+   body:()=> hd('对话（template_list）')+box('','<div class="msg me"><div class="who">你</div><div class="txt">建一个 2 米的球</div></div><div class="msg"><div class="who">AI</div><div class="txt">建了 Sphere，半径 1 米。</div></div><div class="msg"><div class="who">AI</div><div class="txt">已设为金属，roughness 0.2。</div></div><div class="msg sys"><div class="who">Sys</div><div class="txt">⏳ 正在执行 set_material…</div></div>')+row('<div class="inp">再暗一点</div><button class="btn blue">发送</button>')},
+  {g:'形态', n:'28 子面板折叠 / 固定', why:'Blender 原生有子面板（bl_parent_id）、可固定（use_pin）、默认折叠（DEFAULT_CLOSED）—— 长内容的正解，比自造折叠更符合用户预期。',
+   body:()=> hd('▾ 指令')+row('<div class="inp">创建一个红色立方体</div>')+row('<button class="btn blue" style="flex:1">▶ 执行</button>')+hd('▾ 对话')+'<div class="box">'+msg('AI','建了 RedCube。')+'</div>'+hd('▸ 工具调用（已折叠 · 4 步）')+hd('▸ 上下文与费用（已折叠）')+row('<span class="dim small">↑ 这三块都是子面板，可各自折叠 / 固定</span>')},
+];
+
+/* ================= 渲染 ================= */
+const list = document.getElementById('stateList'), body = document.getElementById('bpBody'),
+      why = document.getElementById('whyBox'), head = document.getElementById('bpHead'),
+      hudSlot = document.getElementById('hudSlot'), vpCube = document.getElementById('vpCube');
+let cur = 0;
+STATES.forEach((s,i)=>{
+  let g = list.querySelector('[data-g="'+s.g+'"]');
+  if(!g){ g = document.createElement('div'); g.dataset.g=s.g; g.innerHTML = '<div class="grp">'+s.g+'</div>'; list.appendChild(g); }
+  const b = document.createElement('button'); b.textContent = s.n; b.dataset.i = i;
+  b.onclick = ()=> show(i); g.appendChild(b);
+});
+function show(i){
+  cur = i; const s = STATES[i];
+  list.querySelectorAll('button').forEach(b=> b.classList.toggle('on', +b.dataset.i===i));
+  body.innerHTML = s.body();
+  why.innerHTML = '<b>'+s.n+'</b> —— '+s.why+'<div class="ask">给设计方的问题：这一态怎么在不依赖颜色的前提下表达清楚？</div>';
+  head.innerHTML = (s.n.indexOf('请求')===0||s.n.indexOf('工具执行')===0) ? '<span class="ring spin"></span> 忙碌' : '';
+  hudSlot.innerHTML = s.hud
+    ? '<div class="hud" id="hud"><div class="hud-h"><span class="dot c"></span>⚡ DEEPSEEK<span class="grip">⠿ 拖动我</span><span>✕</span></div>'+
+      '<div class="hud-i"><div class="hud-t">创建一个红色立方体<span class="cur"></span></div><button class="btn red">▶</button></div>'+
+      '<div class="hud-f">Enter 执行 · Shift+Enter 换行 · 只能画输入条，画不出滚动转录</div></div>'
+    : '';
+  vpCube.classList.toggle('red', /成功|红|截图|气泡/.test(s.n));
+  bindRows(); dragHud();
+}
+function bindRows(){
+  document.querySelectorAll('#bpBody .trow').forEach(r=>{
+    r.onclick = ()=>{ const o = r.nextElementSibling; if(o && o.classList.contains('out')) o.classList.toggle('on'); };
+  });
+}
+function dragHud(){
+  const h = document.getElementById('hud'); if(!h) return;
+  const grip = h.querySelector('.hud-h'); let sx=0, sy=0, ox=0, oy=0, dragging=false;
+  grip.onmousedown = e=>{ dragging=true; sx=e.clientX; sy=e.clientY;
+    const r=h.getBoundingClientRect(); ox=r.left; oy=r.top; e.preventDefault(); };
+  document.onmousemove = e=>{ if(!dragging) return;
+    h.style.position='fixed'; h.style.left=(ox+e.clientX-sx)+'px'; h.style.top=(oy+e.clientY-sy)+'px'; h.style.width='300px'; h.style.zIndex=8; };
+  document.onmouseup = ()=>{ dragging=false; };
+}
+/* 点“▶ 执行”就把 请求中 → 工具执行中 → 成功 走一遍 */
+let playing = null;
+function playRun(){
+  if (playing) return;
+  const seq = [9, 10, 12];          // 10 请求中 → 11 工具执行中 → 13 成功
+  let k = 0;
+  show(seq[0]);
+  playing = setInterval(()=>{
+    k++;
+    if (k >= seq.length){ clearInterval(playing); playing = null; return; }
+    show(seq[k]);
+  }, 1700);
+}
+document.addEventListener('click', e=>{
+  if (/▶ 执行/.test(e.target.textContent||'')) playRun();
+});
+/* 宽度切换 */
+document.querySelectorAll('[data-w]').forEach(b=> b.onclick = ()=>{
+  document.querySelectorAll('[data-w]').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  document.getElementById('bp').style.width = b.dataset.w+'px';
+  document.getElementById('liveNote').textContent = '当前面板宽 '+b.dataset.w+'px（Blender 里对应 bl_ui_units_x 与用户拖拽宽度）';
+});
+/* ================= 需求清单 ================= */
+const REQS = [
+  {p:'p0', id:'P0-1', t:'多行指令输入', cost:'lo',
+   q:'单行输入框装不下复合指令（"建个球，移到(2,0,0)，再给金属材质"），用户被迫拆成几句发。',
+   ui:'3 行可见的多行输入 + placeholder + 右侧字符数。',
+   w:'<code>box.textbox(pg,"prompt", initial_visible_lines=3, placeholder="用自然语言描述…")</code>（已实测存在）。注意属性侧没有 MULTILINE 子类型，别去 <code>StringProperty</code> 上找。',
+   a:'粘贴 400 字中文不丢字；三档宽度都不溢出；Enter 行为实测后写进 <code>description</code>。'},
+  {p:'p0', id:'P0-2', t:'忙态证据 + 可停止', cost:'md',
+   q:'执行期间界面整个卡死且没有任何视觉证据，用户以为崩了（实测 3.9 秒，复杂指令可近 45 秒）。',
+   ui:'面板头 RING + 已跑秒 + "第 N/4 轮"；执行按钮原位变停止。',
+   w:'<code>row.progress(type=\'RING\')</code> + <code>label</code>；同一个 operator 按 <code>state.busy</code> 换 <code>bl_label</code> 与图标（<code>PLAY</code> ↔ <code>CANCEL</code>）。',
+   a:'真跑一条 4 轮指令，全程秒数在动；点停止后 ≤1 秒恢复，并明确"停在轮之间、中断不了正在飞的请求"。'},
+  {p:'p0', id:'P0-3', t:'工具调用逐步可视', cost:'md',
+   q:'现在 3 次调用压成三行 <code>→ ok</code>，看不出到底改了什么、失败在哪。',
+   ui:'每行：状态图标 + 工具名 + 耗时；点开看返回 JSON。',
+   w:'图标 <code>TIME</code>(进行中)/<code>CHECKMARK</code>/<code>ERROR</code>；长 JSON 用 <code>template_ID</code> 指向文本块，不要塞 <code>label</code>（会被中间裁断）。',
+   a:'10 步调用不撑爆面板；失败行错误正文完整可读。'},
+  {p:'p0', id:'P0-4', t:'错误独立成盒 + 重试', cost:'lo',
+   q:'401/402/超时/断网现在都混在回复正文里，用户分不清该重试还是该去改设置。',
+   ui:'红色 alert 盒 + 下一步动作按钮（改设置 / 充值 / 重试 / 检查代理）。',
+   w:'<code>box.alert = True</code>（这是 Blender 唯一的"变红"手段）+ <code>layout.operator</code>。图标可用 <code>ERROR / RECOVER_LAST / URL / PREFERENCES</code>。',
+   a:'四类错误文案各自不同，且各自给出唯一正确的下一步。'},
+  {p:'p0', id:'P0-5', t:'上下文与费用条', cost:'lo',
+   q:'token 数据早就拿到了（输入 1576 / 缓存命中 1408 / 输出 61），只是没画出来。',
+   ui:'一条 BAR + 百分比 + 点开看明细；>80% 变橙并给出口。',
+   w:'<code>row.progress(type=\'BAR\', factor=n/limit)</code> + <code>prop_with_popover</code> 或 <code>wm.invoke_popup</code> 放明细。',
+   a:'跑 5 轮后条在涨；明细里能看到缓存命中率。'},
+  {p:'p1', id:'P1-1', t:'多轮历史 ★功能缺口', cost:'hi',
+   q:'<b>当前每条指令都是全新对话</b>：模型看不见你上一句，也记不住它自己刚改了什么。连续修改必翻车。',
+   ui:'转录区（你/AI 逐条）+ 新会话 + 压缩历史 + 清空。',
+   w:'<code>CollectionProperty</code> + <code>UIList</code>/<code>template_list</code>，或折行 <code>label</code> 组；持久化按 <code>.blend</code> 路径存 JSON 到扩展目录（同行做法：200 条 / 1 MiB 上限）。',
+   a:'连说"再红一点"、"移到 (2,0,0)"，第二句不用重复物体名。'},
+  {p:'p1', id:'P1-2', t:'可撤销回执', cost:'lo',
+   q:'设计师最怕的黑箱：它到底动了什么？能不能退？',
+   ui:'一个盒子：可撤销 / 不可撤销 + <code>objects: 17 → 18</code>、<code>materials: +1</code>。',
+   w:'纯 <code>label</code>；数据来自 <code>execute_tool</code> 前后各数一次（我们本来就有场景快照能力）。',
+   a:'任何写操作都带回执；全局撤销关闭时阻断发送（见状态 9）。'},
+  {p:'p1', id:'P1-3', t:'转录可复制', cost:'lo',
+   q:'看得见却复制不出来，等于没法贴给别人看。',
+   ui:'一个"复制到文本块"动作 + 文本块入口。',
+   w:'镜像成 <code>bpy.data.texts["DeepSeek Transcript"]</code>，用 <code>template_ID(space,"text")</code> 打开。',
+   a:'整段可选中、可复制。'},
+  {p:'p1', id:'P1-4', t:'视口截图回传给模型', cost:'hi',
+   q:'模型现在是盲改：它只知道物体名和坐标，不知道画面上长什么样。',
+   ui:'一个开关 + 最近一次缩略图 + 拿不到图时的降级说明。',
+   w:'截图 <code>screen.screenshot_area</code> / <code>render.opengl</code>；缩略图 <code>template_icon(icon_value=image.preview.icon_id)</code>。',
+   a:'<b>必须覆盖降级：</b>本机无头渲染全黑、<code>render.opengl</code> 无头直接报错 → 只有 GUI 可用；且 base64 图会显著推高 token，<b>默认关</b>。'},
+  {p:'p2', id:'P2-1', t:'还原点列表 / 回滚', cost:'hi',
+   q:'Ctrl+Z 不够用：AI 跑了 6 步之后想退回"第 3 步之前"。',
+   ui:'还原点列表（时间 · 哪条指令 · 改了几个物体）+ 回滚按钮。',
+   w:'<code>operator</code> 列表 + <code>CollectionProperty</code>；底层要接快照系统（完整版 Phase 5 的活）。',
+   a:'回滚后留痕（状态 25），且明确"丢弃其后所有改动"。'},
+  {p:'p2', id:'P2-2', t:'视口 HUD 命令条', cost:'hi',
+   q:'输入不离画面：不用转头看侧栏。',
+   ui:'视口底部浮层输入条，可拖可缩放。',
+   w:'已实测技术成立：<code>SpaceView3D.draw_handler_add</code> + <code>gpu.types.GPUShader</code> + <code>gpu_extras.batch</code> + <code>blf</code> + modal 算子。<b>代价：几百行手写绘制与命中测试</b>，且画不出可滚动转录。',
+   a:'与面板输入共享同一份状态；HUD 关掉时面板功能不减。'},
+  {p:'p2', id:'P2-3', t:'气泡转录精修', cost:'md',
+   q:'label 组太朴素，想要真正的消息气泡。',
+   ui:'逐条气泡 + 角色标签 + 状态行原地更新 + 在底部才自动滚。',
+   w:'<code>template_list</code> + <code>UIList</code>。<b>前置：先实测行高、折行、有无滚动条</b>（见未验证清单）。',
+   a:'20 条历史下仍可读；新消息不会把用户正在看的位置顶走。'},
+];
+const rl = document.getElementById('reqList');
+rl.innerHTML = REQS.map(r=>
+  '<div class="req" data-p="'+r.p+'"><h3><span class="id '+r.p+'">'+r.id+'</span>'+r.t+'<span class="cost '+r.cost+'">成本 '+(r.cost==='lo'?'低':r.cost==='md'?'中':'高')+'</span></h3>'+
+  '<dl><dt>问题</dt><dd>'+r.q+'</dd><dt>界面</dt><dd>'+r.ui+'</dd><dt>控件</dt><dd>'+r.w+'</dd><dt>验收</dt><dd><b>'+r.a+'</b></dd></dl></div>').join('');
+document.querySelectorAll('[data-f]').forEach(b=> b.onclick = ()=>{
+  document.querySelectorAll('[data-f]').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  document.querySelectorAll('.req').forEach(r=> r.style.display = (b.dataset.f==='all'||r.dataset.p===b.dataset.f)?'':'none');
+});
+/* 输出模板 */
+document.getElementById('outTpl').textContent =
+'交付格式（请照这个结构输出，否则无法落地）\n\n' +
+'对每一个你保留的状态：\n' +
+'  状态名：\n' +
+'  布局树：Panel → box/row/column → 每个元素一行，写成\n' +
+'     [控件API] textbox(pg,"prompt",initial_visible_lines=3,placeholder="…")\n' +
+'     [文案]    "…"\n' +
+'     [图标]    CHECKMARK        ← 必须在白名单里，写名字\n' +
+'     [状态色]  无 / alert        ← 只有这两种\n' +
+'     [宽度]    默认 / 加宽 / 极窄 下分别怎么排\n' +
+'  不确定项：凡用到"未验证清单"里的能力，标注"需实测"+给出测法\n\n' +
+'另外必须单独交一份：\n' +
+'  1. 你砍掉了哪些状态、为什么（折叠=看不见=等于没有，请说明取舍）\n' +
+'  2. 多轮历史堆到 20 条时的三种排布方案\n' +
+'  3. 不依赖颜色区分"可自助解决"与"需去改设置"的做法';
+/* 复制任务书 */
+document.getElementById('copyBrief').onclick = async ()=>{
+  const t = [
+    '【任务】为 Blender 扩展「DeepSeek Agent」设计新版 UI。目标平台 Blender 5.2.1 LTS，内嵌 Python 3.13。',
+    '',
+    '【硬约束 · 已实测】只能用这些控件：',
+    'textbox(data,"prop",initial_visible_lines,placeholder) / progress(type=BAR|RING,factor) /',
+    'template_list + UIList + CollectionProperty / template_icon(icon_value=image.preview.icon_id) /',
+    'template_icon_view / template_ID / split / column_flow / grid_flow / box / row / column / label / icon /',
+    'operator / operator_enum / operator_menu_enum / prop_search / prop_with_menu / prop_with_popover / menu_pie /',
+    '可写样式只有：alert(红) active enabled emboss alignment scale_x scale_y ui_units_x ui_units_y use_property_split',
+    'Panel 可用：bl_ui_units_x bl_parent_id(子面板) bl_options(DEFAULT_CLOSED|HIDE_HEADER|INSTANCED|HEADER_LAYOUT_EXPAND) use_pin is_popover bl_category bl_icon',
+    '弹层 wm.invoke_popup；视口自绘 SpaceView3D.draw_handler_add + gpu.types.GPUShader + gpu_extras.batch + blf；bpy.app.timers；keyconfigs.addon 可注册快捷键。',
+    '',
+    '【不存在，别设计】任意颜色/字体/字号/圆角/阴影/动画/hover 效果；StringProperty 的 MULTILINE 子类型；',
+    'UILayout.menu_enum、operator_search、toolbar_item、constraint；Panel 的 scrollable 属性。',
+    '图标名必须从这些里选：CHECKMARK ERROR TIME INFO TEXT CONSOLE PLAY CANCEL X PREFERENCES SETTINGS OPTIONS FILE_TICK ADD REMOVE TRASH EYEDROPPER DUPLICATE LINKED UNLINKED HELP URL FUND PLUGIN PROJECT MENU_PANEL GRIP RADIOBUT_ON RADIOBUT_OFF CHECKBOX_HLT TRIA_DOWN TRIA_RIGHT TRIA_UP TRIA_LEFT DISCLOSURE_TRI_DOWN STATUS_INFO STATUS_WARNING STATUS_ERROR RECOVER_LAST FILE_SCRIPT ASSET_MANAGER',
+    '（实测不存在：PREFS → 正确是 PREFERENCES；DOC、NETWORK、TOKEN 也不存在。写错图标名会让整块面板从那一行起静默截断。）',
+    '',
+    '【产品事实】模型 deepseek-flash（deepseek-v4-flash 已弃用）；5 个工具：get_scene_info / create_primitive / set_material / transform_object / execute_blender_code；',
+    '网络请求同步阻塞主线程（最长 45 秒），"停止"只能停在轮与轮之间，中断不了正在飞的 HTTP 读；',
+    '实测一条指令 4 轮 / 3.9 秒 / 输入 1576 token（缓存命中 1408）/ 输出 61 ≈ ¥0.0004 → 不要为省 token 砍多轮历史；',
+    'API Key 存 Blender 偏好设置（明文）；本机无头渲染全黑、render.opengl 无头报错 → 截图回传只能在有 GUI 时用，必须设计降级；',
+    '本机走系统代理 127.0.0.1:7890，代理没开时报 502 而不是连接失败。',
+    '',
+    '【必须覆盖的状态（28 个）】',
+    STATES.map(s=>s.n).join(' / '),
+    '',
+    '【需求（按优先级）】',
+    REQS.map(r=>r.id+' '+r.t+'（成本:'+(r.cost==='lo'?'低':r.cost==='md'?'中':'高')+'）：'+r.q.replace(/<[^>]+>/g,'')+' 界面：'+r.ui+' 控件：'+r.w.replace(/<[^>]+>/g,'')+' 验收：'+r.a).join('\n'),
+    '',
+    '【交付格式】',
+    document.getElementById('outTpl').textContent,
+    '',
+    '【禁止】引入登录/账号/云同步；把对话挪到外部客户端；新增需要 pip 的第三方依赖；假设面板可滚动（除非附实测方法）。'
+  ].join('\n');
+  try { await navigator.clipboard.writeText(t); toast('任务书已复制（'+t.length+' 字）'); }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast('任务书已复制（'+t.length+' 字）'); }
+    catch(_){ toast('复制被浏览器拦了：请用 file:// 打开或手动全选'); }
+    ta.remove();
+  }
+};
+let tt=null;
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('on'),2600); }
+show(5);
+</script>
+</body>
+</html>

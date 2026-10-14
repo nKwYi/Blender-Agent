@@ -1,0 +1,19 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ---- SDD 工作区（每个计划自己的目录，git-ignored scratch）----
+.superpowers/
+
+# ---- 构建产物 ----
+dist/
+*.zip
+
+# ---- Blender 场景文件 ----
+*.blend
+*.blend1
+
+# ---- 截图与派生图像（dev/out 全部是临时产物，不入库）----
+dev/out/
+crop_*.png

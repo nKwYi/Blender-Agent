@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blender AI 插件界面对照 · 5 个开源项目 + 我们</title>
+<style>
+  :root{
+    --bg:#1d1d1d; --bg2:#232323; --panel:#2b2b2b; --panel2:#303030; --box:#1f1f1f;
+    --line:#141414; --line2:#3d3d3d; --txt:#dcdcdc; --dim:#8f8f8f; --dim2:#6c6c6c;
+    --blue:#4772b3; --blue2:#2f4b73; --orange:#ed9a21; --green:#7cb87c; --red:#e0716a;
+    --cyan:#4ec9d4; --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
+  header{padding:28px 32px 20px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#262626,#1d1d1d)}
+  h1{margin:0 0 6px;font-size:22px;letter-spacing:.3px}
+  h2{margin:36px 32px 14px;font-size:16px;color:var(--orange);letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:13px;max-width:1100px}
+  .verdict{margin-top:16px;padding:12px 16px;border-left:3px solid var(--orange);background:#242424;max-width:1100px}
+  .verdict b{color:var(--orange)}
+  main{padding-bottom:80px}
+  /* ---------- 矩阵表 ---------- */
+  .tbl{margin:0 32px;overflow-x:auto;border:1px solid var(--line2)}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:1050px}
+  th,td{padding:7px 10px;border-bottom:1px solid #2a2a2a;text-align:center;vertical-align:middle}
+  th{background:#282828;color:#cfcfcf;font-weight:600;position:sticky;top:0}
+  td:first-child,th:first-child{text-align:left;position:sticky;left:0;background:#262626;z-index:1}
+  .y{color:var(--green);font-weight:700}
+  .n{color:var(--dim2)}
+  .half{color:var(--orange)}
+  /* ---------- 卡片 ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(560px,1fr));gap:22px;margin:0 32px}
+  .card{background:var(--bg2);border:1px solid var(--line2);border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
+  .card>h3{margin:0;padding:13px 16px;font-size:15px;background:var(--panel2);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .card>h3 .who{color:#fff}
+  .meta{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+  .chip{font:11px/1.5 var(--mono);padding:1px 7px;border-radius:9px;background:#1b1b1b;border:1px solid #3a3a3a;color:var(--dim)}
+  .chip.hot{border-color:var(--orange);color:var(--orange)}
+  .body{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
+  .notes{flex:1;min-width:230px}
+  .notes h4{margin:0 0 6px;font-size:12px;color:var(--dim);letter-spacing:1px;text-transform:uppercase}
+  .notes ul{margin:0 0 14px;padding-left:18px}
+  .notes li{margin:3px 0;font-size:13px}
+  .notes li b{color:#fff;font-weight:600}
+  .steal{border-left:2px solid var(--green);padding-left:10px;font-size:12.5px;color:#bfe0bf;margin-bottom:10px}
+  .warn{border-left:2px solid var(--red);padding-left:10px;font-size:12.5px;color:#f0c3c0}
+  .tag{display:inline-block;font:11px/1.4 var(--mono);padding:1px 6px;margin:0 4px 4px 0;border-radius:3px;background:#1a1a1a;border:1px solid #383838;color:var(--dim)}
+  .tag.no{border-color:#5a3535;color:#d99}
+  .tag.yes{border-color:#3d5a3d;color:#9d9}
+  /* ---------- Blender 面板仿真 ---------- */
+  .bp-wrap{display:flex;align-items:stretch;gap:0;flex:0 0 auto}
+  .bp{width:272px;background:#2d2d2d;border:1px solid #141414;border-radius:3px;box-shadow:0 6px 22px rgba(0,0,0,.45);overflow:hidden}
+  .bp-h{padding:5px 9px;background:#3a3a3a;border-bottom:1px solid #141414;font-size:12.5px;display:flex;align-items:center;gap:6px}
+  .bp-h:before{content:"⌄";color:var(--dim);font-size:10px}
+  .bp-b{padding:8px}
+  .tabs{display:flex;flex-direction:column;justify-content:flex-start;gap:2px;margin-left:3px;padding-top:6px}
+  .tabs span{writing-mode:vertical-rl;font-size:10px;padding:8px 2px;border-radius:2px;background:#2d2d2d;color:var(--dim);border:1px solid #141414}
+  .tabs span.on{background:#4772b3;color:#fff}
+  .row{display:flex;align-items:center;gap:6px;margin:4px 0;font-size:12.5px}
+  .lbl{color:#c8c8c8}
+  .dim{color:var(--dim)}
+  .inp{flex:1;background:#181818;border:1px solid #141414;border-radius:3px;padding:3px 6px;color:#e4e4e4;font-size:12px;white-space:pre-wrap;min-height:20px}
+  .inp.area{min-height:56px;line-height:1.5}
+  .inp.ro{color:#9a9a9a;background:#1c1c1c}
+  .btn{background:#545454;border:1px solid #141414;border-radius:3px;padding:3px 9px;font-size:12px;color:#eee;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:#616161}
+  .btn.blue{background:var(--blue2)} .btn.blue:hover{background:#3a5c8c}
+  .btn.red{background:#5a2f2c} .btn.red:hover{background:#6d3935}
+  .btn.big{width:100%;text-align:center;padding:6px;font-weight:600}
+  .btn.dis{opacity:.4;cursor:not-allowed}
+  .box{background:#252525;border:1px solid #141414;border-radius:3px;padding:7px;margin:6px 0}
+  .box.alert{border-left:3px solid var(--red);background:#2a2323}
+  .box.ok{border-left:3px solid var(--green)}
+  .box.acc{border-left:3px solid var(--orange);background:#2a2620}
+  .hd{font-size:11px;color:var(--dim);letter-spacing:.6px;margin:8px 0 3px;text-transform:uppercase}
+  .stat{display:flex;align-items:center;gap:5px;font-size:12px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .dot.g{background:var(--green)} .dot.r{background:var(--red)} .dot.c{background:var(--cyan);animation:pulse 1.2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .pill{display:inline-flex;border:1px solid #141414;border-radius:3px;overflow:hidden;width:100%}
+  .pill b{flex:1;text-align:center;font-size:11px;font-weight:500;padding:4px 2px;background:#3d3d3d;color:#bbb;cursor:pointer}
+  .pill b.on{background:var(--blue);color:#fff}
+  /* 转录 */
+  .msg{margin:5px 0;font-size:12px}
+  .msg .who{font:10px/1.4 var(--mono);color:var(--dim2);letter-spacing:.5px}
+  .msg .txt{background:#252525;border:1px solid #141414;border-radius:4px;padding:5px 7px;color:#d6d6d6}
+  .msg.me .txt{background:#2f3a4a;border-color:#1b232e}
+  .trow{display:flex;align-items:center;gap:5px;font:11.5px/1.5 var(--mono);color:#bdbdbd;cursor:pointer;padding:2px 3px;border-radius:2px}
+  .trow:hover{background:#333}
+  .trow .ic{width:13px;text-align:center}
+  .trow .ok{color:var(--green)} .trow .er{color:var(--red)} .trow .run{color:var(--orange)}
+  .out{display:none;background:#151515;border:1px solid #0e0e0e;border-radius:3px;padding:5px 7px;font:11px/1.5 var(--mono);color:#8fbf8f;white-space:pre-wrap;margin:2px 0 4px 18px}
+  .out.on{display:block}
+  /* 进度 / 预算 */
+  .ring{width:13px;height:13px;border-radius:50%;border:2px solid #4a4a4a;border-top-color:var(--orange);display:inline-block}
+  .ring.spin{animation:sp .9s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .bar{height:6px;background:#181818;border:1px solid #101010;border-radius:3px;overflow:hidden;flex:1}
+  .bar i{display:block;height:100%;background:var(--blue)}
+  .bar i.warn{background:var(--orange)}
+  /* 视口 HUD */
+  .vp{position:relative;width:272px;height:210px;background:#3d3d3d;border:1px solid #141414;border-radius:3px;overflow:hidden;flex:0 0 auto}
+  .vp .axis{position:absolute;top:8px;right:10px;font:10px var(--mono);color:#9a9a9a}
+  .vp .cube{position:absolute;left:96px;top:74px;width:56px;height:56px;background:#b9b9b9;transform:rotate(-14deg) skewY(6deg);border-radius:2px}
+  .hud{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(28,28,28,.97);border:1px solid #000;border-radius:7px;box-shadow:0 8px 20px rgba(0,0,0,.55);overflow:hidden}
+  .hud:before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent)}
+  .hud-h{display:flex;align-items:center;gap:7px;padding:5px 8px 0;font:10px/1 var(--mono);color:#8f8f8f;letter-spacing:1px}
+  .hud-h .grip{margin-left:auto;color:#5a5a5a;cursor:move;letter-spacing:0}
+  .hud-i{display:flex;align-items:center;gap:5px;padding:5px 8px}
+  .hud-t{flex:1;font-size:11.5px;color:#cfcfcf;background:#141414;border:1px solid #000;border-radius:4px;padding:4px 6px;min-height:34px}
+  .hud-t .cur{display:inline-block;width:1px;height:12px;background:var(--cyan);vertical-align:-2px;animation:pulse 1s steps(1) infinite}
+  .hud-f{padding:0 8px 6px;font-size:10px;color:#6f6f6f}
+  .toast{position:absolute;left:50%;bottom:100px;transform:translateX(-50%);background:rgba(60,110,60,.94);color:#e6ffe6;font-size:11px;padding:3px 10px;border-radius:11px;opacity:0;transition:opacity .25s}
+  .toast.on{opacity:1}
+  .foot{margin:34px 32px 0;padding:14px 16px;background:#242424;border:1px solid var(--line2);font-size:12.5px;color:var(--dim)}
+  .foot b{color:#cfcfcf}
+  kbd{font:11px var(--mono);background:#1a1a1a;border:1px solid #3a3a3a;border-bottom-width:2px;border-radius:3px;padding:0 5px;color:#cfcfcf}
+</style>
+</head>
+<body>
+<header>
+  <h1>Blender AI 插件界面对照 <span class="dim" style="font-weight:400">· 5 个开源项目 + 我们现在的样子</span></h1>
+  <div class="sub">每一格里的灰色小面板是按各自源码里 <code>draw()</code> 的真实控件复刻的（不是官方截图）。下面标注了哪些是我逐行读源码核实、哪些只是 README 自述。</div>
+  <div class="verdict">
+    <b>先看这个再决定优化方向：</b>5 家里有 <b>3 家在 Blender 里根本没有聊天界面</b>——对话发生在 Claude Desktop / Cursor / 终端里，Blender 侧只剩"连不连"。
+    真正在 Blender 里做了完整 GUI 的只有 <b>blender-mcp-ultra</b>、<b>blendrelay-mcp</b>（半）、<b>blender-copilot</b>。
+    而其中与我们<b>同架构</b>（直连 DeepSeek、无 MCP、Blender 5.2）的只有 <b>blender-copilot</b> 一家 —— 它是唯一能逐条照搬的参照物。
+  </div>
+</header>
+
+<main>
+<h2>① 能力矩阵</h2>
+<div class="tbl"><table>
+<tr><th>项目</th><th>对话在哪</th><th>多行输入</th><th>忙态/进度</th><th>多轮历史</th><th>停止</th><th>审批门</th><th>token/成本</th><th>视口回传给模型</th><th>Blender 版本</th></tr>
+<tr><td>ahujasid/mcp-for-blender</td><td>外部客户端</td><td class="n">✗</td><td class="n">✗</td><td class="n">✗</td><td class="n">✗</td><td class="half">可选白名单</td><td class="n">✗</td><td class="y">✓ 最强</td><td>min 3.0 / 5.x 未验证</td></tr>
+<tr><td>blender-open-mcp</td><td>终端 REPL</td><td class="n">✗</td><td class="n">✗</td><td class="n">✗</td><td class="n">✗</td><td class="n">✗</td><td class="n">✗</td><td class="half">只回路径</td><td>min 3.0 / 4.5 有 issue</td></tr>
+<tr><td>blender-mcp-ultra</td><td class="y">Blender 内</td><td class="n">单行</td><td class="half">⏳ 文字</td><td class="y">✓ 存 .blend</td><td class="y">✓</td><td class="n">✗</td><td class="n">✗</td><td class="n">✗</td><td>bl_info 4.2（自称 5.2）</td></tr>
+<tr><td>blendrelay-mcp</td><td>外部 CLI 子进程</td><td class="y">✓ 面板+HUD</td><td class="y">✓ 横幅+脉冲</td><td class="half">续话 ID</td><td class="y">✓ 杀进程</td><td class="half">预授权开关</td><td class="y">✓ 卡片</td><td class="y">✓ JPEG 回传</td><td>min 4.5 / 无 5.x 声明</td></tr>
+<tr><td>blender-copilot</td><td class="y">Blender 内</td><td class="y">✓ textbox</td><td class="y">✓ RING+秒</td><td class="y">✓ JSON 按 .blend</td><td class="y">✓ 同位换 Stop</td><td class="n">✗ 论证后拒绝</td><td class="y">✓ BAR+%</td><td class="n">✗ 自述看不见</td><td class="hot">5.2.2 实测</td></tr>
+<tr style="background:#2a2620"><td><b>我们（v0.1）</b></td><td class="y">Blender 内</td><td class="n">✗ 单行</td><td class="n">✗ 只是卡住</td><td class="n">✗ 每条从零开始</td><td class="n">✗</td><td class="n">✗</td><td class="half">有数据没画</td><td class="n">✗</td><td class="y">5.2.1 实测跑通</td></tr>
+</table></div>
+
+<h2>② 逐个看：面板长什么样 + 交互怎么走</h2>
+<div class="grid">
+
+<!-- 1 ahujasid -->
+<div class="card">
+  <h3><span class="who">ahujasid / mcp-for-blender</span><span class="meta"><span class="chip">30.2k★</span><span class="chip">MIT</span><span class="chip">10-06 更新</span></span></h3>
+  <div class="body">
+    <div class="bp-wrap"><div class="bp">
+      <div class="bp-h">MCP for Blender</div><div class="bp-b">
+        <div class="box ok"><div class="stat"><span class="dot g"></span><b>Connected on port 9876</b></div><div class="row" style="margin-top:5px"><button class="btn red">Disconnect</button></div></div>
+        <div class="hd">Asset Libraries</div>
+        <div class="box"><div class="row"><span class="dot g"></span><span class="lbl">Poly Haven</span></div><div class="inp ro">API key ········</div></div>
+        <div class="box"><div class="row"><span class="dot"></span><span class="lbl">Sketchfab</span></div></div>
+        <div class="box"><div class="row"><span class="dot"></span><span class="lbl">Poly Pizza</span></div></div>
+        <div class="hd">AI Model Generation</div>
+        <div class="box"><div class="dim" style="font-size:11.5px">Premium 未激活 → upsell 文案 + Open Preferences</div></div>
+        <div class="box"><div class="row"><span class="lbl">Addon 1.8 · up to date</span><button class="btn">⟳</button></div></div>
+      </div>
+    </div><div class="tabs"><span class="on">MCP</span><span>工具</span><span>视图</span></div></div>
+    <div class="notes">
+      <h4>交互实际发生在哪里</h4>
+      <ul>
+        <li>Blender 侧<b>没有任何输入框、没有转录、没有进度</b>；它只是 socket 服务端开关 + 资产站 Key。</li>
+        <li>对话在 Claude/Cursor 那一侧。<b>它真正厉害的是聊天侧组件</b>：把<b>实时视口画面嵌进聊天窗口</b>（可刷新、AI 改完自动重截、点物体即把它作为上下文附上）+ 资产缩略图选择器。</li>
+        <li>默认<b>AI 可直接跑任意 Python</b>，无审批；可选 <code>BLENDER_MCP_SAFE_MODE=1</code> 走服务端 AST 白名单。</li>
+        <li>视口回传用 <code>screen.screenshot_area</code> + <code>render.opengl</code>，支持多角度/线框/X 光。</li>
+      </ul>
+      <div class="steal">可抄：给模型看视口这件事值得抄（我们目前模型是"盲改"）。</div>
+      <div class="warn">抄不到：它的聊天 UI 寄生在 Claude 客户端里，我们没有那个宿主。</div>
+      <div style="margin-top:8px"><span class="tag no">对话在外部</span><span class="tag no">Blender 内也简陋</span><span class="tag yes">视口回传最强</span><span class="tag">本机实测：无头拒绝起服务</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 2 open-mcp -->
+<div class="card">
+  <h3><span class="who">dhakalnirajan / blender-open-mcp</span><span class="meta"><span class="chip">119★</span><span class="chip">MIT</span><span class="chip">09-04</span></span></h3>
+  <div class="body">
+    <div class="bp-wrap"><div class="bp">
+      <div class="bp-h">MCP Server Settings</div><div class="bp-b">
+        <div class="row"><span class="lbl" style="width:38px">Host</span><div class="inp">127.0.0.1</div></div>
+        <div class="row"><span class="lbl" style="width:38px">Port</span><div class="inp">9876</div></div>
+        <div class="box ok"><div class="stat"><span class="dot g"></span><b>● Server Running</b><button class="btn red" style="margin-left:auto">Stop</button></div></div>
+        <div class="hd">Quick Reference</div>
+        <div class="box dim" style="font:11px/1.7 var(--mono)">9876 default<br>9877 second instance<br>9878 third<br>9879 fourth</div>
+      </div>
+    </div><div class="tabs"><span class="on">MCP</span><span>工具</span></div></div>
+    <div class="notes">
+      <h4>它的"界面"是终端</h4>
+      <ul>
+        <li>服务器自己调本地 LLM（Ollama / LM Studio / OpenAI 兼容），用户在<b>命令行 REPL</b> 里敲 <code>prompt 建个球</code>。</li>
+        <li>Blender 里<b>整块面板就是上面这 4 个控件</b>，全文件 <code>draw()</code> 只有 25 行。</li>
+        <li>无流式（阻塞返回一个字符串）、无历史、无成本、无取消；<code>render_image</code> 只回文件路径，不回图。</li>
+      </ul>
+      <div class="warn">健康度：4.5 上"面板根本不出现"的 issue 还开着（#16），另有 Windows 语法错误 #15。参考价值低。</div>
+      <div style="margin-top:8px"><span class="tag no">对话在终端</span><span class="tag no">最简陋</span><span class="tag">唯一可抄：端口速查小盒</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 3 ultra -->
+<div class="card">
+  <h3><span class="who">HitamLegit6777 / blender-mcp-ultra</span><span class="meta"><span class="chip">1★</span><span class="chip">MIT</span><span class="chip">09-05</span></span></h3>
+  <div class="body">
+    <div class="bp-wrap"><div class="bp">
+      <div class="bp-h">Axiom Chat</div><div class="bp-b">
+        <div class="box acc"><div style="font-size:11.5px">⚠ 未选择 AI 模型</div></div>
+        <div class="row"><button class="btn red">BERHENTI</button><span class="dim" style="font-size:11.5px">Memproses…</span><span class="ring spin"></span></div>
+        <div class="row"><button class="btn">🌐 状态页</button><button class="btn">Copy</button><button class="btn">Log</button></div>
+        <div class="hd">转录（template_list 逐条）</div>
+        <div class="box" style="max-height:150px;overflow:hidden">
+          <div class="msg me"><div class="who">[Usted]</div><div class="txt">做一个红色立方体</div></div>
+          <div class="msg"><div class="who">[IA]</div><div class="txt">好的，先看一下场景里有什么……</div></div>
+          <div class="msg"><div class="who">Sys</div><div class="txt">⏳ 执行 execute_blender_code</div></div>
+          <div class="msg"><div class="who">[IA]</div><div class="txt">已创建 Cube.001，颜色 (1,0,0)</div></div>
+        </div>
+        <div class="row"><div class="inp">再改一下…</div><button class="btn blue">Send</button></div>
+        <div class="row"><button class="btn">Clear</button><span class="dim" style="font-size:11px">历史存在 .blend 里</span></div>
+      </div>
+    </div><div class="tabs"><span class="on">Axiom</span><span>工具</span></div></div>
+    <div class="notes">
+      <h4>唯一在 Blender 里做"气泡转录"的</h4>
+      <ul>
+        <li>用 <code>template_list</code> + UIList 画逐条气泡，带 <code>[Usted]/[IA]/Sys/⏳</code> 角色标签，3–14 行高，<b>手动按 45 字符折行</b>。</li>
+        <li>"流式"是半的：把 chunk 追加进一个名为 <code>blender-mcp-stream</code> 的文本块，还能<b>把视口切分成文本编辑器</b>专门看流。</li>
+        <li><code>⏳</code> 状态行<b>原地替换</b>（不新增行）；只有当用户本来就停在底部时才自动滚。</li>
+        <li>0.5 秒轮询拿结果；停止是个 flag；无成本显示；无审批弹窗（自动 AST 校验 + <code>undo_push</code>，README 承认失败代码会留半成品）。</li>
+      </ul>
+      <div class="steal">可抄：UIList 气泡 + 状态行原地更新 + "在底部才自动滚动"这个细节。</div>
+      <div class="warn">它 <code>bl_info</code> 写的是 4.2，README 却宣称支持 Blender 5.2 —— 未验证，别当依据。</div>
+      <div style="margin-top:8px"><span class="tag yes">Blender 内真聊天</span><span class="tag">UIList 气泡</span><span class="tag no">半流式</span><span class="tag no">1★ 无社区</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 4 blendrelay -->
+<div class="card">
+  <h3><span class="who">shefq / blendrelay-mcp</span><span class="meta"><span class="chip">7★</span><span class="chip">MIT / GPL-3.0(插件)</span><span class="chip">09-22 v0.7.3</span></span></h3>
+  <div class="body">
+    <div style="display:flex;flex-direction:column;gap:10px;flex:0 0 auto">
+      <div class="vp">
+        <div class="axis">X Y Z</div><div class="cube"></div>
+        <div class="toast" id="hudToast">✓ 已提交</div>
+        <div class="hud">
+          <div class="hud-h"><span class="dot c"></span>⚡ BLENDRELAY<span class="grip">⠿</span><span>✕</span><span>▤</span></div>
+          <div class="hud-i">
+            <div class="hud-t">把立方体切成两半<span class="cur"></span></div>
+            <button class="btn red" style="padding:4px 8px">✖ STOP</button>
+          </div>
+          <div class="hud-i" style="padding-top:0;font:10px var(--mono);color:#6f6f6f">
+            <span>−</span><span>100%</span><span>+</span><span style="margin-left:auto">↘ 拖边角缩放 · Ctrl+滚轮 0.65–2.5</span>
+          </div>
+          <div class="hud-f">Enter 执行 · Shift+Enter 换行 · 拖标题栏移动</div>
+        </div>
+      </div>
+      <div class="bp" style="width:272px">
+        <div class="bp-h">BlendRelay</div><div class="bp-b">
+          <div class="pill"><b class="on">Generate</b><b>Sketch</b><b>Versions</b><b>Settings</b></div>
+          <div class="box acc"><div class="stat"><span class="ring spin"></span><b>⚡ Codex is generating…</b><button class="btn red" style="margin-left:auto">Cancel</button></div></div>
+          <div class="inp area ro">描述你要创建或修改的内容…</div>
+          <div class="row"><span class="lbl">Engine</span><div class="inp" style="flex:1">EEVEE ▾</div><span class="lbl">Model</span><div class="inp" style="flex:1">gpt ▾</div></div>
+          <div class="row"><span class="lbl">Workflow</span><div class="inp" style="flex:1">10 种模式 ▾</div></div>
+          <div class="box"><div class="hd" style="margin-top:0">Last run</div><div style="font:11px/1.6 var(--mono);color:#b9b9b9">12.4k in · 860 out · 9 tools<br>cache read 11.8k</div></div>
+          <div class="box"><div class="row"><span class="lbl">Target Scope</span><span class="dim" style="font-size:11px;margin-left:auto">V 1420 · E 2130 · F 1064</span></div><div class="row"><span class="dot g"></span><span class="lbl" style="font-size:11.5px">仅选中物体</span></div></div>
+          <button class="btn blue big">⚡ Generate with Codex</button>
+          <div class="row"><span class="dot g"></span><span class="lbl" style="font-size:11.5px">Auto-Verify</span><button class="btn" style="margin-left:auto">Verify</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <h4>最像商业产品的一版</h4>
+      <ul>
+        <li><b>视口里手绘的 HUD 命令条</b>：我读了它的 <code>viewport_hud.py</code> 核实 —— 是一个 modal 算子 <code>AF_OT_ViewportHUDModal</code>（<code>blendrelay.viewport_hud_modal</code>），用 <code>gpu</code>+<code>BLF</code> 按 60fps 画：圆角底盘、青色顶部亮线、脉冲状态点、拖标题移动、边/三角缩放、Ctrl+滚轮 0.65–2.5、Enter/Shift+Enter、闪烁光标、2.5 秒 toast、按优先级排序的包围盒做 hover 命中测试。<b>HUD 里只有输入条，没有历史气泡。</b></li>
+        <li>面板是"控制台"：胶囊四 tab、生成横幅 + Cancel（真去 <code>proc.terminate()</code>）、参考图列表、预算与 token 卡、<b>选中体的 V/E/F 实时计数</b>、Versions tab 最多 15 个还原点、Sketch tab 支持视口画笔画区域 + 3D gizmo。</li>
+        <li>但<b>对话仍在外部 agent CLI</b>（Codex/Claude Code，Blender 拉子进程），Blender 侧靠 0.05 秒轮询日志文件。</li>
+        <li>回传给模型：临时改渲染设置跑 <code>render(write_still=True)</code>，≤768px JPEG 走 base64；任务前后自动存检查点。</li>
+      </ul>
+      <div class="steal">可抄：token 卡、V/E/F 范围显示、还原点列表、"生成中"横幅 + Cancel。</div>
+      <div class="warn">代价：HUD 是几百行手写绘制 + 命中测试，和我们"最小闭环"直接冲突；且插件部分是 GPL-3.0，不能直接搬代码。</div>
+      <div style="margin-top:8px"><span class="tag yes">视口 HUD</span><span class="tag yes">预算/还原点</span><span class="tag no">对话在外部 CLI</span><span class="tag no">GPL 不能搬码</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 5 copilot -->
+<div class="card" style="border-color:#5a4a22">
+  <h3><span class="who">XEonAX / blender-copilot</span><span class="meta"><span class="chip hot">与我们同构</span><span class="chip">2★</span><span class="chip hot">无 LICENSE 文件</span><span class="chip">Blender 5.2.2</span></span></h3>
+  <div class="body">
+    <div class="bp-wrap"><div class="bp">
+      <div class="bp-h">Copilot <span class="dim" style="margin-left:auto;font-size:10.5px">prototype</span></div><div class="bp-b">
+        <div class="row"><span class="dot g"></span><span class="lbl" style="font-size:11.5px">就绪</span><span class="chip" style="margin-left:auto">作用域 当前文件</span><span class="chip">✂ 已裁剪</span></div>
+        <div class="box alert"><div style="font-size:11.5px">全局撤销未开启 → 禁止发送<br><button class="btn" style="margin-top:4px">打开全局撤销</button></div></div>
+        <div class="hd">输入（textbox 3 行）</div>
+        <div class="inp area">Ask Blender…<span class="dim" style="font-size:10.5px">  ← placeholder</span></div>
+        <div class="row"><button class="btn blue" style="flex:1">Send</button><button class="btn dis">Clear</button></div>
+        <div class="box ok"><div class="hd" style="margin-top:0;color:#9d9">Undoable</div><div style="font:11px var(--mono);color:#b9b9b9">objects: 17 → 18</div></div>
+        <div class="hd">转录（折行 label，非 UIList）</div>
+        <div class="msg me"><div class="who">You</div><div class="txt">把顶部挤出 0.2 米</div></div>
+        <div class="msg"><div class="who">Assistant</div><div class="txt"><div class="trow" onclick="this.nextElementSibling.classList.toggle('on')"><span class="ic">📄</span>&lt;挤出顶部&gt; · 12 行 <span class="dim">▸</span></div><div class="out">import bpy\nme = bpy.context.object.data\n…</div></div><div class="trow"><span class="ic ok">✓</span>execute_blender_code <span class="dim">· 0.4s</span></div><div style="font-size:11.5px;color:#cfcfcf;margin-top:3px">已把 Cube 顶面向上挤出 0.2 米。</div></div></div>
+        <div class="hd">上下文预算</div>
+        <div class="row"><span style="font:11px var(--mono)">≈3.1k / 8k</span><div class="bar"><i style="width:39%"></i></div><span style="font-size:11px">39%</span><button class="btn">ⓘ</button></div>
+        <div class="row"><span class="ring"></span><span class="dim" style="font-size:11px">忙时 Send 位变 Stop + 已跑秒数</span></div>
+      </div>
+    </div><div class="tabs"><span class="on">Copilot</span><span>工具</span></div></div>
+    <div class="notes">
+      <h4>为什么它是主参照</h4>
+      <ul>
+        <li>直连 DeepSeek（OpenAI 兼容），<b>无 MCP、无桥</b>，跑在 <b>Blender 5.2.2</b> 上 —— 和我们的技术选型一模一样。</li>
+        <li>输入用 <code>box.textbox(settings,"prompt_text", initial_visible_lines=3, placeholder="Ask Blender...")</code>。<b>我在你本机 5.2.1 实测这个 API 存在、参数名一致</b>（也纠正了我上一轮的说法：5.2 的 StringProperty 没有 MULTILINE 子类型，但多行框在布局侧）。</li>
+        <li>忙态：<code>progress(type='RING')</code> + 已耗时秒数，<b>Stop 和 Send 复用同一个按钮位</b>。</li>
+        <li><b>撤销回执盒</b>：标题 Undoable / Not undoable，内容 <code>objects: 17 → 18</code>；全局撤销关掉时直接禁止发送并给按钮。</li>
+        <li>工具行用图标走状态 <code>TIME → ERROR → CHECKMARK</code>，代码块折叠成 <code>&lt;用途&gt; · N 行</code> 可展开；转录与代码镜像成两个文本块（<code>Copilot Transcript</code> / <code>Copilot Code</code>）方便复制。</li>
+        <li>上下文预算条 + <code>ⓘ</code> 弹窗里再给一条，带 Compact / Restore。</li>
+        <li>流式：SSE → 子进程 ndjson → <code>bpy.app.timers</code> 0.05 秒 tick，<b>只在变化时 redraw</b>；历史按 .blend 路径存 JSON（200 条 / 1 MiB 上限）。</li>
+        <li>错误盒子正文<b>折行成 label</b>，因为它实测 Blender 会把过长 label <b>从中间裁掉</b>。</li>
+        <li>诚实文案：README 明写 Stop <b>杀不掉正在跑的 bpy 调用</b>；也明写"模型看不见视口、UI、任何渲染"。</li>
+      </ul>
+      <div class="steal">可抄：上面每一条。它没有一项需要改架构。</div>
+      <div class="warn">仓库<b>没有 LICENSE 文件</b>（manifest 里写 SPDX:GPL-3.0 不等于授权）→ 只能抄思路，不能搬代码。</div>
+      <div style="margin-top:8px"><span class="tag yes">同架构</span><span class="tag yes">textbox/progress 已实测</span><span class="tag no">无 LICENSE</span><span class="tag no">模型看不见视口</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 6 us now -->
+<div class="card">
+  <h3><span class="who">我们 v0.1（现状）</span><span class="meta"><span class="chip">5.2.1 真机跑通</span><span class="chip">4 轮 / 3.9 秒</span></span></h3>
+  <div class="body">
+    <div class="bp-wrap"><div class="bp">
+      <div class="bp-h">DeepSeek Agent</div><div class="bp-b">
+        <div class="row"><span class="dot g"></span><span class="lbl" style="font-size:11.5px">Key 已配置（偏好设置）</span></div>
+        <div class="row"><span class="dim" style="font-size:11.5px">模型: deepseek-flash</span></div>
+        <div class="row"><div class="inp">创建一个红色立方体</div><span class="dim">✕</span></div>
+        <div class="row"><button class="btn blue" style="flex:1">▶ 执行</button></div>
+        <div class="hd">回复</div>
+        <div class="box" style="font-size:11.5px">我在场景中创建了一个 1 米见方的立方体 RedCube（位于 [2,0,0.5]，避免与原有 Cube 重叠），并赋予了纯红色 PBR 材质。</div>
+        <div class="hd">工具调用</div>
+        <div class="box" style="font:11px/1.7 var(--mono);color:#b0b0b0">4 轮 · 3.9 秒<br>token：输入 1576（缓存命中 1408），输出 61<br>1. get_scene_info → ok<br>2. create_primitive → ok<br>3. set_material → ok</div>
+        <div class="row"><button class="btn">✕ 清空</button></div>
+      </div>
+    </div><div class="tabs"><span class="on">AI Agent</span><span>工具</span></div></div>
+    <div class="notes">
+      <h4>诚实评估</h4>
+      <ul>
+        <li>该有的信息<b>其实都有了</b>（轮次、耗时、token、缓存命中、每步成败），问题是<b>全糊成一段纯文本</b>，没有层级、没有状态色、不能展开看返回。</li>
+        <li>最致命的不是外观，是<b>没有多轮历史</b>：每点一次"执行"都是一次全新对话，模型看不见你上一句说了什么，也记不住它自己刚改了什么。</li>
+        <li>执行期间界面直接卡死且<b>没有任何"正在忙"的视觉证据</b>，用户会以为崩了（这是文档 §5 选的同步方案，不是 bug，但界面必须说实话）。</li>
+        <li>没有停止、没有撤销回执、没有出错重试；模型也<b>看不见视口</b>。</li>
+      </ul>
+      <div class="warn">注意：图标名 <code>PREFS / DOC / NETWORK / TOKEN</code> 在 5.2 不存在（我踩过，写错会让整块面板从那一行起静默截断）。可用的是 <code>PREFERENCES / TIME / CHECKMARK / ERROR / CONSOLE / FILE_SCRIPT / FUND</code>。</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<h2>③ 如果按 P0 改，会长成这样（这一格可以点）</h2>
+<div class="grid">
+<div class="card" style="border-color:#3d5a3d">
+  <h3><span class="who">我们 · P0 改造后</span><span class="meta"><span class="chip hot">只改 ui.py</span><span class="chip">控件已实测</span></span></h3>
+  <div class="body">
+    <div class="bp-wrap"><div class="bp">
+      <div class="bp-h">DeepSeek Agent <span class="dim" style="margin-left:auto;font-size:10.5px" id="demoElapsed"></span></div><div class="bp-b">
+        <div class="row"><span class="dot g"></span><span class="lbl" style="font-size:11.5px">Key 已配置</span><span class="chip" style="margin-left:auto">deepseek-flash</span></div>
+        <div class="hd">指令（textbox 3 行 · 已实测存在）</div>
+        <div class="inp area" id="demoPrompt">创建一个红色立方体，然后把它移到 (2, 0, 0)</div>
+        <div class="row">
+          <button class="btn blue" id="demoRun" style="flex:1">▶ 执行</button>
+          <button class="btn dis" title="P0 之后才有：多轮历史">↺ 重说</button>
+        </div>
+        <div class="box ok" id="demoReceipt" style="display:none"><div class="hd" style="margin-top:0;color:#9d9">可撤销</div><div style="font:11px var(--mono);color:#b9b9b9" id="demoReceiptTxt">objects: 3 → 4</div></div>
+        <div class="box alert" id="demoErr" style="display:none"><div style="font-size:11.5px">连不上 DeepSeek（当前走系统代理 127.0.0.1:7890，确认它还开着）</div><div class="row"><button class="btn" style="margin-top:5px">↻ 重试</button><span class="dim" style="font-size:11px">错误单独成盒，不再混在回复里</span></div></div>
+        <div class="hd">对话</div>
+        <div class="box" id="demoTalk" style="max-height:170px;overflow:hidden">
+          <div class="msg me"><div class="who">你</div><div class="txt">创建一个红色立方体，然后把它移到 (2, 0, 0)</div></div>
+          <div class="msg" id="demoReply" style="display:none"><div class="who">AI</div><div class="txt">建了 RedCube（1 米，纯红 PBR），已移到 (2, 0, 0)。原有 Cube 没动。</div></div>
+        </div>
+        <div class="hd">工具调用（点一行看返回）</div>
+        <div id="demoTools"></div>
+        <div class="hd">上下文预算</div>
+        <div class="row"><span style="font:11px var(--mono)" id="demoTokTxt">— / 8k</span><div class="bar"><i id="demoTokBar" style="width:0%"></i></div><span style="font-size:11px" id="demoTokPct"></span><button class="btn" title="P1：Compact / Restore">ⓘ</button></div>
+      </div>
+    </div><div class="tabs"><span class="on">AI Agent</span><span>工具</span></div></div>
+    <div class="notes">
+      <h4>点这个按钮试试</h4>
+      <ul>
+        <li><b>执行 → 停止同位互换</b> + RING + 已跑秒数：治"卡住像死机"。</li>
+        <li>工具行 <span class="trow" style="display:inline-flex;padding:0"><span class="ic run">◷</span>running</span> → <span class="trow" style="display:inline-flex;padding:0"><span class="ic ok">✓</span>ok</span>，<b>点行展开返回 JSON</b>（现在是一行 <code>→ ok</code>，看不到到底改了什么）。</li>
+        <li><b>可撤销回执</b> <code>objects: 3 → 4</code>：设计师最怕的黑箱，成本只是前后各数一次。</li>
+        <li>token 从纯文本升成<b>预算条</b>（数据我们早就拿到了，只是没画）。</li>
+        <li>错误独立成盒 + <b>重试</b>；"↺ 重说" 和 "ⓘ Compact" 是 P1 多轮历史的入口占位。</li>
+      </ul>
+      <div class="steal">这一格用到的 Blender 能力：<code>textbox</code> ✓、<code>progress(RING/BAR)</code> ✓、图标 <code>TIME/CHECKMARK/ERROR</code> ✓、<code>UIList/template_list</code> ✓、<code>wm.invoke_popup</code> ✓ —— 全部在你本机 5.2.1 实测存在。</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3><span class="who">缺口 → 方案 一览</span></h3>
+  <div class="notes" style="min-width:100%">
+    <div class="hd">P0 · 只改 ui.py 一个文件</div>
+    <ul>
+      <li>单行输入 → <code>textbox(initial_visible_lines=3, placeholder=…)</code>。Enter 是否提交需实测（HUD 那套是它自己 modal 手写按键，textbox 未必带）。</li>
+      <li>无忙态 → <code>progress(RING)</code> + 秒数 + Send/Stop 同位。</li>
+      <li>工具调用糊成文本 → 图标状态行 + 可展开返回。</li>
+      <li>错误混在回复里 → 独立 alert 盒 + 重试。</li>
+      <li>token 藏着的 → 预算条 + 百分比。</li>
+    </ul>
+    <div class="hd">P1 · 要加一点逻辑</div>
+    <ul>
+      <li><b>多轮历史</b>（真正的功能缺口）：按 .blend 路径存 JSON，参考 copilot 的 200 条 / 1 MiB 上限。</li>
+      <li><b>可撤销回执</b> <code>objects: N → M</code>：execute_tool 前后各数一次。</li>
+      <li>转录镜像成文本块，解决"看得见复制不出来"。</li>
+      <li><b>视口截图回传给模型</b>：让 AI 从盲改变看着改。注意本机<b>无头渲染全黑、<code>render.opengl</code> 无头直接报错</b>，只能在有 GUI 时用，要设计降级。</li>
+    </ul>
+    <div class="hd">P2 · 抢眼但贵</div>
+    <ul>
+      <li>UIList 气泡转录（ultra）：比 label 优雅，要维护 CollectionProperty + "在底部才自动滚"。</li>
+      <li>还原点列表（blendrelay Versions）：属完整版 Phase 5。</li>
+      <li>视口 GPU HUD 命令条（blendrelay）：几百行手写绘制 + 命中测试，与最小闭环冲突。</li>
+    </ul>
+    <div class="warn" style="margin-top:6px">许可：copilot <b>无 LICENSE 文件</b>、blendrelay 插件部分是 <b>GPL-3.0</b>，而我们 manifest 写的是 MIT —— 只能抄交互思路，不能粘代码。</div>
+  </div>
+</div>
+</div>
+
+<div class="foot">
+  <b>证据强度说明。</b>
+  标"已实测"的是我或子代理直接读到源码行号、或在你本机 5.2.1 上跑过探针核实的：<code>textbox</code> 参数名、<code>progress</code> 的 BAR/RING 枚举、图标名集合（<code>PREFS/DOC/NETWORK/TOKEN</code> 不存在）、blendrelay 的 <code>AF_OT_ViewportHUDModal</code> 与它的 modal/gpu 绘制细节、ahujasid 面板 <code>draw()</code> 在 addon.py:5864-5982、copilot 面板在 panel.py:909-1537。<br>
+  标"未验证"的：ultra 宣称的 Blender 5.2 兼容、ahujasid 的 5.x 支持、以及各家 README 里的营销说法。
+  面板里的控件排布是按源码<b>复刻</b>的示意图，不是官方截图；星数/日期取自 2026-10-08 的 GitHub API。<br>
+  <b>顺带一条与界面无关但会影响判断的事实：</b>我们那次真跑一条指令是 <b>输入 1576 token（缓存命中 1408）+ 输出 61 token ≈ ¥0.0004</b>，所以"把历史塞进上下文"在钱上完全不是障碍，别为省 token 牺牲多轮体验。
+</div>
+</main>
+
+<script>
+// 胶囊 tab 演示
+document.querySelectorAll('.pill b').forEach(function(p){
+  p.onclick = function(){ p.parentNode.querySelectorAll('b').forEach(function(x){x.classList.remove('on')}); p.classList.add('on'); };
+});
+// HUD toast 演示
+var hud = document.querySelector('.hud-t');
+if (hud) hud.onclick = function(){
+  var t = document.getElementById('hudToast'); t.classList.add('on');
+  setTimeout(function(){ t.classList.remove('on'); }, 2500);
+};
+
+// P0 原型：执行 → 停止同位 + 秒数 + 逐步工具行
+var running = false, timer = null, sec = 0, step = 0;
+var steps = [
+  {name:'get_scene_info', out:'{"total_objects":3,"objects":[{"name":"Cube","type":"MESH"}],"mode":"OBJECT"}'},
+  {name:'create_primitive', out:'{"status":"ok","object_name":"RedCube","size":1,"location":[0,0,0]}'},
+  {name:'set_material', out:'{"status":"ok","material":"MAT_RedCube","base_color":[1,0,0,1],"inputs_set":["Base Color","Metallic","Roughness"]}'},
+  {name:'transform_object', out:'{"status":"ok","object_name":"RedCube","location":[2,0,0],"rotation_degrees":[0,0,0]}'}
+];
+var btn = document.getElementById('demoRun');
+function toolRow(s, state){
+  var d = document.createElement('div');
+  d.innerHTML = '<div class="trow"><span class="ic '+state+'">'+(state==='run'?'◷':state==='ok'?'✓':'✕')+'</span>'+s.name+
+                ' <span class="dim">'+(state==='run'?'running…':'· 展开')+'</span></div><div class="out">'+s.out+'</div>';
+  d.querySelector('.trow').onclick = function(){ d.querySelector('.out').classList.toggle('on'); };
+  document.getElementById('demoTools').appendChild(d);
+  return d;
+}
+btn.onclick = function(){
+  if (running) return;
+  running = true; sec = 0; step = 0;
+  document.getElementById('demoTools').innerHTML = '';
+  document.getElementById('demoReply').style.display = 'none';
+  document.getElementById('demoReceipt').style.display = 'none';
+  document.getElementById('demoErr').style.display = 'none';
+  btn.textContent = '✕ 停止'; btn.className = 'btn red';
+  document.getElementById('demoElapsed').innerHTML = '<span class="ring spin"></span> 0s';
+  timer = setInterval(function(){
+    sec += 1;
+    document.getElementById('demoElapsed').innerHTML = '<span class="ring spin"></span> ' + sec + 's';
+    if (step < steps.length){
+      var row = toolRow(steps[step], 'run');
+      step += 1;
+      setTimeout(function(){
+        var ic = row.querySelector('.ic'); ic.className = 'ic ok'; ic.textContent = '✓';
+        row.querySelector('.dim').textContent = '· 展开';
+      }, 620);
+    }
+    if (step >= steps.length && sec >= 4){
+      clearInterval(timer); running = false;
+      btn.textContent = '▶ 执行'; btn.className = 'btn blue';
+      document.getElementById('demoElapsed').textContent = '4 轮 · 4 秒';
+      document.getElementById('demoReply').style.display = '';
+      document.getElementById('demoReceipt').style.display = '';
+      var used = 1576 + 420;
+      document.getElementById('demoTokTxt').textContent = '≈' + (used/1000).toFixed(1) + 'k / 8k';
+      document.getElementById('demoTokBar').style.width = Math.round(used/8000*100) + '%';
+      document.getElementById('demoTokPct').textContent = Math.round(used/8000*100) + '%';
+    }
+  }, 900);
+};
+</script>
+</body>
+</html>

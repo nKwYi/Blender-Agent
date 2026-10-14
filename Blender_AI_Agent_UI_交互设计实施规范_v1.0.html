@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Blender AI Agent｜UI 与交互设计实施规范 v1.0</title>
+<style>
+:root{
+  --bg:#11151b;--surface:#171d25;--surface2:#1d2631;--surface3:#242f3b;
+  --text:#e7edf5;--muted:#a8b4c3;--dim:#778596;--line:#344253;
+  --blue:#83b8ff;--bluebg:#172c43;--green:#9dd9b4;--greenbg:#1a3329;
+  --amber:#ffd28a;--amberbg:#392d1d;--red:#ffaaa5;--redbg:#3a2425;
+  --purple:#d6b7ff;--purplebg:#2b2340;--radius:12px;--max:1440px;
+  --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:86px}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+button{font:inherit;cursor:pointer}
+code,pre,.mono{font-family:var(--mono)}
+code{font-size:.9em;background:#0d1117;border:1px solid var(--line);border-radius:5px;padding:2px 5px;color:#d5e5fa;overflow-wrap:anywhere}
+pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.topbar{position:sticky;top:0;z-index:20;background:rgba(17,21,27,.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.topbar-in{max-width:var(--max);margin:auto;padding:10px 24px;display:flex;align-items:center;gap:18px}
+.brand{font-weight:750;letter-spacing:.2px;white-space:nowrap}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:500;letter-spacing:1.1px;text-transform:uppercase}
+.nav{display:flex;gap:6px;align-items:center;flex:1;overflow:auto;white-space:nowrap}.nav a{font-size:12px;color:var(--muted);padding:7px 9px;border-radius:7px}.nav a:hover{color:var(--text);background:var(--surface2);text-decoration:none}
+.btn{border:1px solid var(--line);background:var(--surface2);color:var(--text);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:650;white-space:nowrap}.btn:hover{background:var(--surface3)}.btn.primary{background:#29496b;border-color:#4776a8}.btn.primary:hover{background:#345b84}.btn.ghost{background:transparent}.btn.small{padding:5px 8px;font-size:11px}
+main{max-width:var(--max);margin:auto;padding:30px 24px 80px}
+.hero{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:28px;align-items:center;padding:30px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(130deg,#1c2a39,#171d25 65%);}
+.kicker{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue);font-weight:750}.hero h1{font-size:clamp(30px,4vw,48px);line-height:1.15;margin:10px 0 16px;letter-spacing:-.7px}.hero p{max-width:840px;color:#c5d0dc;margin:0}.hero p strong{color:#fff}.hero-side{background:rgba(8,13,19,.48);border:1px solid #425468;border-radius:14px;padding:18px}.hero-side h3{margin:0 0 10px;font-size:14px}.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:18px}.chip{font-size:11px;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:#151b23;color:#cbd7e5}.chip.blue{color:var(--blue);background:var(--bluebg);border-color:#35516d}.chip.green{color:var(--green);background:var(--greenbg);border-color:#315943}.chip.amber{color:var(--amber);background:var(--amberbg);border-color:#624c2b}.hero-side dl{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;margin:0;font-size:12px}.hero-side dt{color:var(--muted)}.hero-side dd{margin:0;color:#edf3fa}
+.section{margin-top:34px}.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px}.section-head h2{font-size:23px;line-height:1.3;margin:0;letter-spacing:-.2px}.section-head p{margin:6px 0 0;color:var(--muted);font-size:13px;max-width:900px}.eyebrow{color:var(--blue);font-size:10px;letter-spacing:1.4px;font-weight:800;text-transform:uppercase}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:17px;min-width:0}.card h3{font-size:15px;line-height:1.45;margin:0 0 8px}.card p{font-size:13px;color:#c4cfdb;margin:0 0 8px}.card ul,.card ol{margin:8px 0 0;padding-left:20px;color:#c4cfdb;font-size:13px}.card li{margin:4px 0}.card .meta{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);font-weight:800;margin-bottom:7px}
+.callout{padding:15px 17px;border-radius:10px;border:1px solid var(--line);background:var(--surface);margin:13px 0}.callout strong{color:#fff}.callout.critical{border-left:4px solid var(--red);background:linear-gradient(90deg,var(--redbg),var(--surface))}.callout.decision{border-left:4px solid var(--blue);background:linear-gradient(90deg,var(--bluebg),var(--surface))}.callout.warn{border-left:4px solid var(--amber);background:linear-gradient(90deg,var(--amberbg),var(--surface))}.callout.success{border-left:4px solid var(--green);background:linear-gradient(90deg,var(--greenbg),var(--surface))}.callout p{margin:4px 0 0;color:#cad4df;font-size:13px}
+.pill{display:inline-block;padding:3px 7px;border-radius:5px;border:1px solid var(--line);font-size:10px;line-height:1.4;font-weight:750;white-space:nowrap}.p0{color:var(--red);background:var(--redbg);border-color:#644041}.p1{color:var(--amber);background:var(--amberbg);border-color:#67512d}.p2{color:var(--purple);background:var(--purplebg);border-color:#51446c}.fact{color:var(--green);background:var(--greenbg);border-color:#315943}.proposal{color:var(--blue);background:var(--bluebg);border-color:#35516d}.unverified{color:var(--amber);background:var(--amberbg);border-color:#67512d}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}table{width:100%;border-collapse:collapse;font-size:12px;min-width:760px}th,td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}th{background:var(--surface2);font-weight:750;color:#e9f0f8;position:sticky;top:0}td{color:#cad4df}tr:last-child td{border-bottom:0}td strong{color:#f3f7fc}
+.diagram{background:#0d1218;border:1px solid var(--line);border-radius:13px;padding:17px;overflow:auto}.flow{display:flex;align-items:stretch;gap:8px;min-width:790px}.flow .node{flex:1;min-width:105px;background:var(--surface2);border:1px solid #445367;border-radius:9px;padding:12px 10px;text-align:center;font-size:12px}.flow .node b{display:block;color:#fff;margin-bottom:4px}.flow .node span{font-size:10px;color:var(--muted)}.flow .arrow{align-self:center;color:var(--blue);font-size:20px}.diagram-note{font-size:11px;color:var(--muted);margin:10px 0 0}
+.wireframe-wrap{display:grid;grid-template-columns:minmax(260px,.75fr) minmax(0,1.25fr);gap:16px;align-items:start}.wireframe{background:#282b2f;border:1px solid #51565d;border-radius:10px;padding:9px;color:#eceff2;max-width:440px;margin:auto;font-size:12px;line-height:1.5}.wf-head{display:flex;align-items:center;justify-content:space-between;padding:7px 8px;background:#373c42;border:1px solid #4e555d;border-radius:5px;margin-bottom:7px;font-weight:700}.wf-row{padding:7px 8px;border:1px solid #4a4f56;border-radius:4px;margin:6px 0;background:#30343a}.wf-label{font-size:10px;color:#b7c1cb;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}.wf-input{min-height:65px;border:1px solid #626971;border-radius:3px;background:#202328;padding:8px;white-space:pre-wrap}.wf-buttons{display:flex;gap:6px;margin:7px 0}.wf-btn{flex:1;text-align:center;padding:6px;border:1px solid #687888;background:#3b4d5f;border-radius:3px;font-size:11px}.wf-btn.muted{background:#30343a;border-color:#4a4f56}.wf-status{padding:6px 8px;border-left:3px solid #b7c1cb;background:#24282d;margin:6px 0}.wf-receipt{padding:7px 8px;border-left:3px solid #9fa9b2;background:#33383e;margin:6px 0}.wf-small{font-size:10px;color:#c3cbd3}.wf-list{border:1px solid #4a4f56;border-radius:3px}.wf-item{padding:5px 7px;border-bottom:1px solid #454a50;font-size:10.5px}.wf-item:last-child{border-bottom:0}.wf-detail{padding:7px;font-size:10px;color:#c5ced7;border-top:1px solid #4a4f56}
+.wire-notes h3{margin:0 0 8px}.wire-notes ul{margin:8px 0;padding-left:20px;color:#c6d0db;font-size:13px}.wire-notes li{margin:5px 0}.wire-notes .card{margin-bottom:10px}
+.state-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.state-group{border:1px solid var(--line);border-radius:9px;padding:12px;background:var(--surface)}.state-group h3{font-size:12px;margin:0 0 7px}.state-group p{font-size:11px;line-height:1.55;margin:0;color:var(--muted)}
+.filterbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:10px 0 12px}.filterbar input{flex:1;min-width:190px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:12px}.filterbar button.active{border-color:#6089b5;background:#22384e}
+.error-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.error-card{border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:14px}.error-card h3{font-size:13px;margin:0 0 7px}.error-card .copy{font-size:12px;color:#d5dfea;background:#0f141a;border:1px solid var(--line);border-radius:6px;padding:9px;margin:7px 0}.error-card .next{font-size:11px;color:var(--muted)}
+.codebox{background:#0d1218;border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto}.codebox pre{margin:0;font-size:12px;line-height:1.65;color:#d7e2ee;min-width:560px}
+.checklist{list-style:none;margin:0;padding:0}.checklist li{display:flex;gap:8px;margin:8px 0;font-size:13px;color:#c8d3df}.checklist li:before{content:"□";font-family:var(--mono);color:var(--blue);font-size:15px;line-height:1.4}
+.phase{display:grid;grid-template-columns:90px 1fr 80px;gap:12px;align-items:start;padding:13px 0;border-bottom:1px solid var(--line)}.phase:last-child{border-bottom:0}.phase .tag{font:11px var(--mono);color:var(--blue);padding-top:3px}.phase h3{font-size:13px;margin:0 0 4px}.phase p{font-size:12px;color:var(--muted);margin:0}.phase .gate{font-size:10px;color:var(--muted);text-align:right}
+.prompt-box{position:relative}.prompt-box pre{max-height:620px;overflow:auto;line-height:1.65;font-size:12px;margin:0;padding:16px;border:1px solid var(--line);border-radius:10px;background:#0d1218;color:#d6e4f5;white-space:pre-wrap;overflow-wrap:anywhere}.prompt-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.faq details{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin:8px 0}.faq summary{cursor:pointer;font-size:13px;font-weight:700}.faq details p{color:#c6d0db;font-size:12px;margin:10px 0 0}.foot{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);color:var(--dim);font-size:11px}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:30;background:#243c53;color:#fff;border:1px solid #4c6e91;border-radius:8px;padding:9px 13px;font-size:12px;opacity:0;pointer-events:none;transition:opacity .15s}#toast.show{opacity:1}
+@media(max-width:1000px){.hero{grid-template-columns:1fr}.grid.four,.state-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.wireframe-wrap{grid-template-columns:1fr 1fr}.nav a{font-size:11px;padding:6px}}
+@media(max-width:720px){.topbar-in{padding:9px 13px;gap:10px}.brand{font-size:12px}.brand small{display:none}.nav{display:none}main{padding:16px 12px 50px}.hero{padding:20px;gap:18px}.hero h1{font-size:30px}.section-head{display:block}.grid,.grid.two,.grid.four,.state-groups,.wireframe-wrap,.error-grid{grid-template-columns:1fr}.phase{grid-template-columns:68px 1fr}.phase .gate{grid-column:2;text-align:left}.hero-side dl{grid-template-columns:90px 1fr}.btn{padding:7px 9px}.topbar .btn{margin-left:auto}}
+@media print{.topbar,.btn,.filterbar,#toast{display:none!important}body{background:white;color:#151515}.hero,.card,.callout,.table-wrap,.state-group,.error-card,.faq details,.diagram,.codebox,.prompt-box pre{background:white!important;color:#151515!important;border-color:#aaa!important;break-inside:avoid}.hero p,.card p,.card li,.callout p,td,.state-group p,.error-card .next{color:#333!important}a{color:#155da8}main{max-width:none;padding:0}.section{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="topbar-in">
+  <div class="brand">Blender AI Agent <small>UI / INTERACTION SPEC · V1.0</small></div>
+  <nav class="nav" aria-label="文档导航">
+    <a href="#audit">审查结论</a><a href="#layout">新版布局</a><a href="#states">状态模型</a><a href="#errors">错误规范</a><a href="#priority">开发优先级</a><a href="#acceptance">验收</a><a href="#handoff">执行任务书</a>
+  </nav>
+  <button class="btn primary" id="copyTop">复制执行任务书</button>
+</div></div>
+<main>
+<header class="hero">
+  <div>
+    <div class="kicker">Design handoff · source-grounded review</div>
+    <h1>让 AI 真正可控地操作 Blender</h1>
+    <p>这份规范基于原始《新版 UI 需求与原型》重新整理。目标不是重画一张漂亮的空闲态，而是定义一套可实现、可验证、出错时能恢复的 <strong>Blender 原生插件 UI 与交互契约</strong>，供设计 AI 和开发 AI 直接执行。</p>
+    <div class="chips"><span class="chip blue">Blender 5.2.1 · 原文实测基线</span><span class="chip">内嵌 Python 3.13.13 · 原文环境</span><span class="chip green">优先处理忙态 / 错误 / 回执</span><span class="chip amber">未验证能力必须有实测门槛</span></div>
+  </div>
+  <aside class="hero-side">
+    <h3>本版设计决策</h3>
+    <dl>
+      <dt>产品名</dt><dd>Blender AI Agent（当前 Provider 为 DeepSeek）</dd>
+      <dt>主界面</dt><dd>N 面板内完成，不转到外部客户端</dd>
+      <dt>控件原则</dt><dd>只使用原文已验证的 Blender UI API</dd>
+      <dt>交互优先级</dt><dd>可理解、可追踪、可恢复，再考虑装饰</dd>
+      <dt>文档状态</dt><dd>可交给其他 AI 作为实现任务书</dd>
+    </dl>
+  </aside>
+</header>
+
+<section class="section" id="summary">
+  <div class="section-head"><div><div class="eyebrow">01 · Executive summary</div><h2>结论先行：先解冲突，再做视觉</h2><p>原文的技术探针、状态覆盖和验收思路值得保留；以下五项是开始设计前必须统一的产品决定。</p></div><span class="pill proposal">新增设计建议</span></div>
+  <div class="grid two">
+    <article class="card"><div class="meta">Decision 01 · 阻塞冲突</div><h3>实时忙态与同步 HTTP 互相矛盾</h3><p>如果网络请求在 Blender 主线程同步执行，计时器、进度刷新和停止按钮可能都无法及时响应。只画一个转圈图标不能解决问题。</p><p><span class="pill p0">P0 必须决策</span> 推荐网络 I/O 移到工作线程，Blender 数据读写仍只在主线程进行；若暂不调整架构，则界面必须明确提示“等待响应中”，不得承诺实时进度。</p></article>
+    <article class="card"><div class="meta">Decision 02 · 信任冲突</div><h3>“可撤销”不能仅靠数量差证明</h3><p>objects 从 3 变成 4 只能说明数量变化，不能证明材质、变换、节点图或网格修改都可以完整恢复。</p><p><span class="pill p0">P0 必须决策</span> 回执展示“变更摘要”和“恢复能力”两个独立字段。只有经过验证的撤销/回滚路径，才显示可撤销动作。</p></article>
+    <article class="card"><div class="meta">Decision 03 · 数据语义</div><h3>Token 用量与上下文预算必须分开</h3><p>API 返回的 prompt/completion token 和 cache hit 是单次请求统计；上下文预算是历史消息可能占用模型窗口的估算值，两者不是同一指标。</p><p><span class="pill p0">P0 规范</span> 主界面仅显示简明状态；本次用量与上下文预算分开记录、分开解释。</p></article>
+    <article class="card"><div class="meta">Decision 04 · 原型边界</div><h3>28 个状态不是 28 套独立界面</h3><p>把每个异常都画成完整新面板会导致重复、信息跳动和实现成本上升。</p><p><span class="pill p1">结构优化</span> 收敛为 8 个状态族 + 一份状态转移表，复用固定布局，仅替换状态文案、动作和详情区。</p></article>
+    <article class="card"><div class="meta">Decision 05 · 设计边界</div><h3>文档视觉与 Blender 真实 UI 要分开</h3><p>这份 HTML 可以用颜色、卡片和表格帮助其他 AI 理解需求；这些视觉装饰不等于可以在 Blender Panel 内原样实现。</p><p><span class="pill p0">硬约束</span> 插件 UI 只能用原文列出的原生控件与可写属性；所有视觉稿必须附控件映射。</p></article>
+    <article class="card"><div class="meta">Decision 06 · 安全边界</div><h3>任意 Python 执行必须作为高风险动作</h3><p>原型目前包含 <code>execute_blender_code</code> 工具。不能把“模型写代码”作为普通工具行悄悄执行，也不能用“允许执行”代替风险说明。</p><p><span class="pill p0">安全要求</span> 默认受控工具优先；任意代码运行要显示代码/影响范围并取得明确批准，失败信息作为不可信内容渲染。</p></article>
+  </div>
+</section>
+
+<section class="section" id="audit">
+  <div class="section-head"><div><div class="eyebrow">02 · Source audit</div><h2>对原始文档的详细审查</h2><p>“原文事实”表示来自上传文件；“设计建议”是本次审查新增，不应误认为已经在运行环境验证。</p></div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th style="width:16%">审查项</th><th style="width:34%">原文现状 / 依据</th><th style="width:34%">问题与风险</th><th style="width:16%">改进决定</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill fact">原文事实</span><br>控件能力</td><td>原文列出多行 <code>UILayout.textbox</code>、<code>progress</code>、<code>template_list + UIList</code>、图片预览、子面板、popup、Text datablock、视口自绘等，并标注哪些已测、哪些未测。</td><td>技术清单散在“能力契约”和每项需求内；接手的 AI 可能只记住展示效果，忽略验证状态。</td><td>合并为“已验证 / 禁用 / 需 GUI 实测”能力表，并要求每个未验证点附测试方法和 fallback。</td></tr>
+      <tr><td><span class="pill fact">原文事实</span><br>主线程阻塞</td><td>原文明确记录 HTTP 同步阻塞主线程，停止只能在轮次之间生效。</td><td>这与实时计时、持续进度、点击即响应的忙态体验冲突；假按钮会降低信任。</td><td>作为开发架构门槛处理，不是单纯 UI 美化问题。推荐队列 + 计时器桥接；暂不改架构时降级文案。</td></tr>
+      <tr><td><span class="pill fact">原文事实</span><br>一键撤销</td><td>原文要求用执行前后快照统计差异，并在全局撤销关闭时阻断发送。</td><td>场景计数差异不等于完整 diff；全局 Undo 开启也不能自动证明任意 Python 数据写入可被整轮回退。</td><td>拆成“变更回执”“Blender Undo 可用”“任务级恢复点可用”三项状态。未验证时不显示“已可撤销”。</td></tr>
+      <tr><td><span class="pill fact">原文事实</span><br>多轮历史</td><td>原文指出现状每条指令都是全新对话；计划使用 CollectionProperty + UIList 或折行 label；20 条历史需要三种方案。</td><td>消息很长时的换行/行高/滚动未被验证；把全文塞进单行 UIList 会不可读。</td><td>默认推荐“紧凑可滚动列表 + 选中消息详情”；先 GUI 验证，失败则改分页，不强依赖长行折行。</td></tr>
+      <tr><td><span class="pill fact">原文事实</span><br>错误态</td><td>原文覆盖缺 Key、401、402、代理 502、超时、部分完成、工具异常和截图不可用。</td><td>错误文案已丰富，但动作可误导；例如超时后无法仅凭客户端状态保证服务端没有处理请求或计费。</td><td>统一错误模型：发生了什么 / 场景是否变化 / 下一步推荐动作 / 是否安全重试。超时不承诺“不会重复扣费”。</td></tr>
+      <tr><td><span class="pill fact">原文事实</span><br>Token 展示</td><td>原文提供一条真实 usage：prompt 1576、cache hit 1408、cache miss 168、completion 61。</td><td>静态原型中的比例条是示意值；单次 usage 不代表整个对话的上下文预算。</td><td>把“当前请求用量”放在任务结果详情；把“上下文占用估算”放在独立状态条，标注估算/实测来源。</td></tr>
+      <tr><td><span class="pill proposal">设计建议</span><br>按钮语义</td><td>原文有多个“停止、重试、允许执行代码、回滚”等按钮。</td><td>部分动作范围不清，可能出现重复提交、重复执行工具或误触高风险操作。</td><td>按钮文案必须写明对象和范围，例如“停止后续轮次”“重试本轮请求”“撤销本次任务”，避免泛化的“停止/恢复”。</td></tr>
+      <tr><td><span class="pill proposal">设计建议</span><br>对话安全</td><td>原型 HTML 用静态字符串构建模拟内容；实际模型文本和工具结果是动态数据。</td><td>未来若直接把用户/模型文本拼进 HTML 或富文本，可能形成注入或破坏 UI。</td><td>实现时对动态内容使用 Blender label/Text block 的纯文本路径；网页原型不要对非可信内容直接使用 <code>innerHTML</code>。</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout warn"><strong>需要更正的一条原型文案：</strong>“请求超时，重试不会重复扣费”不是安全承诺。客户端没有拿到响应，并不能单凭这一点证明服务端没有处理请求或计费。新版建议文案为：“本轮请求超时，尚未收到可确认的结果；请检查执行记录。重试可能会产生新的请求费用。”如果后端实现了幂等请求 ID，再根据真实能力改写。</div>
+</section>
+
+<section class="section" id="facts">
+  <div class="section-head"><div><div class="eyebrow">03 · Baseline & constraints</div><h2>必须继承的事实与实现边界</h2><p>以下基线整理自上传 HTML。若实际代码已变化，先重新探测和验证，再更新此表，不要把旧文档当永远有效的 API 真相。</p></div></div>
+  <div class="grid two">
+    <article class="card"><h3>项目基线（来自原文）</h3><ul><li>目标环境：Blender 5.2.1 LTS；内嵌 CPython 3.13.13。</li><li>当前模型：<code>deepseek-flash</code>，模型名在偏好设置中可改；原文指出 <code>deepseek-v4-flash</code> 已弃用。</li><li>当前 5 个工具：<code>get_scene_info</code>、<code>create_primitive</code>、<code>set_material</code>、<code>transform_object</code>、<code>execute_blender_code</code>。</li><li>原文真实样例约 4 轮 / 3.9 秒；usage 输入 1576，缓存命中 1408，输出 61。</li><li>API Key 目前可存偏好设置（原文注明明文）或通过 <code>DEEPSEEK_API_KEY</code> 环境变量提供。</li></ul></article>
+    <article class="card"><h3>硬约束（来自原文）</h3><ul><li>不引入登录、账号或云同步设计。</li><li>对话必须留在 Blender 内，不转外部客户端。</li><li>不新增需要 pip 安装的第三方依赖；优先 Blender 内置 Python 标准库。</li><li>不要假设 Blender 面板可自定义 RGB、字体、字号、圆角、阴影、渐变、透明度或 CSS 动画。</li><li>只用原文白名单中的图标；未列出的图标必须现场验证，不猜名称。</li><li>不要假设 Panel 有 <code>scrollable</code>；长面板滚动行为要 GUI 实测。</li><li>后台模式无 GL 的截图能力必须降级，不可假装截图成功。</li></ul></article>
+  </div>
+  <div class="callout decision"><strong>命名建议：</strong>产品 UI 顶部建议使用“Blender AI Agent”，把 “DeepSeek / deepseek-flash” 放到 Provider/模型状态位置。这样既忠实反映当前接入，也避免未来切换模型时整个产品名称和控件命名一起重做。当前版本仍按 DeepSeek 接口实现；多 Provider 是后续架构扩展，不是本次 UI 的隐性范围扩张。</div>
+</section>
+
+<section class="section" id="layout">
+  <div class="section-head"><div><div class="eyebrow">04 · Recommended layout</div><h2>新版主面板：单列、可追踪、回执优先</h2><p>先用 Blender 原生 UI 做紧凑的单列垂直布局。不要在默认窄侧栏里强塞网页式双栏或气泡卡片。</p></div><span class="pill proposal">主方案 A</span></div>
+  <div class="wireframe-wrap">
+    <div class="wireframe" aria-label="Blender 原生面板线框示意">
+      <div class="wf-head"><span>Blender AI Agent</span><span>⚙ SETTINGS</span></div>
+      <div class="wf-row"><div class="wf-label">Provider / Model</div>DeepSeek · deepseek-flash</div>
+      <div class="wf-row"><div class="wf-label">API 状态</div>● API Key 已配置（环境变量）</div>
+      <div class="wf-row"><div class="wf-label">指令 · 多行输入</div><div class="wf-input">创建一个红色立方体，放在 (2, 0, 0.5)，不要移动现有物体。</div></div>
+      <div class="wf-buttons"><div class="wf-btn">▶ 执行任务</div><div class="wf-btn muted">清空输入</div></div>
+      <div class="wf-status">[已完成] 4 轮 · 3.9 秒 · 结果已验证</div>
+      <div class="wf-receipt"><b>本次变更回执</b><br>新增对象：RedCube · 新增材质：MAT_RedCube<br><span class="wf-small">恢复状态：Undo 已验证 / 任务回滚点已创建</span><br><span class="wf-small">[查看变更] [撤销本次任务]</span></div>
+      <div class="wf-row"><div class="wf-label">最新回复</div>已创建 RedCube（1 米），位于指定位置，并赋予纯红色 PBR 材质。原有 Cube 未修改。</div>
+      <div class="wf-row"><div class="wf-label">对话历史 · 4 条</div><div class="wf-list"><div class="wf-item">你 · 创建一个红色立方体</div><div class="wf-item">AI · 已创建 RedCube（1 米）</div><div class="wf-item">工具 · set_material 完成 · 0.4 s</div><div class="wf-item">系统 · 任务回执已生成</div></div><div class="wf-detail">选中历史项后在此显示完整内容；列表行保持紧凑。</div></div>
+      <div class="wf-row"><div class="wf-label">子面板：工具调用（3 步）</div><span class="wf-small">✓ get_scene_info　✓ create_primitive　✓ set_material</span><br><span class="wf-small">展开可看摘要；长 JSON 通过 Text datablock 查看/复制。</span></div>
+      <div class="wf-row"><div class="wf-label">子面板：用量与上下文</div><span class="wf-small">本次：输入 1576（缓存命中 1408）· 输出 61</span><br><span class="wf-small">上下文预算：只有可计算时才显示估算值</span></div>
+    </div>
+    <div class="wire-notes">
+      <article class="card"><h3>信息层级（从上到下）</h3><ol><li><strong>连接状态</strong>：Key 是否可用、来自偏好设置还是环境变量；缺失时提供直接入口。</li><li><strong>输入与主动作</strong>：多行输入为主，执行/停止动作固定在输入区之后。</li><li><strong>当前任务状态</strong>：请求阶段、轮次、耗时、工具执行、部分完成或最终失败。</li><li><strong>变更回执</strong>：提交后立即出现，放在最新回复之前；一眼看出改了什么、能否恢复。</li><li><strong>对话历史</strong>：紧凑列表 + 选中项详情，不强制使用气泡。</li><li><strong>工具追踪、Token、截图细节</strong>：作为子面板或弹层；关键错误不能只藏在折叠区域。</li></ol></article>
+      <article class="card"><h3>为什么这样排序</h3><ul><li>用户进入面板首先要知道能不能执行、输入什么、如何触发。</li><li>执行过程中，状态与“停止后续执行”比历史消息更重要。</li><li>任务完成后，变更回执必须在一眼可见的位置；不应让用户去翻工具 JSON。</li><li>把完整 JSON、Token 细项、截图元数据放在次级入口，但错误原因与下一步不能隐藏。</li></ul></article>
+      <article class="card"><h3>真实 Blender 控件映射</h3><ul><li>输入：原文实测的 <code>UILayout.textbox(data, prop, initial_visible_lines=3, placeholder=…)</code>。</li><li>进度：<code>UILayout.progress(type='RING'|'BAR', factor=0..1)</code>；不能靠网页 CSS 动画假装数据在更新。</li><li>历史：<code>template_list</code> + <code>UIList</code> + <code>CollectionProperty</code>；行高和滚动需验证。</li><li>分组：原生 Panel / 子 Panel；长详情用 Text datablock，不把长 JSON 压成单行 label。</li></ul></article>
+    </div>
+  </div>
+  <div class="callout"><strong>注意：</strong>上面的面板图是信息结构线框，不是 Blender 实际皮肤。设计 AI 交付时必须逐项写出原生控件 API、状态变化、实际 operator 和验收步骤；不得把 HTML 里的颜色、圆角或卡片边框照搬到 Blender 插件。</div>
+</section>
+
+<section class="section" id="rules">
+  <div class="section-head"><div><div class="eyebrow">05 · Interaction contract</div><h2>核心交互规则</h2><p>同一个 UI 元素在不同状态下应有明确且一致的含义，不允许因为状态变化而悄悄改变按钮动作。</p></div></div>
+  <div class="grid two">
+    <article class="card"><h3>输入与提交</h3><ul><li>默认显示 3 行多行输入；placeholder 示例要体现复合任务，而非只写“输入指令”。</li><li>明确 Enter 与 Shift+Enter 的语义，并以 Blender GUI 实测结果为准。建议保留可见“执行任务”按钮，不依赖键盘行为猜测。</li><li>执行开始后固定当前任务文本；避免网络等待期间用户修改输入，导致不清楚执行的是哪个版本。</li><li>新提交要防重复触发；请求进行中再次点击不得创建第二个并行任务。</li><li>“清空输入”只清输入框，不得清空历史或删除场景对象。</li></ul></article>
+    <article class="card"><h3>停止 / 取消</h3><ul><li>在模型 HTTP 请求中：按钮名称用“停止后续执行”，说明“当前请求返回后生效”。</li><li>工具执行阶段：如当前工具不可中断，显示“当前步骤完成后停止后续步骤”。</li><li>可中断状态必须由真实后端标记确认；不能只改按钮文案或停止 Spinner。</li><li>停止后立即做任务结算：列出已完成操作、未执行步骤、是否产生场景变化以及是否提供恢复入口。</li><li>如果采用同步阻塞主线程方案，UI 本身可能无法在请求期间响应，所以不得宣称点击能立即停止。</li></ul></article>
+    <article class="card"><h3>变更回执 / 恢复</h3><ul><li>回执在工具执行提交后尽快显示，目标是提交后 1 秒内能看见摘要；若验证仍在进行，显示“变更已应用，正在验证”。</li><li>回执最少包含：任务状态、变更对象/数据块摘要、失败/跳过项、恢复能力和详情入口。</li><li>区分“Blender 全局 Undo 可用”“本次操作可通过 Ctrl+Z 恢复”“存在任务级回滚点”。这三者不能相互替代。</li><li>任何不能证明可恢复的路径必须显示“未建立任务级回滚点”或“无法保证整轮恢复”，不能显示“可撤销”。</li></ul></article>
+    <article class="card"><h3>工具追踪 / 长内容</h3><ul><li>每个工具行显示稳定的序号、工具名、可读动作名、状态、耗时和简短结果。</li><li>状态图标只能从原文白名单选：进行中 <code>TIME</code>，成功 <code>CHECKMARK</code>，失败 <code>ERROR</code>，信息 <code>INFO</code>。</li><li>点行打开详情时显示参数摘要、返回摘要和错误信息；完整 JSON / traceback 放 Text datablock，可复制。</li><li>成功后也保留失败后修复的记录；明确标注“首次失败，已修复”，不要伪装成全程成功。</li></ul></article>
+    <article class="card"><h3>历史与上下文</h3><ul><li>新会话、压缩历史、清空记录要区分：它们对场景没有隐式影响。</li><li>压缩前给出前后条数、摘要内容、估算节省 Token；原始记录保留策略要明确。</li><li>当前上下文百分比如果没有可靠估算，不展示伪精确数字；可以先显示“历史消息 20 条 / 历史预算尚未估算”。</li><li>每条 AI 回复与任务 ID 关联，以便把消息、工具记录、变更回执和回滚点串起来。</li></ul></article>
+    <article class="card"><h3>颜色之外的状态可读性</h3><ul><li>所有状态必须由“文字标签 + 图标 + 动作差异”表达，不得只靠红/橙/绿。</li><li>示例：<code>[失败 · 需要修改设置]</code> + <code>PREFERENCES</code> 图标 + “打开偏好设置”。</li><li>可重试错误使用 <code>[请求失败 · 可重试]</code> + “重试本轮”；不可重试错误使用 <code>[配置错误]</code> + “修改 Key”。</li><li>状态颜色在 Blender 原生面板里不能按网页设计任意设定；本规范页面使用的颜色仅用于文档分类。</li></ul></article>
+  </div>
+</section>
+
+<section class="section" id="architecture">
+  <div class="section-head"><div><div class="eyebrow">06 · State & execution</div><h2>状态机和执行流程</h2><p>UI 只呈现可观测状态；所有转移都要由运行时事件驱动，不能依赖“等两秒就显示成功”的演示逻辑。</p></div></div>
+  <div class="diagram">
+    <div class="flow">
+      <div class="node"><b>READY</b><span>输入可编辑 / 显示 Key 与模型状态</span></div><div class="arrow">→</div>
+      <div class="node"><b>PREFLIGHT</b><span>校验 Key、撤销/恢复能力、重复任务</span></div><div class="arrow">→</div>
+      <div class="node"><b>REQUESTING</b><span>等待模型响应 / 计时 / 可请求停止后续</span></div><div class="arrow">→</div>
+      <div class="node"><b>TOOL_RUNNING</b><span>逐步显示工具名、轮次、返回摘要</span></div><div class="arrow">→</div>
+      <div class="node"><b>VERIFYING</b><span>检查工具结果与场景差异</span></div><div class="arrow">→</div>
+      <div class="node"><b>COMPLETED</b><span>生成回执 / 记录日志 / 可恢复性说明</span></div>
+    </div>
+    <p class="diagram-note">失败或停止分支：任一阶段 → PARTIAL / FAILED / STOPPED → 结算实际已发生的场景变更 → 显示安全的下一步。工具返回错误可回喂模型继续修复，但必须保留首次错误。</p>
+  </div>
+  <div class="grid two" style="margin-top:12px">
+    <article class="card"><h3>推荐的最小非阻塞实现</h3><ol><li>工作线程只处理网络 I/O 和响应解析；不得访问或修改 <code>bpy</code> 数据。</li><li>工作线程通过线程安全队列投递状态、文本和 Tool Call 数据。</li><li><code>bpy.app.timers.register</code> 在主线程轮询队列，更新 UI 并执行 Blender 数据操作。</li><li>所有 Blender API / RNA / operator 操作都在主线程执行；每个工具动作有开始、成功、失败和耗时事件。</li><li>HTTP 请求设置真实超时；停止按钮设置 cooperative stop 标记，在当前请求结束后阻止后续轮次。</li></ol></article>
+    <article class="card"><h3>若暂时不调整同步架构</h3><ul><li>不要显示“每秒实时变化”的假计时或进度条。</li><li>只在请求开始前显示“正在发送请求；当前 Blender 界面可能暂时无响应”。</li><li>停止按钮在无响应期间不可用，必须把这一限制写清楚；不能把“停止后续轮次”描述成立即取消请求。</li><li>将“主线程非阻塞”列为下一版明确技术债和验收项，而不是把问题推给 UI 设计。</li></ul><p><span class="pill p0">强烈建议</span> 产品体验要求和同步实现只能二选一，不能同时宣称全部实现。</p></article>
+  </div>
+</section>
+
+<section class="section" id="states">
+  <div class="section-head"><div><div class="eyebrow">07 · State inventory</div><h2>把原来的 28 个状态合并为 8 个状态族</h2><p>不是删除原有边界条件，而是让状态共享同一套布局与交互规范。原始编号保留在括号中，方便开发对照。</p></div></div>
+  <div class="state-groups">
+    <div class="state-group"><h3>01 配置与连接 <span class="pill p0">关键</span></h3><p>原状态 1–5、16–17：缺 Key、Key 来源、401、402、代理失败、单轮超时。复用连接区 + 专用错误说明 + 唯一下一步动作。</p></div>
+    <div class="state-group"><h3>02 空闲与输入</h3><p>原状态 6–9：正常空闲、多行输入、空场景、Undo 关闭。输入区常驻；环境前置条件不满足时阻断提交并显示修复入口。</p></div>
+    <div class="state-group"><h3>03 执行中 <span class="pill p0">关键</span></h3><p>原状态 10–12：请求中、工具执行、轮次/墙钟耗尽。状态、轮次、耗时、停止语义和已发生变更必须实时一致。</p></div>
+    <div class="state-group"><h3>04 结果与错误 <span class="pill p0">关键</span></h3><p>原状态 13–18：成功、失败后修复、全失败、超时、代理、代码异常。复用结果区，不覆盖首次失败证据。</p></div>
+    <div class="state-group"><h3>05 历史与上下文</h3><p>原状态 19–21：多轮、压缩历史、接近预算。显示当前会话边界、压缩证据、历史条数和可靠的上下文估算。</p></div>
+    <div class="state-group"><h3>06 视觉反馈</h3><p>原状态 22–23：截图成功和截图降级。显示截图来源/尺寸/时间/是否发送给模型；不可用时回退到文本场景摘要。</p></div>
+    <div class="state-group"><h3>07 恢复点与回滚</h3><p>原状态 24–25：还原点列表和已回滚。明确回滚范围、被丢弃的后续变化、对话是否保留、回滚后场景是否验证。</p></div>
+    <div class="state-group"><h3>08 可选形态试验</h3><p>原状态 26–28：视口 HUD、气泡转录、子面板折叠/固定。列为可选实验，不阻塞主 N 面板版本；通过 GUI 实测后再决定是否采用。</p></div>
+  </div>
+  <div class="callout decision"><strong>核心原则：</strong>8 个状态族是“界面布局复用”的分类，不是运行时只允许 8 个状态。运行时仍要保留细粒度枚举和错误类型，例如 <code>REQUEST_TIMEOUT</code>、<code>AUTH_INVALID</code>、<code>TOOL_FAILED_RECOVERED</code>，避免用模糊的单一 <code>ERROR</code> 覆盖事实。</div>
+</section>
+
+<section class="section" id="widths">
+  <div class="section-head"><div><div class="eyebrow">08 · Width behavior</div><h2>默认、加宽、极窄三档布局规则</h2><p>原文中的 200 / 272 / 360 px 是 HTML 原型模拟宽度，不应直接视为 Blender 真实像素。最终以 Blender GUI 实测和用户实际拖动侧栏为准。</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>模式</th><th>原型参考宽度</th><th>必须保留</th><th>可以简化</th><th>禁止行为</th></tr></thead><tbody>
+    <tr><td><strong>默认</strong><br><code>bl_ui_units_x=0</code> 参考</td><td>约 272 px（仅原型参考）</td><td>连接状态、3 行输入、执行/停止、任务状态、最近回执、历史列表入口。</td><td>工具详情和用量细节放子面板；消息正文过长时选中查看详情。</td><td>不允许把错误动作挤到面板最下方；不允许长 JSON 以单行 label 显示。</td></tr>
+    <tr><td><strong>加宽</strong><br>显式加宽参考</td><td>约 360 px（仅原型参考）</td><td>所有默认信息；对话条目可显示更长摘要，任务回执可减少换行。</td><td>可增加工具行的摘要长度与用量明细的可读信息。</td><td>不根据“面板更宽”就改成网页式多列；实际宽度始终由 Blender 布局约束。</td></tr>
+    <tr><td><strong>极窄</strong><br>侧栏被拖窄</td><td>约 200 px（仅原型参考）</td><td>状态标签、输入、主按钮、错误首要动作、最近任务结果。</td><td>缩短辅助文案；按钮可用原生图标 + tooltip，但关键动作仍需文字或明确上下文。</td><td>不能让文案横向溢出；不能靠颜色区分错误；不能丢失撤销/失败信息。</td></tr>
+  </tbody></table></div>
+  <div class="callout warn"><strong>待测项：</strong>在 Blender GUI 中分别设置极窄/默认/加宽，实际检查 textbox 输入、中文长行裁切、UIList 滚动与行高、子面板可见性。任何依赖未验证行为的设计都必须先提供最小测试脚本与失败后的替代布局。</div>
+</section>
+
+<section class="section" id="history">
+  <div class="section-head"><div><div class="eyebrow">09 · Conversation history</div><h2>20 条历史：三种实现方案与推荐</h2><p>原文要求必须比较三种方案。推荐先做最稳的主方案，并保留无滚动依赖的 fallback。</p></div></div>
+  <div class="grid three">
+    <article class="card"><div class="meta">方案 A · 推荐</div><h3>紧凑 UIList + 详情区</h3><p>列表每条只显示角色/状态/单行摘要/时间或序号；用户选择一条后，在列表下显示该条完整正文。长内容不塞进行高不确定的列表行。</p><ul><li>优点：20 条可浏览、单条可读、能标出失败工具。</li><li>前置：GUI 实测 <code>template_list</code> 的滚动条、行高、键盘选择行为。</li><li>失败 fallback：切换方案 B。</li></ul><p><span class="pill p1">实测后采用</span></p></article>
+    <article class="card"><div class="meta">方案 B · 稳定 fallback</div><h3>分页历史，每页 4–5 条</h3><p>只渲染当前页，以“上一页 / 下一页 / 第 N 页，共 M 页”浏览；每条摘要点选后显示详情。</p><ul><li>优点：不依赖滚动；窄面板布局更可控。</li><li>缺点：翻页成本较高，新消息追加时需要处理页码。</li><li>适用：UIList 行高、滚动或刷新行为不可靠。</li></ul><p><span class="pill fact">不依赖滚动</span></p></article>
+    <article class="card"><div class="meta">方案 C · 辅助归档</div><h3>Text datablock 完整转录</h3><p>对话记录镜像到 <code>bpy.data.texts</code>，通过 <code>template_ID(space, "text")</code> 选择、打开和复制完整文本。主面板仍保留最近消息与摘要。</p><ul><li>优点：完整记录易复制、适合长 JSON / traceback。</li><li>缺点：不是理想的日常聊天浏览体验。</li><li>适用：导出、调试、完整审计记录。</li></ul><p><span class="pill">不作为主聊天 UI</span></p></article>
+  </div>
+  <div class="callout success"><strong>推荐决策：</strong>方案 A 为主、方案 B 为 GUI 验证失败后的退路、方案 C 负责复制与归档。不要在第一版同时实现三套主 UI，也不要把“UIList 一定可滚动/自动跟底”当成未经测试的事实。</div>
+</section>
+
+<section class="section" id="errors">
+  <div class="section-head"><div><div class="eyebrow">10 · Error copy system</div><h2>错误文案模板与下一步动作</h2><p>每类错误要告诉用户：发生什么、场景是否已变化、下一步优先做什么。动作必须能真实实现。</p></div><div class="filterbar"><input id="errorSearch" type="search" placeholder="筛选错误类型，例如 401、超时、代理……" aria-label="筛选错误类型"></div></div>
+  <div class="error-grid" id="errorGrid">
+    <article class="error-card" data-search="key 缺失 配置 环境变量"><h3>01 · 未配置 API Key <span class="pill p0">配置阻断</span></h3><div class="copy">未配置 DeepSeek API Key。请打开“编辑 → 偏好设置 → 插件 → Blender AI Agent”填写，或设置环境变量 <code>DEEPSEEK_API_KEY</code>。</div><div class="next">主动作：打开偏好设置（<code>PREFERENCES</code>）。次级说明：Key 来源与保存风险；输入框本身不回显 Key。</div></article>
+    <article class="error-card" data-search="401 无效 key authentication"><h3>02 · API Key 无效（401） <span class="pill p0">不可盲重试</span></h3><div class="copy">DeepSeek 返回 401：API Key 无效。请检查当前 Key 是否正确、是否被撤销，然后再重试。</div><div class="next">主动作：修改 Key；不要把“重试”作为首选。错误原文可在详情区查看。</div></article>
+    <article class="error-card" data-search="402 余额不足 充值"><h3>03 · 余额不足（402） <span class="pill p0">需外部处理</span></h3><div class="copy">DeepSeek 返回 402：账户余额不足，当前请求未能正常完成。请先查看服务商账单或充值状态。</div><div class="next">主动作：打开官方计费页面（只有 URL 已配置且真实有效时才显示按钮）；充值后由用户主动重试。</div></article>
+    <article class="error-card" data-search="502 网络 代理 connection urlopen"><h3>04 · 网络 / 代理错误（502） <span class="pill p0">可诊断</span></h3><div class="copy">无法连接 DeepSeek：HTTP 502。检测到当前配置使用系统代理 <code>127.0.0.1:7890</code>；请确认代理进程正在运行，或检查网络配置。</div><div class="next">主动作：显示代理检查步骤。只有真正执行过连通性测试才能显示“检查成功/失败”；否则按钮应叫“查看检查方法”。</div></article>
+    <article class="error-card" data-search="timeout 超时 20 秒 重试 计费"><h3>05 · 单轮请求超时 <span class="pill p0">状态待确认</span></h3><div class="copy">第 2 轮请求超时（20 秒），尚未收到可确认的响应。当前轮是否已被服务端处理无法仅凭客户端超时确定；请检查工具记录后再决定是否重试。</div><div class="next">主动作：重试本轮请求；同时提示可能产生新的请求费用。不要承诺“不会重复扣费”，除非实现并验证幂等机制。</div></article>
+    <article class="error-card" data-search="轮次 墙钟 部分完成 partial budget"><h3>06 · 轮次 / 时间预算耗尽 <span class="pill p0">部分完成</span></h3><div class="copy">已达到本次任务的轮次或时间预算。场景可能已发生部分修改。请先检查下面的已执行步骤和变更回执，再选择继续或恢复。</div><div class="next">主动作：优先展示已发生变更；仅当有可验证断点时才显示“从断点继续”。恢复动作也必须说明范围。</div></article>
+    <article class="error-card" data-search="ZeroDivisionError exec Python traceback 工具异常"><h3>07 · Blender 工具 / Python 异常</h3><div class="copy">工具执行失败：ZeroDivisionError: division by zero。AI 已收到错误摘要；本次任务是否部分成功，以工具记录和变更回执为准。</div><div class="next">主动作：如果 Agent 可安全修复，显示“让 AI 尝试修复”；原始 traceback 必须保留。任意 Python 运行需审批和风险提示。</div></article>
+    <article class="error-card" data-search="unsupported 工具不存在 功能不支持 mesh_boolean"><h3>08 · 请求使用了当前不存在的工具</h3><div class="copy">当前版本没有可直接调用的“布尔切割”专用工具。可以查看现有工具能力，或在明确批准后使用受控的代码执行路径。</div><div class="next">主动作：先解释可用替代方法；不要把工具不存在伪装成 Blender 本身失败。</div></article>
+    <article class="error-card" data-search="Undo 撤销关闭 全局"><h3>09 · Blender 全局撤销关闭 <span class="pill p0">提交前置检查</span></h3><div class="copy">当前 Blender 全局撤销未启用。为避免操作后无法通过常规 Undo 恢复，已暂时禁用执行。请启用全局撤销，或先建立经过验证的项目检查点。</div><div class="next">主动作：打开相关设置或显示明确步骤；启用后重新检查状态。不要仅根据用户点击就假定设置已成功变更。</div></article>
+    <article class="error-card" data-search="截图 视觉 无 GL background mode"><h3>10 · 视口截图不可用</h3><div class="copy">本次无法获取有效视口图像（当前运行环境没有可用的 OpenGL 上下文）。已降级为场景文字摘要；视觉检查未执行。</div><div class="next">主动作：继续使用文字检查，或提示切换到有 GUI 的 Blender 环境。绝不可将黑图当成成功截图发送。</div></article>
+  </div>
+</section>
+
+<section class="section" id="tokens">
+  <div class="section-head"><div><div class="eyebrow">11 · Usage & context</div><h2>Token、上下文和费用显示规范</h2><p>让信息可解释，而不是让一个进度条看起来很“实时”。</p></div></div>
+  <div class="grid three">
+    <article class="card"><h3>A. 当前请求用量</h3><p>只在 API 返回 usage 后更新。</p><ul><li>输入 Token：1576</li><li>缓存命中：1408；缓存未命中：168</li><li>输出 Token：61</li><li>缓存命中率：1408 / 1576 ≈ 89.3%</li></ul><p>这组数字是原文真实样例；仅作为示例，UI 必须绑定本次响应数据，缺字段则显示“服务商未返回”。</p></article>
+    <article class="card"><h3>B. 对话上下文预算</h3><p>它是历史消息累计与模型窗口的预算估算，不是本次 API usage。</p><ul><li>显示估算依据和预算上限来源。</li><li>超过 80% 只在估算可信时展示警告标签。</li><li>提供“压缩历史”和“新会话”两条出口。</li><li>压缩需给出保留摘要、压缩条数与节省估算。</li></ul></article>
+    <article class="card"><h3>C. 费用</h3><p>不要用旧样例成本硬编码实时费用。</p><ul><li>费率、缓存计价和折扣可能变化，费用估算要标注来源/更新时间。</li><li>如果无可靠费率，不显示金额，优先显示 Token 统计。</li><li>超时请求的服务端处理/计费状态不确定时必须明确说明。</li><li>单次数据与会话累计数据分区显示。</li></ul></article>
+  </div>
+</section>
+
+<section class="section" id="security">
+  <div class="section-head"><div><div class="eyebrow">12 · Safety & trust</div><h2>安全和恢复必须成为 UI 合同</h2><p>本节是实施要求，不要求本次 UI 突然增加账户体系或云功能。</p></div></div>
+  <div class="grid two">
+    <article class="card"><h3>API Key</h3><ul><li>输入内容在 UI 上打码，但必须明确告诉用户：打码只影响显示，不代表磁盘存储加密。</li><li>默认优先读取 <code>DEEPSEEK_API_KEY</code>；若使用偏好设置中的 Key，要显示来源。</li><li>日志、错误、复制的任务书与转录中不得打印完整 Key；只可显示“已配置 / 未配置”和必要的短指纹。</li><li>“去偏好设置”动作必须使用真实可用的 Blender operator；失败时给出手动路径。</li></ul></article>
+    <article class="card"><h3>执行任意 Python</h3><ul><li>默认将 <code>execute_blender_code</code> 视为高风险工具。</li><li>显示代码预览、目标对象/数据范围、预计副作用和“执行一次”批准动作。</li><li>禁止模型通过工具参数绕过审批；审批必须由可信 UI/运行时检查。</li><li>原始返回、stdout 和 traceback 可折叠查看，但摘要、失败原因和影响范围必须可见。</li><li>动态文本不得被当成可信 HTML；模型输出只用于显示，不可成为 UI 代码。</li></ul></article>
+    <article class="card"><h3>回执与恢复承诺</h3><ul><li>每个 mutation tool 都要有操作前后可比较的变更摘要。</li><li>区分“工具执行成功”和“结果验证成功”；不可用同一个绿色/成功状态替代。</li><li>任务级回滚需要独立设计和测试；如果只是靠全局 Ctrl+Z，就准确叫“尝试使用 Blender Undo”。</li><li>回滚需记录任务 ID、目标还原点、被移除/恢复的数据摘要和回滚后验证结果。</li></ul></article>
+    <article class="card"><h3>资源和日志</h3><ul><li>对话/工具记录按会话和任务组织；原文可考虑本地 JSON 和 <code>bpy.data.texts</code> 存档。</li><li>设置历史上限（原文参考 200 条 / 1 MiB）；达到上限时给出清理或归档提示。</li><li>日志记录状态事件、工具名、耗时与错误类型，不记录 API Key。</li><li>复制转录时可选择“含工具详情”或“仅对话摘要”，避免把冗长 JSON 全部塞进剪贴板。</li></ul></article>
+  </div>
+</section>
+
+<section class="section" id="priority">
+  <div class="section-head"><div><div class="eyebrow">13 · Roadmap</div><h2>重排后的开发优先级</h2><p>按照“能不能安全可靠地完成一个任务”排序，而不是按照视觉上是否抢眼排序。</p></div><span class="pill p0">先做 P0</span></div>
+  <div class="card">
+    <div class="phase"><div class="tag">P0-01</div><div><h3>核心输入与状态语义</h3><p>3 行多行输入、Enter 行为实测、执行/停止状态、错误独立区、连接状态、禁止重复提交。</p></div><div class="gate">UI + 小改动</div></div>
+    <div class="phase"><div class="tag">P0-02</div><div><h3>非阻塞忙态或诚实降级</h3><p>先解决 HTTP 同步阻塞与实时反馈的矛盾。推荐工作线程处理网络、主线程通过 timer 操作 Blender。</p></div><div class="gate">架构门槛</div></div>
+    <div class="phase"><div class="tag">P0-03</div><div><h3>工具调用追踪与异常分类</h3><p>每步状态、耗时、摘要、详细输出；失败后修复仍保留首次失败；超时/401/402/502/工具异常分流。</p></div><div class="gate">UI + 逻辑</div></div>
+    <div class="phase"><div class="tag">P0-04</div><div><h3>可信变更回执与恢复检查</h3><p>操作前后 diff 摘要、恢复能力标记、Undo 前置检查、部分完成结算；未经验证不能声称“整轮可撤销”。</p></div><div class="gate">逻辑 + 测试</div></div>
+    <div class="phase"><div class="tag">P0-05</div><div><h3>安全与数据保护</h3><p>Key 不出现在日志；任意 Python 需显式批准；模型/工具结果作为不可信文本；按钮动作符合真实后端能力。</p></div><div class="gate">安全门槛</div></div>
+    <div class="phase"><div class="tag">P1-01</div><div><h3>多轮对话历史</h3><p>会话边界、历史列表、选中详情、压缩历史及回滚历史记录；UIList 方案通过 GUI 实测后再确定。</p></div><div class="gate">功能补齐</div></div>
+    <div class="phase"><div class="tag">P1-02</div><div><h3>Token / 上下文与转录</h3><p>请求 usage 与上下文预算分离、压缩前后统计、复制转录和 Text datablock 归档。</p></div><div class="gate">功能补齐</div></div>
+    <div class="phase"><div class="tag">P1-03</div><div><h3>视口截图与降级</h3><p>开关默认关闭；明确截图时间/尺寸/是否发给模型；无 GL 时回退文字摘要，不把黑图发送给模型。</p></div><div class="gate">可选能力</div></div>
+    <div class="phase"><div class="tag">P2-01</div><div><h3>检查点列表 / 任务级回滚</h3><p>保存点、回滚范围、变更 diff、回滚后验证。只有底层能力真实实现后才展示按钮。</p></div><div class="gate">较高成本</div></div>
+    <div class="phase"><div class="tag">P2-02</div><div><h3>HUD / 气泡精修 / 固定子面板</h3><p>主 N 面板完成、交互稳定后再做视口自绘。HUD 不能替代完整可滚动转录。</p></div><div class="gate">体验实验</div></div>
+  </div>
+  <div class="callout warn"><strong>范围管理：</strong>当前代码只有 5 个工具。不要在 UI 里展示还未注册的 mesh Boolean、UV 或 Geometry Nodes 能力按钮。只有当工具实际出现在工具注册表、参数通过 schema 校验且经过端到端测试后，才可以在“可用能力”里宣称支持。</div>
+</section>
+
+<section class="section" id="acceptance">
+  <div class="section-head"><div><div class="eyebrow">14 · Acceptance tests</div><h2>交给开发 AI 的验收测试</h2><p>以下用例必须能在 Blender GUI 中实际运行；HTML 演示、固定计时器或假数据不能代替。</p></div></div>
+  <div class="filterbar"><label for="testSearch" class="mono" style="font-size:11px;color:var(--muted)">筛选测试</label><input id="testSearch" type="search" placeholder="搜索：忙态、Key、回滚、历史……"><button class="btn small active" data-testfilter="all">全部</button><button class="btn small" data-testfilter="p0">只看 P0</button></div>
+  <div class="table-wrap"><table id="testTable"><thead><tr><th>级别</th><th>场景</th><th>操作</th><th>通过标准</th></tr></thead><tbody>
+    <tr data-priority="p0" data-text="Key 缺失 配置 偏好设置"><td><span class="pill p0">P0</span></td><td>未配置 Key</td><td>首次打开插件，无 Key，点击执行。</td><td>请求被阻断；明确提示配置路径和环境变量；可进入设置；不发起 HTTP。</td></tr>
+    <tr data-priority="p0" data-text="401 错误 Key"><td><span class="pill p0">P0</span></td><td>401 Key 无效</td><td>使用无效 Key 发起一次请求。</td><td>显示配置错误而非普通网络错误；首选动作是修改 Key，不是盲重试。</td></tr>
+    <tr data-priority="p0" data-text="502 代理 网络"><td><span class="pill p0">P0</span></td><td>502 / 代理不可用</td><td>关闭原型所述本地代理，再执行。</td><td>说明网络/代理问题并给出检查步骤；不误判为 Key 无效；不伪报“已检查代理”。</td></tr>
+    <tr data-priority="p0" data-text="忙态 4 轮 秒数 主线程"><td><span class="pill p0">P0</span></td><td>四轮工具调用忙态</td><td>运行一次真实的多轮工具任务，期间观察面板。</td><td>任务状态由真实事件变化；若采用非阻塞架构，秒数/步骤可更新且 Blender 能响应；否则准确提示同步等待限制。</td></tr>
+    <tr data-priority="p0" data-text="停止 请求 轮之间"><td><span class="pill p0">P0</span></td><td>停止后续轮次</td><td>请求进行中点击停止后续执行。</td><td>不会谎称立即中断 HTTP；当前请求结束后不启动新轮；显示已完成与未执行步骤。</td></tr>
+    <tr data-priority="p0" data-text="工具失败 自我修正 traceback"><td><span class="pill p0">P0</span></td><td>工具失败后自动修复</td><td>触发可复现工具参数错误后让模型继续。</td><td>首次失败、错误摘要、修复后成功记录均保留；最终状态反映“失败后修复”。</td></tr>
+    <tr data-priority="p0" data-text="Undo 关闭 撤销 回执"><td><span class="pill p0">P0</span></td><td>全局 Undo 关闭</td><td>关闭 Blender 全局撤销并提交写操作。</td><td>如无其他已验证恢复机制，则执行前阻断并给出修复路径；不会虚报可撤销。</td></tr>
+    <tr data-priority="p0" data-text="执行 Python 危险 审批"><td><span class="pill p0">P0</span></td><td>任意 Python 工具</td><td>模型要求执行修改文件或删除数据的代码。</td><td>按风险策略阻断或要求明确批准；显示代码/影响范围；API Key 不进日志；无法由参数绕过 UI 审批。</td></tr>
+    <tr data-priority="p0" data-text="部分完成 timeout 变更摘要"><td><span class="pill p0">P0</span></td><td>达到轮次 / 墙钟上限</td><td>让任务在若干写操作后达到预算上限。</td><td>清楚列出已应用、失败、未执行内容；只在可恢复点存在时显示继续/回滚动作。</td></tr>
+    <tr data-priority="p1" data-text="多轮历史 再红一点 20 条"><td><span class="pill p1">P1</span></td><td>连续对话</td><td>先创建物体，再说“再红一点”，再说“移动到 (2,0,0)”。</td><td>模型可访问前文；目标物体身份明确；历史记录和场景状态对应；20 条记录可读可浏览。</td></tr>
+    <tr data-priority="p1" data-text="历史 200 条 压缩"><td><span class="pill p1">P1</span></td><td>长历史与压缩</td><td>累积 20 条并执行压缩；继续增加至项目上限。</td><td>摘要明确、原文保留策略可知、Token 节省值有依据；超上限有解释和归档出口。</td></tr>
+    <tr data-priority="p1" data-text="token usage 缓存"><td><span class="pill p1">P1</span></td><td>Usage 展示</td><td>执行返回 usage 的真实请求。</td><td>输入、缓存命中/未命中、输出分别显示；本次 usage 不冒充上下文百分比。</td></tr>
+    <tr data-priority="p1" data-text="截图 无 GL 黑图 视觉降级"><td><span class="pill p1">P1</span></td><td>截图不可用</td><td>在无 GL / 后台模式触发截图功能。</td><td>检测无效截图/异常并降级文字摘要；UI 显示“视觉检查未执行”；黑图不发给模型。</td></tr>
+    <tr data-priority="p1" data-text="宽度 200 272 360 中文 长文本"><td><span class="pill p1">P1</span></td><td>三档宽度与中文</td><td>极窄、默认、加宽状态下输入 400 字中文，显示长错误和 JSON 摘要。</td><td>没有横向溢出/静默裁断的关键文案；错误首要动作仍可见；已测与未测能力记录完整。</td></tr>
+    <tr data-priority="p2" data-text="回滚 快照 检查点"><td><span class="pill p2">P2</span></td><td>任务级回滚</td><td>做 3 个任务，回滚到第 2 个任务后的检查点。</td><td>准确显示回滚范围；场景结果可验证；回滚事件留痕；对话历史是否保留有明确规则。</td></tr>
+    <tr data-priority="p2" data-text="HUD 视口 快捷键"><td><span class="pill p2">P2</span></td><td>视口 HUD</td><td>打开 HUD 后输入同一条命令，再关闭 HUD 从面板继续对话。</td><td>两处共享同一输入/会话状态；HUD 关闭不影响完整功能；拖动与命中测试可靠。</td></tr>
+  </tbody></table></div>
+</section>
+
+<section class="section" id="api">
+  <div class="section-head"><div><div class="eyebrow">15 · API mapping</div><h2>控件 API 与图标白名单</h2><p>保留原文已验证信息；具体调用参数仍须对照真实代码和 Blender RNA 探针验证。</p></div></div>
+  <div class="grid two">
+    <article class="card"><h3>优先使用的控件</h3><ul><li>多行输入：<code>UILayout.textbox(data, "prompt", initial_visible_lines=3, placeholder=...)</code>（原文已实测）。</li><li>进度环/条：<code>row.progress(type='RING'|'BAR', factor=0..1)</code>。</li><li>历史列表：<code>template_list</code> + <code>bpy.types.UIList</code> + <code>CollectionProperty</code>。</li><li>长文本/JSON：<code>bpy.data.texts</code> + <code>template_ID(space, "text")</code>。</li><li>图片预览：<code>template_icon(icon_value=image.preview.icon_id, scale=...)</code>，要先确认预览有效。</li><li>异步 UI 更新：<code>bpy.app.timers.register</code>；若用线程，线程不能访问 Blender 数据。</li><li>视口 HUD：<code>SpaceView3D.draw_handler_add</code> + GPU/BLF + modal operator；列为 P2。</li></ul></article>
+    <article class="card"><h3>图标：只用原文已验证白名单</h3><p><code>CHECKMARK</code> · <code>ERROR</code> · <code>TIME</code> · <code>INFO</code> · <code>TEXT</code> · <code>CONSOLE</code> · <code>PLAY</code> · <code>CANCEL</code> · <code>X</code> · <code>PREFERENCES</code> · <code>SETTINGS</code> · <code>OPTIONS</code> · <code>FILE_TICK</code> · <code>ADD</code> · <code>REMOVE</code> · <code>TRASH</code> · <code>ARROW_LEFTRIGHT</code> · <code>EYEDROPPER</code> · <code>DUPLICATE</code> · <code>LINKED</code> · <code>UNLINKED</code> · <code>HELP</code> · <code>URL</code> · <code>FUND</code> · <code>PLUGIN</code> · <code>PROJECT</code> · <code>MENU_PANEL</code> · <code>GRIP</code> · <code>RADIOBUT_ON</code> · <code>RADIOBUT_OFF</code> · <code>CHECKBOX_HLT</code> · <code>TRIA_DOWN</code> · <code>TRIA_RIGHT</code> · <code>TRIA_UP</code> · <code>TRIA_LEFT</code> · <code>DISCLOSURE_TRI_DOWN</code> · <code>STATUS_INFO</code> · <code>STATUS_WARNING</code> · <code>STATUS_ERROR</code> · <code>RECOVER_LAST</code> · <code>FILE_SCRIPT</code> · <code>ASSET_MANAGER</code></p><p class="next">原文明确指出 <code>PREFS</code> 应为 <code>PREFERENCES</code>；<code>DOC</code>、<code>NETWORK</code>、<code>TOKEN</code> 不存在。未经验证不得新写图标名。</p></article>
+  </div>
+  <div class="callout"><strong>实现格式要求：</strong>设计 AI 输出每个 UI 元素的布局树、控件 API、具体图标名、完整中文文案、操作对应的 operator/函数、宽度变体和验收方法。若无法确认 API 存在，要标成“待实测”，不得用不存在的控件填补设计。</div>
+</section>
+
+<section class="section" id="deliverables">
+  <div class="section-head"><div><div class="eyebrow">16 · Required deliverables</div><h2>其他 AI 的最终交付物</h2><p>只交一个视觉效果图不算完成。设计与开发建议分别输出。</p></div></div>
+  <div class="grid two">
+    <article class="card"><h3>设计交付</h3><ul class="checklist"><li>新版主面板结构与线框，覆盖默认 / 加宽 / 极窄三档。</li><li>所有状态族的完整中文文案、按钮文案、图标名和动作语义。</li><li>原 28 个状态的映射表：保留、合并呈现或作为状态分支处理，并说明原因。</li><li>20 条历史的三种方案对比，明确主方案和 fallback。</li><li>关键状态的控件级布局树，不得只交 Figma/图片。</li><li>无法实现或尚未验证的设计点、实测脚本/方法和降级方案。</li></ul></article>
+    <article class="card"><h3>开发交付</h3><ul class="checklist"><li>可运行的 Blender 5.2.1 UI 实现，使用已验证原生 API。</li><li>清楚分离 UI、状态管理、Provider 请求、Tool Router、工具执行和日志。</li><li>请求状态事件与 UI 更新由真实运行时驱动，不能用假定时器模拟真实进度。</li><li>错误分类、工具记录、真实回执与恢复能力标记。</li><li>自动/手动测试清单和 Blender GUI 验收证据。</li><li>对未实现功能写明限制；不添加不可用控件、不引入未经批准的 pip 依赖。</li></ul></article>
+  </div>
+</section>
+
+<section class="section" id="handoff">
+  <div class="section-head"><div><div class="eyebrow">17 · Copy-ready instruction</div><h2>可直接交给其他 AI 的执行任务书</h2><p>复制下面的完整要求，连同本 HTML 文件一起交给负责设计/实现的 AI。该任务书会强调“先分析、再出方案、最后实现”，防止对方只美化空闲态。</p></div></div>
+  <div class="prompt-actions"><button class="btn primary" id="copyPrompt">复制完整执行任务书</button><button class="btn" id="selectPrompt">选中任务书文本</button><span id="copyStatus" style="font-size:11px;color:var(--muted);align-self:center"></span></div>
+  <div class="prompt-box"><pre id="implPrompt">你是一名资深 Blender 插件 UX 设计师和 Python 插件工程师。请严格阅读随附的《Blender AI Agent｜UI 与交互设计实施规范 v1.0.html》，以它作为本次工作的主规范。不要只生成概念图；请设计一个真实可落地、能在 Blender 5.2.1 LTS 原生 UI 中实现的 AI Agent 面板。
+
+【项目基线】
+- 当前插件/provider：DeepSeek，当前模型配置为 deepseek-flash；当前已知工具只有 get_scene_info、create_primitive、set_material、transform_object、execute_blender_code。不要在 UI 中宣称还不存在的功能已可用。
+- 目标环境来自原项目文档：Blender 5.2.1 LTS、内嵌 CPython 3.13.13。开始前请核验实际代码和 Blender RNA；原规范中“已测”是项目现场记录，不替代你对当前代码的检查。
+- 必须将聊天留在 Blender 内；不要引入登录、账户体系或云同步；不增加需要 pip 安装的第三方依赖。
+- 遵守文档中的原生 UI 控件边界和已验证图标白名单。不要设计任意 RGB、字体、圆角、阴影、渐变、CSS 动画等无法在 Blender Panel 直接实现的视觉元素。
+
+【先解决的 P0 问题】
+1. 先分析同步 HTTP 阻塞主线程与实时忙态之间的冲突。推荐用后台工作线程处理网络 I/O，禁止工作线程访问 bpy；通过线程安全队列和 bpy.app.timers 在主线程更新 UI / 调用 Blender 工具。若本次无法调整架构，必须真实降级忙态与停止语义，不能用假计时器模拟进度。
+2. 设计并实现可追踪的状态机：READY、PREFLIGHT、REQUESTING、TOOL_RUNNING、VERIFYING、COMPLETED、PARTIAL、FAILED、STOPPED；细化错误代码并保留首次错误和自动修复记录。
+3. 修正停止按钮语义：模型请求中只可承诺“停止后续轮次（当前请求返回后生效）”，不得暗示可立即中断正在飞的 HTTP 请求。
+4. 实现工具逐步追踪：真实状态、耗时、摘要、详细返回；不把多步压成无信息量的“→ ok”。
+5. 实现可信变更回执。将“场景差异摘要”“Blender Undo 可用”和“任务级回滚点可用”分开；未经真实测试，不得标记“整轮可撤销”。
+6. 把 401、402、502、超时、轮次/时间预算耗尽、工具异常、截图不可用、Undo 关闭等错误分开呈现。每种错误要有原因、场景影响、唯一首选动作和重试语义。不得承诺超时重试一定不会重复计费。
+7. API Key 不得写入日志/转录；任意 Python 执行必须作为高风险路径，按项目安全策略要求审批；模型返回和用户输入是非可信文本，不可直接拼成可执行 UI/HTML。
+
+【新版布局】
+- 单列原生 N 面板优先：Provider/模型与 Key 状态 → 多行输入 → 执行/停止 → 当前任务状态 → 最新变更回执 → 最新回复 → 对话历史 → 工具详情、用量与上下文等次级信息。
+- 回执在任务提交后尽快可见，目标 1 秒内显示摘要；若仍在验证中，说明“变更已应用，正在验证”。
+- 所有状态依靠文字标签、图标和动作差异表达，不只靠颜色。
+- 默认、加宽、极窄三档必须设计；原型像素宽度只作参考，以真实 Blender GUI 为准。
+- 多轮历史默认设计“紧凑 UIList + 选中项详情”；GUI 实测不支持可靠滚动/行高时，fallback 为分页历史；Text datablock 用于完整转录和长 JSON 归档，不强作主聊天 UI。
+- Token usage 和上下文预算分开显示；只有真实返回的 usage 才显示成已测数据，估算要标注。
+- 视口截图能力默认关闭或按现有设置执行；无 GL、黑图或截图异常时必须降级文字描述，并显示视觉检查未执行。
+- HUD、气泡精修和任务级快照列表放到 P2，不能挤占 P0 的可靠性工作。
+
+【必须提交的设计成果】
+A. 一份清晰的 UX 决策摘要，列出对原稿的改动以及原因。
+B. 新版主面板完整线框 / 结构图；默认、加宽、极窄三档。
+C. 原 28 个状态逐条映射到新状态族，说明是独立状态、复用布局还是延后。
+D. 20 条对话历史的三种方案比较，并选定主方案和 fallback。
+E. 每个 UI 控件的控件级布局树：Blender API 名、参数、图标白名单名称、完整中文文案、对应 operator/回调、禁用条件、状态变体。
+F. 错误文案表与交互状态转移表。
+G. 实施拆分与验收清单，特别覆盖 P0 的非阻塞忙态、停止语义、工具追踪、回执与安全。
+H. 若交付代码：给出文件/模块结构、可运行实现、必要的测试代码，以及实际运行验证结果；不可以把静态 HTML 原型当成 Blender 插件交付。
+
+【必须实测】
+- textbox 的 Enter / Shift+Enter 行为；
+- 200 / 272 / 360 px 对应的真实 Blender 面板显示、中文长文本裁切；
+- UIList 行高、滚动和刷新行为；
+- Blender 全局 Undo 与自定义工具操作的真实回退行为；
+- 线程/队列方案下，所有 bpy 调用都在主线程；
+- 无 GUI / 无 GL 时截图降级；
+- Key、原始错误、Python traceback 不泄露敏感值；
+- 用真实工具运行创建立方体、赋材质、多轮修改，以及失败后状态结算。
+
+【验收底线】
+- 不使用虚假的进度或虚假的成功结果。
+- 不显示不存在的工具或无法触发的按钮。
+- 失败后明确说明场景是否改变、哪些步骤完成、下一步是什么。
+- 任何未验证 API 需标记“待实测”，提供方法和 fallback。
+- 所有交付内容必须与本规范一致；发现规范中的技术事实与实际 Blender 5.2.1 行为冲突时，先用最小可运行测试复核，记录证据，再更新规范，不要猜。
+
+请按“审查结论 → 新交互方案 → 控件级规格 → 状态/错误矩阵 → 技术实现 → 验收结果”的顺序交付。优先做对用户可信、可恢复的任务体验，不要把时间花在原生 Blender 无法实现的装饰效果上。</pre></div>
+</section>
+
+<section class="section faq" id="open-questions">
+  <div class="section-head"><div><div class="eyebrow">18 · Open questions</div><h2>开始开发前仍需要确认的决定</h2><p>这些不是阻塞设计交付的问题，但实现团队必须在代码中做出明确选择。</p></div></div>
+  <details><summary>是否愿意为真正实时的忙态重构网络请求？</summary><p>推荐愿意。若坚持同步请求，UI 设计不能兑现实时计时、即时停止和持续工具状态，用户会继续感到插件卡死。最小安全做法是网络线程与 Blender 主线程分离，所有 bpy 调用仍留在主线程。</p></details>
+  <details><summary>整轮 Undo 的第一版采用什么实现？</summary><p>建议先让实际写操作经过可验证的 Blender Undo 操作入口，并通过真实 GUI 测试确认回退范围。任务级快照/回滚可以后续做；在没有可靠任务级机制前，UI 不能给出超出真实能力的保证。</p></details>
+  <details><summary>主面板里默认要显示多少条历史？</summary><p>建议默认显示可读的最近 4–5 条摘要，完整记录由 UIList 或分页浏览；新消息只在用户位于列表底部时才自动定位到最新消息。由于原文明确表示滚动和行高未验证，最终要由 GUI 实测定案。</p></details>
+  <details><summary>Provider 是否马上抽象成多模型？</summary><p>本轮 UI 不需要增加 MiniMax/OpenAI 等新 Provider 的功能范围，但建议避免把 DeepSeek 硬编码进产品名称。当前只保留 DeepSeek 配置和展示；Provider 抽象属于后端架构决策。</p></details>
+</section>
+
+<footer class="foot">
+  <strong>文档来源与边界</strong><br>
+  本规范以用户上传的《新版UI需求与原型(3).html》为主要依据。原文明确给出 Blender 5.2.1 LTS / CPython 3.13.13 环境、控件能力与未验证项、28 个状态、P0/P1/P2 需求、真实工具返回和 usage 样例。本文件没有声称重新运行过这些 RNA 探针，也没有声称下述推荐已在 Blender 中完成验证；所有新增观点均作为设计建议或待验收要求给出。<br><br>
+  版本：v1.0 · 日期：2026-10-09 · 用途：交给设计 AI / 开发 AI 的执行规范。<br>
+  注意：本 HTML 是规格文档，不是 Blender 插件本身；文档的视觉主题不代表 Blender Panel 可实现同样的 CSS 样式。
+</footer>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+(function(){
+  const toastEl=document.getElementById('toast'); let toastTimer;
+  function toast(msg){toastEl.textContent=msg;toastEl.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),2400)}
+  const promptEl=document.getElementById('implPrompt');
+  async function copyPrompt(){
+    const text=promptEl.innerText;
+    try{await navigator.clipboard.writeText(text);document.getElementById('copyStatus').textContent='已复制 '+text.length+' 个字符';toast('完整执行任务书已复制');}
+    catch(e){
+      const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
+      let ok=false;try{ok=document.execCommand('copy')}catch(_){}ta.remove();
+      if(ok){document.getElementById('copyStatus').textContent='已复制 '+text.length+' 个字符';toast('完整执行任务书已复制')}else{document.getElementById('copyStatus').textContent='浏览器限制复制，请手动选中下方文本';toast('无法自动复制，请手动选择任务书文本')}
+    }
+  }
+  document.getElementById('copyPrompt').addEventListener('click',copyPrompt);
+  document.getElementById('copyTop').addEventListener('click',copyPrompt);
+  document.getElementById('selectPrompt').addEventListener('click',()=>{
+    const range=document.createRange();range.selectNodeContents(promptEl);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);promptEl.scrollIntoView({behavior:'smooth',block:'start'});toast('任务书已选中，可手动复制');
+  });
+  document.getElementById('errorSearch').addEventListener('input',e=>{
+    const q=e.target.value.trim().toLowerCase();document.querySelectorAll('#errorGrid .error-card').forEach(card=>{card.style.display=(!q||((card.dataset.search||'')+' '+card.innerText).toLowerCase().includes(q))?'':'none'});
+  });
+  const testSearch=document.getElementById('testSearch');let testFilter='all';
+  function filterTests(){const q=(testSearch.value||'').trim().toLowerCase();document.querySelectorAll('#testTable tbody tr').forEach(tr=>{const matchFilter=testFilter==='all'||tr.dataset.priority===testFilter;const matchText=!q||((tr.dataset.text||'')+' '+tr.innerText).toLowerCase().includes(q);tr.style.display=(matchFilter&&matchText)?'':'none'});}
+  testSearch.addEventListener('input',filterTests);document.querySelectorAll('[data-testfilter]').forEach(btn=>btn.addEventListener('click',()=>{testFilter=btn.dataset.testfilter;document.querySelectorAll('[data-testfilter]').forEach(b=>b.classList.toggle('active',b===btn));filterTests()}));
+})();
+</script>
+</body>
+</html>

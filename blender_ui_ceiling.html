@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blender 能做到的 UI 上限 · blender_deepseek_agent 面板原型</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   页面外壳（说明层）—— 不属于 Blender 模拟范围
+   ============================================================ */
+*{box-sizing:border-box}
+body{
+  margin:0; background:#fafafa; color:#14171e;
+  font-family:'Outfit','Noto Sans SC',sans-serif;
+  font-size:15px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1120px; margin:0 auto; padding:0 24px}
+section{margin:48px 0}
+
+/* 页头 */
+header{padding:56px 0 8px}
+.eyebrow{
+  font-size:12px; font-weight:600; letter-spacing:.14em;
+  text-transform:uppercase; color:#3b82f6; margin:0 0 12px;
+}
+h1{
+  font-size:34px; line-height:1.25; font-weight:600;
+  letter-spacing:-.015em; margin:0 0 14px; max-width:20ch;
+}
+.lede{font-size:16px; color:#3a4256; max-width:62ch; margin:0}
+.lede strong{color:#14171e; font-weight:600}
+
+h2{
+  font-size:23px; font-weight:600; letter-spacing:-.01em;
+  margin:0 0 8px;
+}
+.sub{color:#7c7a72; font-size:14px; margin:0 0 24px; max-width:64ch}
+
+/* 结论条 */
+.verdict{
+  background:#fff; border:1px solid #e5e5e5; border-radius:12px;
+  padding:18px 20px; display:flex; gap:16px; align-items:flex-start;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
+}
+.verdict svg{flex:0 0 20px; margin-top:2px; color:#3b82f6}
+.verdict p{margin:0; font-size:14.5px; color:#3a4256}
+.verdict b{color:#14171e; font-weight:600}
+
+/* 开关 */
+.switch{
+  display:inline-flex; align-items:center; gap:10px;
+  font-size:13.5px; color:#3a4256; cursor:pointer;
+  user-select:none; margin:0 0 20px;
+  padding:7px 14px 7px 11px; border:1px solid #e5e5e5;
+  border-radius:999px; background:#fff;
+  transition:border-color .18s, background .18s;
+}
+.switch:hover{border-color:#c9c9c9; background:#fcfcfc}
+.switch input{position:absolute; opacity:0; pointer-events:none}
+.switch .track{
+  width:32px; height:18px; border-radius:999px; background:#d4d4d4;
+  position:relative; transition:background .2s; flex:0 0 32px;
+}
+.switch .track::after{
+  content:''; position:absolute; top:2px; left:2px;
+  width:14px; height:14px; border-radius:50%; background:#fff;
+  transition:transform .2s; box-shadow:0 1px 2px rgba(0,0,0,.2);
+}
+.switch input:checked + .track{background:#3b82f6}
+.switch input:checked + .track::after{transform:translateX(14px)}
+.switch input:focus-visible + .track{box-shadow:0 0 0 3px rgba(59,130,246,.3)}
+
+/* ============================================================
+   Blender 5.2.1 面板模拟
+   所有色值 = 本机实测 bpy.context.preferences.themes[0]
+   ============================================================ */
+:root{
+  --bld-sidebar:#303030;    /* regions.sidebars.back      */
+  --bld-tabstrip:#181818;   /* regions.sidebars.tab_back  */
+  --bld-panel:#3d3d3d;      /* user_interface.panel_back  */
+  --bld-title:#e6e6e6;      /* user_interface.panel_title */
+  --bld-box:#1d1d1d;        /* user_interface.wcol_box.inner    */
+  --bld-box-line:#3d3d3d;   /* user_interface.wcol_box.outline */
+  --bld-txt:#e6e6e6;        /* wcol_box.text              */
+  --bld-dim:#8a8a8a;
+  --bld-btn:#545454;        /* wcol_option.inner           */
+  --bld-btn-txt:#ffffff;    /* wcol_option.item            */
+  --bld-accent:#4772b3;     /* panel_active / *._inner_sel */
+  --bld-textbox:#1d1d1d;    /* wcol_text.inner             */
+  --bld-tab-in:#1d1d1d;     /* wcol_tab.inner              */
+  --bld-tab-sel:#303030;    /* wcol_tab.inner_sel          */
+  --bld-tab-txt:#989898;    /* wcol_tab.text               */
+  --bld-alert:#991616;      /* wcol_state.error            */
+  --bld-prog-bg:#222222;    /* wcol_progress.inner         */
+  --bld-numtxt:#e6e6e6;     /* wcol_num.text               */
+  --bld-numlabel:#4772b3;   /* wcol_num.item               */
+  --bld-radius:4px;
+}
+
+.card{background:#fff; border:1px solid #e5e5e5; border-radius:14px; overflow:hidden;
+      box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.card-hd{padding:14px 18px 12px; border-bottom:1px solid #f0f0f0}
+.card-hd h3{margin:0; font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px}
+.card-hd h3 svg{color:#7c7a72; flex:0 0 15px}
+.card-hd code{
+  font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:400;
+  color:#9a9a9a; margin-left:auto; letter-spacing:0;
+}
+.card-bd{padding:16px 18px 18px; background:#fcfcfc}
+
+/* --- Blender 框体 --- */
+.bld{
+  display:flex; background:var(--bld-sidebar);
+  font-family:'DejaVu Sans','Segoe UI','Noto Sans SC',sans-serif;
+  font-size:11px; line-height:1.45; color:var(--bld-txt);
+  border-radius:6px; overflow:hidden; border:1px solid #232323;
+  min-height:230px;
+}
+.bld-main{flex:1; min-width:0; padding:6px}
+
+/* 右侧竖排原生 tab 条 */
+.bld-vtab{
+  width:27px; flex:0 0 27px; background:var(--bld-tabstrip);
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:7px 0; border-left:1px solid #0f0f0f;
+}
+.bld-vtab span{
+  writing-mode:vertical-rl; padding:7px 3px;
+  border-radius:4px 0 0 4px; color:#b4b4b4; font-size:11px;
+  display:flex; align-items:center; gap:5px;
+}
+.bld-vtab span.on{background:var(--bld-sidebar); color:#fff}
+.bld-vtab span svg{transform:rotate(90deg)}
+
+/* 面板 */
+.bld-panel{background:var(--bld-panel); border-radius:var(--bld-radius);
+           border:1px solid #4a4a4a; overflow:hidden}
+.bld-head{display:flex; align-items:center; gap:6px; padding:5px 8px;
+          color:var(--bld-title)}
+.bld-head .ttl{font-size:11.5px}
+.bld-head .dots{margin-left:auto; color:#9a9a9a; letter-spacing:1px; font-size:12px; line-height:1}
+.bld-body{padding:1px 8px 9px; display:flex; flex-direction:column; gap:6px}
+
+/* box */
+.bld-box{background:var(--bld-box); border:1px solid var(--bld-box-line);
+         border-radius:var(--bld-radius); padding:6px 8px; position:relative}
+.bld-box.alert{background:#371717; border-color:var(--bld-alert)}
+.bld-box .rowline{display:flex; align-items:center; gap:6px}
+.bld-box .dim{color:var(--bld-dim)}
+
+/* 文本行 */
+.line{display:flex; align-items:center; gap:6px}
+.line svg{flex:0 0 13px}
+.grow{flex:1; min-width:0}
+.dim{color:var(--bld-dim)}
+.mono{font-family:'JetBrains Mono',monospace; font-size:10px}
+
+/* 按钮行 */
+.btns{display:flex; gap:5px}
+.bld-btn{
+  flex:1; text-align:center; padding:4px 8px; border-radius:var(--bld-radius);
+  border:1px solid #3d3d3d; color:var(--bld-btn-txt); font-size:11px;
+  background:linear-gradient(180deg,#5c5c5c 0%,#484848 100%);
+}
+.bld-btn.flat{background:var(--bld-btn)}
+.bld-btn.off{background:#4a4a4a; color:#828282; border-color:#444}
+.bld-btn.icon{flex:0 0 auto; padding:4px 9px; display:flex; align-items:center; gap:5px}
+.bld-btn:hover{filter:brightness(1.14)}
+
+/* textbox */
+.bld-textbox{background:var(--bld-textbox); border:1px solid #3d3d3d;
+             border-radius:var(--bld-radius); padding:6px 8px; min-height:52px}
+.bld-textbox .ph{color:#6f6f6f}
+
+/* 内嵌 enum tab（wcol_tab） */
+.bld-tabs{display:flex; background:var(--bld-tab-in); border-radius:var(--bld-radius);
+          padding:2px; gap:2px}
+.bld-tab{flex:1; text-align:center; padding:3px 4px; border-radius:3px;
+         color:var(--bld-tab-txt); font-size:10.5px;
+         display:flex; align-items:center; justify-content:center; gap:4px}
+.bld-tab.on{background:var(--bld-tab-sel); color:#fff}
+.bld-tab:hover{color:#dcdcdc}
+
+/* 原生子面板 layout.panel() */
+.bld-sub{border-top:1px solid #4a4a4a; padding-top:5px; position:relative}
+.bld-sub:first-of-type{border-top:none; padding-top:0}
+.bld-sub-h{display:flex; align-items:center; gap:6px; padding:2px 1px; color:#e0e0e0}
+.bld-sub-b{padding:5px 0 2px 2px; display:flex; flex-direction:column; gap:5px}
+
+/* use_property_split 两列 */
+.prow{display:grid; grid-template-columns:44% 1fr; gap:7px; align-items:center}
+.prow > .k{color:#d4d4d4; display:flex; align-items:center; gap:5px; min-width:0}
+.prow > .k svg{flex:0 0 12px}
+.pfield{background:var(--bld-btn); border:1px solid #3d3d3d; border-radius:var(--bld-radius);
+        padding:3px 7px; color:var(--bld-numtxt); display:flex; align-items:center;
+        justify-content:space-between; gap:6px}
+.pfield .ar{color:#9a9a9a}
+.pfield.num{background:#4f4f4f}
+.pfield .lab{color:var(--bld-numlabel)}
+
+/* checkbox */
+.cb{width:12px; height:12px; border-radius:3px; background:#545454;
+    border:1px solid #3d3d3d; display:inline-flex; align-items:center;
+    justify-content:center; flex:0 0 12px}
+.cb.on{background:var(--bld-accent); border-color:#3d6ea8; color:#fff}
+
+/* 进度条 wcol_progress */
+.bld-prog{height:5px; background:var(--bld-prog-bg); border-radius:3px; overflow:hidden}
+.bld-prog i{display:block; height:100%; background:var(--bld-accent); border-radius:3px;
+            animation:fill 2.6s ease-in-out infinite}
+@keyframes fill{0%{width:16%}55%{width:72%}100%{width:94%}}
+
+/* 分隔 */
+.bld-sep{height:5px}
+
+/* 徽标标注 */
+.bld [data-api]{position:relative}
+body.annot .bld [data-api]::after{
+  content:attr(data-api); position:absolute; top:-8px; right:2px; z-index:5;
+  font-family:'JetBrains Mono',monospace; font-size:8.5px; line-height:1;
+  background:#3b82f6; color:#fff; padding:2.5px 5px; border-radius:3px;
+  white-space:nowrap; pointer-events:none; letter-spacing:0;
+  box-shadow:0 1px 3px rgba(0,0,0,.2);
+}
+body.annot .bld [data-api]::before{
+  content:''; position:absolute; inset:-1px; z-index:4; pointer-events:none;
+  outline:1px dashed rgba(59,130,246,.75); outline-offset:1px; border-radius:5px;
+}
+body.annot .bld-box::after, body.annot .bld-sub::after,
+body.annot .bld-panel::after, body.annot .bld-btn::after,
+body.annot .bld-textbox::after, body.annot .bld-tabs::after,
+body.annot .bld-prog::after{top:-9px}
+body.annot .bld [data-api]:first-child::before{outline-color:rgba(59,130,246,.35)}
+
+/* ============================================================
+   网格与表格
+   ============================================================ */
+.grid{display:grid; grid-template-columns:repeat(2,1fr); gap:20px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+@media(max-width:560px){
+  .wrap{padding:0 16px} h1{font-size:27px} header{padding:36px 0 4px}
+  section{margin:36px 0}
+}
+
+table{width:100%; border-collapse:collapse; background:#fff;
+      border:1px solid #e5e5e5; border-radius:12px; overflow:hidden;
+      box-shadow:0 2px 8px rgba(0,0,0,.04)}
+th,td{padding:11px 14px; text-align:left; font-size:13.5px;
+      border-bottom:1px solid #f0f0f0; vertical-align:top}
+thead th{background:#f7f7f7; font-weight:600; font-size:12.5px;
+         color:#3a4256; letter-spacing:.02em}
+tbody tr:last-child td{border-bottom:none}
+td code{font-family:'JetBrains Mono',monospace; font-size:11.5px;
+        background:#f4f4f4; padding:1.5px 5px; border-radius:4px; color:#3a4256}
+.yes{color:#10b981; font-weight:600}
+.no{color:#e0574f; font-weight:600}
+.part{color:#d9902a; font-weight:600}
+
+/* 落地清单 */
+.checks{display:grid; grid-template-columns:repeat(2,1fr); gap:12px}
+@media(max-width:760px){.checks{grid-template-columns:1fr}}
+.check{background:#fff; border:1px solid #e5e5e5; border-radius:11px; padding:14px 16px;
+       box-shadow:0 2px 8px rgba(0,0,0,.04); transition:transform .2s, box-shadow .2s}
+.check:hover{transform:translateY(-2px); box-shadow:0 4px 16px -2px rgba(0,0,0,.08)}
+.check .top{display:flex; align-items:baseline; gap:9px; margin:0 0 6px}
+.check .cost{font-family:'JetBrains Mono',monospace; font-size:11px; color:#9a9a9a; margin-left:auto}
+.check h4{margin:0; font-size:14.5px; font-weight:600}
+.check p{margin:0; font-size:13px; color:#3a4256; line-height:1.55}
+.check code{font-family:'JetBrains Mono',monospace; font-size:11.5px;
+            background:#f4f4f4; padding:1.5px 5px; border-radius:4px}
+
+footer{margin:56px 0 0; padding:24px 0 48px; border-top:1px solid #e5e5e5;
+       color:#9a9a9a; font-size:12.5px}
+footer code{font-family:'JetBrains Mono',monospace; color:#7c7a72}
+
+.note{background:#fffdf5; border:1px solid #f2e6c8; border-left:3px solid #d9902a;
+      border-radius:8px; padding:12px 15px; margin:0 0 22px;
+      font-size:13.5px; color:#5c4a1e}
+.note b{color:#3d2f0c}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Blender 5.2.1 实测 · blender_deepseek_agent</p>
+    <h1>只用 Blender 允许的 API，面板能做到什么程度</h1>
+    <p class="lede">
+      下面每一块面板的颜色、圆角、高度，都取自你本机
+      <strong>bpy.context.preferences.themes[0]</strong> 的实时读数，不是目测调的。
+      结构上只使用 <strong>UILayout 真正开放的能力</strong>——没有任意 RGB、没有自定义字体、没有 hover 态、没有阴影。
+    </p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section>
+  <div class="verdict">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <p>
+      <b>圆角是免费的</b>——Blender 5 的 <code>panel_roundness = 0.4</code>，你的面板天生就是圆角，和设计稿的 3–5px 几乎一致，之前把它列进"做不到"是误判。
+      <b>你设计稿的主色 <code>#4772b3</code> 就是 Blender 的 <code>panel_active</code></b>，配色本来就是照着 Blender 主题抄的。
+      真正的差距只有一条：<b>Blender 主题里有绿色 <code>#188625</code> 和琥珀 <code>#ac8737</code>，但 Python API 只暴露了 <code>alert</code> 一个状态</b>——所以界面上只能有红色，别的语义色只能待在主题里。
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>六个关键状态</h2>
+  <p class="sub">
+    当前 <code>ui.py</code> 只用了 <code>box / alert / scale_y / separator</code> 四样。
+    下面这版额外用上了 <code>layout.panel()</code>、<code>use_property_split</code>、<code>emboss='NONE'</code>、<code>separator_spacer()</code> 和 <code>progress()</code>——
+    <b>全部在实测的 UILayout 接口清单里，没有一个是编造的。</b>
+  </p>
+
+  <label class="switch">
+    <input type="checkbox" id="anno">
+    <span class="track"></span>
+    显示对应的 UILayout API
+  </label>
+
+  <div class="grid">
+
+    <!-- ① 空闲 -->
+    <div class="card">
+      <div class="card-hd">
+        <h3><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/></svg>空闲 · AI 对话<code>Phase.READY</code></h3>
+      </div>
+      <div class="card-bd">
+        <div class="bld">
+          <div class="bld-main">
+            <div class="bld-panel" data-api="Panel">
+              <div class="bld-head">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+                <span class="ttl">AI 对话</span><span class="dots">···</span>
+              </div>
+              <div class="bld-body">
+                <div class="bld-box" data-api="layout.box()">
+                  <div class="rowline">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                    <span class="grow">当前会话：中式紫砂茶杯</span>
+                  </div>
+                  <div class="rowline" style="margin-top:3px">
+                    <span class="dim">2 轮对话（已启用连续对话）</span>
+                  </div>
+                </div>
+
+                <div class="bld-textbox" data-api="layout.textbox()">
+                  <span class="ph">说一句话，比如「做一个精致的中式紫砂茶杯」</span>
+                </div>
+
+                <div class="btns" data-api="layout.emboss='NONE'">
+                  <div class="bld-btn flat">执行</div>
+                  <div class="bld-btn flat off">停止</div>
+                </div>
+
+                <div class="bld-sub" data-api="layout.panel()">
+                  <div class="bld-sub-h">
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M4 2l4 4-4 4z"/></svg>
+                    <span>规格选项</span><span class="dim" style="margin-left:auto">3 项待选</span>
+                  </div>
+                </div>
+
+                <div class="bld-sep" data-api="layout.separator_spacer()"></div>
+
+                <div class="bld-box">
+                  <div class="rowline" style="align-items:flex-start">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" style="margin-top:1px"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+                    <span class="grow">做一个精致的中式紫砂茶杯</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bld-vtab" data-api="bl_category">
+            <span class="on">AI 对话</span><span>详情</span><span>设置</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 运行中 -->
+    <div class="card">
+      <div class="card-hd">
+        <h3><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle class="opacity" cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>运行中<code>Phase.TOOL_RUNNING</code></h3>
+      </div>
+      <div class="card-bd">
+        <div class="bld">
+          <div class="bld-main">
+            <div class="bld-panel">
+              <div class="bld-head">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+                <span class="ttl">AI 对话</span><span class="dots">···</span>
+              </div>
+              <div class="bld-body">
+                <div class="bld-box" data-api="layout.box()">
+                  <div class="rowline">
+                    <span class="grow">正在改你的场景 · 第 2 步</span>
+                    <span class="dim">6 秒</span>
+                  </div>
+                  <div class="bld-prog" style="margin-top:6px" data-api="layout.progress()"><i style="width:46%"></i></div>
+                </div>
+
+                <div class="bld-textbox">
+                <span>好的，我先生成旋转截面，再用 Spin 车削出杯身一体结构<span style="opacity:.45">▍</span></span>
+                </div>
+
+                <div class="bld-sub" data-api="layout.panel()">
+                  <div class="bld-sub-h">
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+                    <span>本次步骤</span>
+                  </div>
+                  <div class="bld-sub-b">
+                    <div class="line">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#e6e6e6" stroke-width="2.4" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+                      <span class="dim">get_scene_info</span>
+                    </div>
+                    <div class="line">
+                      <span style="width:12px;display:inline-flex;justify-content:center;color:#3b82f6">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 3v9"/><path d="M21 12a9 9 0 11-6.2-8.6"/></svg>
+                      </span>
+                      <span class="dim">execute_blender_code</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="btns">
+                  <div class="bld-btn flat" style="flex:0 0 auto;padding:4px 14px">停止</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bld-vtab"><span class="on">AI 对话</span><span>详情</span><span>设置</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ 做完了 -->
+    <div class="card">
+      <div class="card-hd">
+        <h3><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 11-5.9-9.1"/><path d="M22 4L12 14.01l-3-3"/></svg>做完了<code>Phase.COMPLETED</code></h3>
+      </div>
+      <div class="card-bd">
+        <div class="bld">
+          <div class="bld-main">
+            <div class="bld-panel">
+              <div class="bld-head">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+                <span class="ttl">AI 对话</span><span class="dots">···</span>
+              </div>
+              <div class="bld-body">
+                <div class="bld-box" data-api="layout.box()">
+                  <div class="rowline">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e6e6e6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                    <span class="grow">做完了</span>
+                    <span class="dim">24 秒</span>
+                  </div>
+                </div>
+
+                <div class="bld-box" data-api="receipt.lines">
+                  <div class="rowline" style="align-items:flex-start">
+                    <span class="grow" style="color:#b9d6b9">建了 Teapot（一体网格）</span>
+                  </div>
+                  <div class="rowline" style="align-items:flex-start;margin-top:3px">
+                    <span class="grow" style="color:#b9d6b9">上了紫砂 PBR 材质</span>
+                  </div>
+                  <div class="rowline" style="align-items:flex-start;margin-top:3px">
+                    <span class="grow" style="color:#b9d6b9">把手与壶身布尔熔接</span>
+                  </div>
+                </div>
+
+                <div class="btns">
+                  <div class="bld-btn flat icon">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 105-8"/></svg>
+                    撤销已做的
+                  </div>
+                  <div class="bld-btn flat">新建任务</div>
+                </div>
+
+                <div class="bld-sub">
+                  <div class="bld-sub-h">
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M4 2l4 4-4 4z"/></svg>
+                    <span>完整转录</span><span class="dim" style="margin-left:auto">1 284 字</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bld-vtab"><span class="on">AI 对话</span><span>详情</span><span>设置</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 做到一半 -->
+    <div class="card">
+      <div class="card-hd">
+        <h3><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20"/><path d="M2 12h20"/></svg>做到一半（不是红色）<code>Phase.PARTIAL</code></h3>
+      </div>
+      <div class="card-bd">
+        <div class="bld">
+          <div class="bld-main">
+            <div class="bld-panel">
+              <div class="bld-head">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+                <span class="ttl">AI 对话</span><span class="dots">···</span>
+              </div>
+              <div class="bld-body">
+                <div class="bld-box" data-api="alert=False 保持中性">
+                  <div class="rowline">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9db8d8" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                    <span class="grow">做到一半，已停下</span>
+                    <span class="dim">轮次用完</span>
+                  </div>
+                  <div style="margin-top:6px;border-top:1px solid #3a3a3a;padding-top:6px;display:flex;flex-direction:column;gap:4px">
+                    <div class="rowline">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#e6e6e6" stroke-width="2.4" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+                      <span class="dim">已经做了</span><span class="grow" style="text-align:right">建了 Teapot</span>
+                    </div>
+                    <div class="rowline">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8f8f8f" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>
+                      <span class="dim">还没做</span><span class="grow" style="text-align:right">上材质、移动位置</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="btns">
+                  <div class="bld-btn flat icon">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 105-8"/></svg>
+                    撤销已做的
+                  </div>
+                </div>
+                <div class="line dim" style="padding-left:2px">没做完的部分，再说一句就行</div>
+              </div>
+            </div>
+          </div>
+          <div class="bld-vtab"><span class="on">AI 对话</span><span>详情</span><span>设置</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤ 错误 -->
+    <div class="card">
+      <div class="card-hd">
+        <h3><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16h.01"/></svg>失败（全 UI 唯一的红）<code>layout.alert=True</code></h3>
+      </div>
+      <div class="card-bd">
+        <div class="bld">
+          <div class="bld-main">
+            <div class="bld-panel">
+              <div class="bld-head">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+                <span class="ttl">AI 对话</span><span class="dots">···</span>
+              </div>
+              <div class="bld-body">
+                <div class="bld-box alert" data-api="layout.alert=True">
+                  <div class="rowline" style="align-items:flex-start">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e08a86" stroke-width="2" style="margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16h.01"/></svg>
+                    <span class="grow" style="color:#f0c4c2">API Key 无效（401）</span>
+                  </div>
+                  <div class="dim" style="margin:4px 0 0 19px;font-size:10.5px;color:#c19a98">服务商回显：Your api key: ****r-</div>
+                  <div class="btns" style="margin-top:7px;margin-left:19px">
+                    <div class="bld-btn flat icon">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                      去设置里换 Key
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bld-sub">
+                  <div class="bld-sub-h">
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M4 2l4 4-4 4z"/></svg>
+                    <span>错误详情</span>
+                  </div>
+                  <div class="bld-sub-b">
+                    <div class="prow" style="grid-template-columns:38% 1fr">
+                      <span class="k dim">错误码</span><span class="mono">401</span>
+                    </div>
+                    <div class="prow" style="grid-template-columns:38% 1fr">
+                      <span class="k dim">发生在</span><span>请求回复</span>
+                    </div>
+                    <div class="prow" style="grid-template-columns:38% 1fr">
+                      <span class="k dim">已保留</span><span class="dim">对话记录</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bld-vtab"><span class="on">AI 对话</span><span>详情</span><span>设置</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑥ 设置 -->
+    <div class="card">
+      <div class="card-hd">
+        <h3><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>设置 · 规范两列<code>use_property_split</code></h3>
+      </div>
+      <div class="card-bd">
+        <div class="bld">
+          <div class="bld-main">
+            <div class="bld-panel">
+              <div class="bld-head">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+                <span class="ttl">设置</span><span class="dots">···</span>
+              </div>
+              <div class="bld-body">
+                <div class="bld-box" data-api="use_property_split=True">
+                  <div class="prow">
+                    <span class="k">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                      API Key
+                    </span>
+                    <span class="pfield"><span class="grow" style="text-align:right;color:#e6e6e6">****r-</span><span class="ar">▾</span></span>
+                  </div>
+                  <div class="prow" style="margin-top:5px">
+                    <span class="k">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><path d="M12 2l3 6 6 1-4.5 4.2L18 20l-6-3-6 3 1.5-6.8L3 9l6-1z"/></svg>
+                      模型
+                    </span>
+                    <span class="pfield"><span class="grow" style="text-align:right">MiniMax-M3.1</span><span class="ar">▾</span></span>
+                  </div>
+                  <div class="prow" style="margin-top:5px">
+                    <span class="k">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>
+                      轮次上限
+                    </span>
+                    <span class="pfield num"><span class="grow" style="text-align:right">8</span></span>
+                  </div>
+                  <div class="prow" style="margin-top:5px">
+                    <span class="k">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                      时间预算
+                    </span>
+                    <span class="pfield num"><span class="grow" style="text-align:right">180</span><span class="lab" style="font-size:10px">秒</span></span>
+                  </div>
+                  <div class="prow" style="margin-top:5px">
+                    <span class="k">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 106 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                      面板历史条数
+                    </span>
+                    <span class="pfield num"><span class="grow" style="text-align:right">20</span></span>
+                  </div>
+                  <div class="prow" style="margin-top:5px">
+                    <span class="k">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.4 9.4-8 10-4.6-.6-8-5-8-10V6z"/></svg>
+                      任意 Python
+                    </span>
+                    <span class="line" style="gap:6px"><span class="cb"></span><span class="dim">需逐次批准</span></span>
+                  </div>
+                </div>
+
+                <div class="btns">
+                  <div class="bld-btn flat icon">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4"/></svg>
+                    打开完整偏好设置
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bld-vtab"><span>AI 对话</span><span>详情</span><span class="on">设置</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <h2>哪些能做，哪些真的做不了</h2>
+  <p class="sub">
+    「Blender 有」和「插件能拿到」是两件事。
+    <b>Blender 5.2.1 主题里存在绿色 <code>#188625</code> 和琥珀 <code>#ac8737</code>，但 <code>UILayout</code> 只暴露了 <code>alert</code> 一个状态位</b>——
+    主题里有，Python 调不到，这是下面这张表里最容易被误判的一格。
+  </p>
+
+  <table>
+    <thead>
+      <tr><th style="width:20%">设计稿想要</th><th style="width:24%">Blender 5.2.1 实测</th><th style="width:13%">插件能设置</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>圆角 3–5px</td>
+        <td><code>panel_roundness = 0.4</code></td>
+        <td class="part">继承</td>
+        <td>主题层已默认圆角，你的面板<b>天生就是</b>圆角。改不了单个控件，但不用改——直接接受 Blender 的就是设计稿要的。</td>
+      </tr>
+      <tr>
+        <td>主色 <code>#4772b3</code></td>
+        <td><code>panel_active</code> = <code>#4772b3</code></td>
+        <td class="yes">是</td>
+        <td>激活态、选中态、滑块填充全部是这个蓝。设计稿配色本来就是从 Blender 主题抄的。</td>
+      </tr>
+      <tr>
+        <td>成功绿 <code>#7cb87c</code></td>
+        <td><code>wcol_state.success</code> = <code>#188625</code></td>
+        <td class="no">否</td>
+        <td>主题里有，<code>UILayout</code> 不给访问。只能用 <code>alert</code> 的反面——即"什么都不做"。</td>
+      </tr>
+      <tr>
+        <td>警告橙 <code>#ed9a21</code></td>
+        <td><code>wcol_state.warning</code> = <code>#ac8737</code></td>
+        <td class="no">否</td>
+        <td>同上。想区分"失败"和"注意"，只能靠图标和文案，不能靠颜色。</td>
+      </tr>
+      <tr>
+        <td>错误红 <code>#e0716a</code></td>
+        <td><code>wcol_state.error</code> = <code>#991616</code></td>
+        <td class="yes">是</td>
+        <td><code>box.alert = True</code>，全 UI 唯一的红。建议只留给 <code>FAILED</code>。</td>
+      </tr>
+      <tr>
+        <td>次要文字灰</td>
+        <td><code>wcol_tab.text</code> = <code>#989898</code></td>
+        <td class="part">近似</td>
+        <td><code>enabled=False</code> 得到灰化，但那是"禁用"语义。层次感只能靠缩进和空行拉开。</td>
+      </tr>
+      <tr>
+        <td>字体 / 字号 / 字重</td>
+        <td><code>label()</code> 无相关参数</td>
+        <td class="no">否</td>
+        <td><code>label()</code> 只有 text / text_ctxt / translate / icon / icon_value 五个参数。</td>
+      </tr>
+      <tr>
+        <td>hover 态</td>
+        <td><code>wcol_*._inner_sel</code> 是 selected</td>
+        <td class="part">部分</td>
+        <td>Blender 内部有 hover 配色，但插件只能在 <code>enabled</code> / <code>active</code> 之间切，不能让鼠标经过变色。</td>
+      </tr>
+      <tr>
+        <td>box-shadow 层次</td>
+        <td>仅 <code>menu_shadow_fac</code> 作用于菜单</td>
+        <td class="no">否</td>
+        <td>面板没有阴影。层次只能靠底色明度差（<code>#3d3d3d</code> 面板 vs <code>#1d1d1d</code> 内盒）。</td>
+      </tr>
+      <tr>
+        <td>可滚动长列表</td>
+        <td>侧栏滚轮实测不滚动</td>
+        <td class="no">否</td>
+        <td><b>最致命的一条。</b>超屏内容用户根本够不到，必须靠 <code>layout.panel()</code> 折叠或分页消化。</td>
+      </tr>
+      <tr>
+        <td>扁平按钮</td>
+        <td><code>emboss</code> 枚举含 <code>NONE</code></td>
+        <td class="yes">是</td>
+        <td><code>layout.emboss = 'NONE'</code> 或 <code>operator(emboss=False)</code>，最接近 Figma flat 的一个开关，当前代码用量为 0。</td>
+      </tr>
+      <tr>
+        <td>规范两列属性</td>
+        <td><code>use_property_split</code> : BOOLEAN</td>
+        <td class="yes">是</td>
+        <td>Blender 自家面板到处在用，一行代码的事，当前代码用量为 0。</td>
+      </tr>
+      <tr>
+        <td>可折叠子面板</td>
+        <td><code>layout.panel(idname, default_closed, layout_header, layout_body)</code></td>
+        <td class="yes">是</td>
+        <td>原生折叠箭头 + 正确动效，替换现在手搓的"收起^"按钮。</td>
+      </tr>
+      <tr>
+        <td>进度条 / 流式</td>
+        <td><code>layout.progress()</code>、<code>wcol_progress</code></td>
+        <td class="yes">是</td>
+        <td>控件已存在，但 <code>agent.py:230</code> 写死 <code>stream: False</code>，所以现在没东西可推进度。</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>把这版做出来要改什么</h2>
+  <p class="sub">全部落在 <code>ui.py</code>，不动 <code>worker.py</code> 的线程协议，不引入任何 pip 依赖。</p>
+
+  <div class="checks">
+    <div class="check">
+      <div class="top"><h4>枚举补 DETAIL</h4><span class="cost">5 分钟</span></div>
+      <p><code>ui.py:243</code> 的 <code>active_tab</code> 只有 <code>CHAT</code> / <code>SETTINGS</code>，而 <code>ui.py:933</code> 在判断 <code>'DETAIL'</code>——实测赋值直接抛 <code>TypeError</code>，该分支是死代码。</p>
+    </div>
+    <div class="check">
+      <div class="top"><h4>两列对齐</h4><span class="cost">1 行</span></div>
+      <p><code>layout.use_property_split = True</code>，【设置】tab 的属性立刻从挤成一团变成 Blender 原生两列。性价比最高的一条。</p>
+    </div>
+    <div class="check">
+      <div class="top"><h4>扁平按钮</h4><span class="cost">1 行</span></div>
+      <p><code>layout.emboss = 'NONE'</code>。去掉按钮顶部的高光渐变，是当前画面离 Figma 最近的单一改动。</p>
+    </div>
+    <div class="check">
+      <div class="top"><h4>真子面板</h4><span class="cost">半天</span></div>
+      <p>用 <code>layout.panel()</code> 替换手搓的"收起^"折叠，拿到原生箭头、展开动效和正确的层级。</p>
+    </div>
+    <div class="check">
+      <div class="top"><h4>三套 tab 收敛</h4><span class="cost">半天</span></div>
+      <p>原生三个 <code>bl_category</code> 与面板内横向切换条并存，用户要理解两套导航。二选一。</p>
+    </div>
+    <div class="check">
+      <div class="top"><h4>流式输出</h4><span class="cost">1 天</span></div>
+      <p><code>stream: False</code> 改成流式，配合已有的 <code>Phase.TOOL_RUNNING</code> 和 <code>refresh_tick</code> 定时刷新，地基是现成的——体感差距最大的一项。</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>配色取自本机 <code>Blender 5.2.1 LTS</code> · <code>bpy.context.preferences.themes[0]</code>，主题名 <code>Default</code>，读取时间 2026-10-10。<br>
+  结构仅使用实测的 <code>UILayout</code> 接口清单，未使用任何编造的 API。侧栏滚轮不滚动为上一轮实机结论。</p>
+</footer>
+
+</div>
+
+<script>
+  document.getElementById('anno').addEventListener('change', function(e){
+    document.body.classList.toggle('annot', e.target.checked);
+  });
+</script>
+</body>
+</html>

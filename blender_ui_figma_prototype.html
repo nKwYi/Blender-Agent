@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 对话面板原型 v2 · blender_deepseek_agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f5f4;color:#14171e;font-family:'Outfit','Noto Sans SC',sans-serif;
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+header{padding:44px 0 0}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:#3b82f6;margin:0 0 10px}
+h1{font-size:30px;line-height:1.25;font-weight:600;letter-spacing:-.015em;margin:0 0 12px}
+.lede{font-size:15.5px;color:#3a4256;max-width:70ch;margin:0 0 26px}
+.lede b{color:#14171e;font-weight:600}
+.chips-note{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
+.cn{font-size:12.5px;background:#fff;border:1px solid #e5e5e5;border-radius:999px;
+  padding:5px 13px;color:#3a4256;box-shadow:0 1px 3px rgba(0,0,0,.03)}
+.cn b{color:#14171e;font-weight:600}
+.stage{display:grid;grid-template-columns:minmax(0,440px) minmax(0,1fr);gap:26px;
+  align-items:start;margin-bottom:56px}
+@media(max-width:880px){.stage{grid-template-columns:1fr}}
+@media(max-width:560px){.wrap{padding:0 16px} h1{font-size:25px}}
+
+/* ============ Blender 面板 ============ */
+.bld{background:#303030;border-radius:7px;overflow:hidden;border:1px solid #232323;
+  display:flex;font-family:'DejaVu Sans','Segoe UI','Noto Sans SC',sans-serif;
+  font-size:11px;line-height:1.5;color:#e6e6e6;box-shadow:0 10px 40px rgba(0,0,0,.26)}
+.bld-main{flex:1;min-width:0;padding:5px;display:flex;flex-direction:column;max-height:900px}
+.bld-vtab{width:25px;flex:0 0 25px;background:#181818;display:flex;flex-direction:column;
+  align-items:center;gap:3px;padding:7px 0;border-left:1px solid #0f0f0f}
+.bld-vtab span{writing-mode:vertical-rl;padding:7px 3px;border-radius:4px 0 0 4px;
+  color:#b4b4b4;font-size:11px;cursor:pointer}
+.bld-vtab span.on{background:#303030;color:#fff}
+.bld-panel{background:#3d3d3d;border-radius:4px;border:1px solid #4a4a4a;overflow:hidden;
+  display:flex;flex-direction:column;min-height:0}
+.bld-head{display:flex;align-items:center;gap:6px;padding:5px 8px;flex:0 0 auto}
+.bld-head .dots{margin-left:auto;color:#9a9a9a;letter-spacing:1px;cursor:pointer}
+.tabs{display:flex;background:#1d1d1d;border-radius:4px;padding:2px;gap:2px;margin:0 7px 5px;flex:0 0 auto}
+.tabs>div{flex:1;text-align:center;padding:3px 4px;border-radius:3px;color:#989898;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;
+  transition:background .15s,color .15s}
+.tabs>div.on{background:#303030;color:#fff}
+.tabs>div:not(.on):hover{color:#dcdcdc}
+
+/* 会话状态栏 */
+.sbar{flex:0 0 auto;margin:0 7px 5px;background:#1d1d1d;border:1px solid #3d3d3d;
+  border-radius:4px;padding:6px 8px}
+
+/* 无限纵向滚动区 */
+.stream{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 7px;
+  display:flex;flex-direction:column;gap:9px;scrollbar-width:thin;
+  scrollbar-color:#545454 transparent}
+.stream::-webkit-scrollbar{width:8px}
+.stream::-webkit-scrollbar-track{background:transparent}
+.stream::-webkit-scrollbar-thumb{background:#545454;border-radius:4px}
+.stream::-webkit-scrollbar-thumb:hover{background:#6a6a6a}
+
+/* 用户消息：保留深色框 + 右缩进 */
+.umsg{align-self:flex-end;max-width:86%;background:#1d1d1d;border:1px solid #3d3d3d;
+  border-radius:4px;padding:6px 8px}
+.umeta{display:flex;align-items:center;justify-content:flex-end;gap:5px;color:#8a8a8a;
+  font-size:10px;margin-bottom:2px}
+
+/* AI 消息：无框，纯文本直接落在面板底色上 */
+.amsg{display:flex;flex-direction:column;gap:3px}
+.ahead{display:flex;align-items:center;gap:5px;color:#cfcfcf;font-size:10.5px}
+.atext{color:#e6e6e6}
+.atext.dim{color:#9a9a9a}
+
+/* 单选组 */
+.qg{background:#1d1d1d;border:1px solid #3d3d3d;border-radius:4px;padding:7px 8px;
+  display:flex;flex-direction:column;gap:5px}
+.qt{font-weight:600;color:#b9cfe6;margin-bottom:1px}
+.qrow{display:flex;align-items:center;gap:7px;padding:2.5px 4px;border-radius:3px;
+  cursor:pointer;transition:background .15s;color:#c4c4c4}
+.qrow:hover{background:#262626;color:#e6e6e6}
+.radio{flex:0 0 11px;width:11px;height:11px;border-radius:50%;border:1.5px solid #6a6a6a;
+  background:#2a2a2a;display:flex;align-items:center;justify-content:center}
+.qrow.sel{background:#2c3c52;color:#eaf1fa}
+.qrow.sel .radio{border-color:#4772b3;background:#4772b3}
+.qrow.sel .radio::after{content:'';width:4px;height:4px;border-radius:50%;background:#fff}
+.qtag{margin-left:auto;font-size:9.5px;color:#8a8a8a}
+.qrow.sel .qtag{color:#9db8d8}
+.other-in{margin:2px 0 2px 18px;background:#181818;border:1px solid #4772b3;border-radius:3px;
+  padding:5px 7px;color:#e6e6e6;outline:none}
+.other-in::placeholder{color:#6a6a6a}
+
+/* 检查清单 */
+.ckl{display:flex;flex-direction:column;gap:3px;padding:6px 8px;background:#222;
+  border:1px solid #383838;border-radius:4px}
+.ckl div{display:flex;gap:6px;align-items:flex-start;color:#b8cfb8}
+
+/* 横向四 tab */
+.qtabs{display:flex;border-bottom:1px solid #4a4a4a;flex:0 0 auto}
+.qtabs>div{flex:1;text-align:center;padding:5px 2px;font-size:10.5px;color:#989898;
+  cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qtabs>div:hover{color:#dcdcdc}
+.qtabs>div.on{color:#fff;border-bottom-color:#4772b3}
+.qpane{padding:7px 0 2px;display:flex;flex-direction:column;gap:5px}
+.qpane[hidden]{display:none}
+.orow{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:3px;
+  border:1px solid #333;cursor:pointer;transition:background .15s}
+.orow:hover{background:#252525}
+.orow .nm{font-weight:600;color:#e8e8e8}
+.orow .ty{margin-left:auto;color:#8a8a8a;font-size:10px;display:flex;align-items:center;gap:4px;flex:0 0 auto}
+.prow{display:grid;grid-template-columns:46% 1fr;gap:7px;align-items:center;
+  padding:2.5px 4px;border-bottom:1px solid #2f2f2f}
+.prow:last-child{border-bottom:none}
+.prow .v{text-align:right;color:#e6e6e6}
+.kgrp{color:#9db8d8;font-size:10.5px;margin:5px 0 1px}
+pre.code{background:#181818;border:1px solid #333;border-radius:4px;padding:7px 8px;
+  margin:0;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;
+  color:#a8b8c8;overflow-x:auto;white-space:pre}
+
+/* AI 思考动效（挂在 AI 头像位置） */
+.think{display:flex;align-items:center;gap:4px;width:13px;height:13px;position:relative}
+.think i{width:3.5px;height:3.5px;border-radius:50%;background:#9db8d8;display:block;
+  animation:bounce 1.25s infinite ease-in-out}
+.think i:nth-child(2){animation-delay:.16s}
+.think i:nth-child(3){animation-delay:.32s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.45}
+  30%{transform:translateY(-4px);opacity:1}}
+/* 头像外圈脉冲 */
+.think::before{content:'';position:absolute;inset:-4px;border-radius:50%;
+  border:1px solid rgba(157,184,216,.55);animation:pulse 1.6s infinite ease-out}
+@keyframes pulse{0%{transform:scale(.7);opacity:.9}
+  100%{transform:scale(1.25);opacity:0}}
+/* 可折叠区块头 */
+.collapsebar{display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:pointer;
+  background:#222;border:1px solid #383838;border-radius:4px;color:#cfcfcf;
+  transition:background .15s}
+.collapsebar:hover{background:#2a2a2a}
+.collapsebar .caret{transition:transform .2s;flex:0 0 10px}
+.collapsebar.closed .caret{transform:rotate(-90deg)}
+.collapsebar .rt{margin-left:auto;color:#8a8a8a;font-size:10px}
+
+/* 输入区 */
+.composer{flex:0 0 auto;padding:6px 7px 7px;border-top:1px solid #4a4a4a;
+  display:flex;flex-direction:column;gap:5px;background:#3a3a3a}
+.quick{display:flex;gap:4px;flex-wrap:wrap}
+.qchip{padding:2.5px 8px;border-radius:3px;background:#4a4a4a;border:1px solid #3d3d3d;
+  color:#dcdcdc;font-size:10px;cursor:pointer;transition:background .15s}
+.qchip:hover{background:#565656}
+.inwrap{position:relative;background:#1d1d1d;border:1px solid #3d3d3d;border-radius:4px;
+  display:flex;align-items:stretch;overflow:hidden}
+.inwrap:focus-within{border-color:#4772b3}
+.inwrap textarea{flex:1;background:transparent;border:none;outline:none;resize:none;
+  color:#e6e6e6;font-family:inherit;font-size:11px;line-height:1.5;padding:7px 8px;
+  min-height:34px;overflow-y:auto}
+.inwrap textarea::placeholder{color:#6a6a6a}
+.send{align-self:flex-end;margin:0 6px 6px 0;width:26px;height:26px;border-radius:3px;
+  background:#545454;border:1px solid #3d3d3d;color:#fff;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;flex:0 0 26px}
+.send:hover{background:#616161}
+/* 右下角拉伸把手 */
+.grip{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;
+  display:flex;align-items:flex-end;justify-content:flex-end;padding:3px}
+.grip::after{content:'';width:9px;height:9px;
+  background:repeating-linear-gradient(135deg,#8a8a8a 0 1px,transparent 1px 3px)}
+.grip:hover::after{background:repeating-linear-gradient(135deg,#b9cfe6 0 1px,transparent 1px 3px)}
+.griphint{position:absolute;right:22px;bottom:4px;font-size:9.5px;color:#7a7a7a;
+  pointer-events:none;opacity:0;transition:opacity .2s}
+.inwrap:hover .griphint{opacity:1}
+.btns{display:flex;gap:5px}
+.btn{flex:1;text-align:center;padding:5px 8px;border-radius:4px;border:1px solid #3d3d3d;
+  color:#fff;background:linear-gradient(180deg,#5c5c5c 0%,#484848 100%);cursor:pointer;
+  font-size:11px;transition:filter .15s;display:flex;align-items:center;justify-content:center;gap:5px}
+.btn:hover{filter:brightness(1.16)}
+
+/* ============ 右侧说明 ============ */
+.rail{display:grid;gap:12px;position:sticky;top:18px}
+.rc{background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:15px 17px;
+  box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.rc h4{margin:0 0 7px;font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:9px}
+.rc .n{width:19px;height:19px;border-radius:50%;background:#4772b3;color:#fff;
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;display:flex;
+  align-items:center;justify-content:center;flex:0 0 19px}
+.rc p{margin:0;font-size:13px;color:#3a4256;line-height:1.55}
+.rc p+p{margin-top:6px}
+code{font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#f1f1f1;
+  padding:1.5px 5px;border-radius:4px;color:#3a4256}
+.demo{background:#f4f8fd;border:1px solid #d6e4f5;border-radius:7px;padding:9px 11px;
+  font-size:12.5px;color:#2f4b73;margin-top:8px;line-height:1.5}
+footer{padding:22px 0 44px;border-top:1px solid #e5e5e5;color:#9a9a9a;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">原型 v2 · 按你的七点修改</p>
+  <h1>AI 对话面板 v2</h1>
+  <p class="lede">
+    七点全部落进去了：<b>去掉确认步骤</b>、<b>新增对象可折叠</b>、<b>确认选择 / 按推荐来</b>、<b>修好输入框回弹</b>、
+    <b>按钮统一四字</b>、<b>耗时贴近助手名</b>、<b>思考动效挂头像</b>。都是可点的真交互。
+  </p>
+  <div class="chips-note">
+    <span class="cn">① <b>去掉确认</b> 直接建模</span>
+    <span class="cn">② <b>对象列表</b> 可折叠</span>
+    <span class="cn">③ <b>确认选择 / 按推荐来</b></span>
+    <span class="cn">④ <b>回弹已修</b> 高度保持</span>
+    <span class="cn">⑤ <b>按钮</b> 统一四字</span>
+    <span class="cn">⑥ <b>耗时</b> 贴近助手名</span>
+    <span class="cn">⑦ <b>思考动效</b> 挂头像</span>
+  </div>
+</header>
+
+<div class="stage">
+
+  <!-- ======================= 原型 ======================= -->
+  <div class="bld">
+    <div class="bld-main">
+      <div class="bld-panel">
+
+        <div class="bld-head">
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+          <span>AI 对话</span><span class="dots">···</span>
+        </div>
+
+        <div class="tabs">
+          <div class="on">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c0-3.6 3-5.6 6.5-5.6s6.5 2 6.5 5.6z"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.8c3 .3 5.5 2.1 5.5 5.2h-4.2"/></svg>AI 对话</div>
+          <div>设置</div>
+        </div>
+
+        <div class="sbar">
+          <div style="display:flex;align-items:center;gap:6px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+            <span style="flex:1">当前会话：茶杯建模</span><span style="color:#8a8a8a">2025/1/15</span>
+          </div>
+          <div style="color:#8a8a8a;font-size:10px;margin-top:1px">3 轮对话 · 连续对话已开启</div>
+        </div>
+
+        <!-- ===== 无限纵向滚动区 ===== -->
+        <div class="stream" id="stream">
+
+          <!-- 用户 1 -->
+          <div class="umsg">
+            <div class="umeta">用户
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+            </div>
+            帮我用 Blender 制作一个精致的中式茶杯，要有把手和杯足，适合泡茶用。
+          </div>
+
+          <!-- AI 1：无框 -->
+          <div class="amsg">
+            <div class="ahead">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#dcdcdc"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c0-3.6 3-5.6 6.5-5.6s6.5 2 6.5 5.6z"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.8c3 .3 5.5 2.1 5.5 5.2h-4.2"/></svg>
+              AI 助手 <span style="margin-left:2px;color:#7a7a7a">耗时 4 秒</span>
+            </div>
+            <div class="atext">好的！为了让茶杯更符合您的需求，我需要确认几个细节：</div>
+
+            <!-- 单选组 1 -->
+            <div class="qg" data-qg>
+              <div class="qt">1 · 杯型风格</div>
+              <div class="qrow sel" data-radio><span class="radio"></span>直筒型<span class="qtag">推荐</span></div>
+              <div class="qrow" data-radio><span class="radio"></span>收口型</div>
+              <div class="qrow" data-radio><span class="radio"></span>鼓腹型<span class="qtag">推荐</span></div>
+              <div class="qrow" data-radio><span class="radio"></span>其他</div>
+              <div class="other-slot" hidden>
+                <input class="other-in" placeholder="补充你的杯型描述，例如：上宽下窄的斗笠型…">
+              </div>
+            </div>
+
+            <!-- 单选组 2 -->
+            <div class="qg" data-qg>
+              <div class="qt">2 · 尺寸参考</div>
+              <div class="qrow" data-radio><span class="radio"></span>小号（口径 8 cm 以内）</div>
+              <div class="qrow sel" data-radio><span class="radio"></span>标准（口径 10-12 cm）<span class="qtag">推荐</span></div>
+              <div class="qrow" data-radio><span class="radio"></span>大号（口径 12 cm 以上）</div>
+              <div class="qrow" data-radio><span class="radio"></span>其他</div>
+              <div class="other-slot" hidden>
+                <input class="other-in" placeholder="填写具体口径与杯高，例如：口径 11.9 cm，杯高 10 cm…">
+              </div>
+            </div>
+
+            <!-- 单选组 3 -->
+            <div class="qg" data-qg>
+              <div class="qt">3 · 材质偏好</div>
+              <div class="qrow" data-radio><span class="radio"></span>陶瓷</div>
+              <div class="qrow sel" data-radio><span class="radio"></span>白瓷<span class="qtag">光泽釉面</span></div>
+              <div class="qrow" data-radio><span class="radio"></span>紫砂<span class="qtag">哑光</span></div>
+              <div class="qrow" data-radio><span class="radio"></span>其他</div>
+              <div class="other-slot" hidden>
+                <input class="other-in" placeholder="补充材质要求，例如：米白哑光、不上釉…">
+              </div>
+            </div>
+            <div class="btns" style="margin-top:5px">
+              <div class="btn" style="flex:1.3" id="btnConfirm">确认选择</div>
+              <div class="btn" style="flex:1" id="btnRec">按推荐来</div>
+            </div>
+            <div id="selHint" style="color:#8a8a8a;font-size:10px">已选 3 项 · 鼓腹型 / 标准 / 白瓷</div>
+          </div>
+
+          <!-- 用户 2 -->
+          <div class="umsg">
+            <div class="umeta">用户
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+            </div>
+            鼓腹型，口径约 11.9cm，杯高约 10cm，做白瓷效果，把手和小圆珠造型，底部有圈足，内壁和上釉再细一些，杯内底与圈足之间加排水槽。
+          </div>
+
+          <!-- AI 思考中：动效挂在 AI 头像位置 -->
+          <div class="amsg">
+            <div class="ahead">
+              <span class="think"><i></i><i></i><i></i></span>
+              AI 助手
+              <span style="margin-left:3px;color:#7a7a7a">正在思考</span>
+            </div>
+            <div class="atext dim" style="font-size:10.5px">正在规划建模步骤与参数…</div>
+          </div>
+
+          <!-- AI 3：无框 -->
+          <div class="amsg">
+            <div class="ahead">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#dcdcdc"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c0-3.6 3-5.6 6.5-5.6s6.5 2 6.5 5.6z"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.8c3 .3 5.5 2.1 5.5 5.2h-4.2"/></svg>
+              AI 助手 <span style="margin-left:2px;color:#7a7a7a">耗时 31 秒</span>
+            </div>
+            <div class="atext">好的！正在执行建模操作……</div>
+            <div class="ckl">
+              <div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a8c8a8" stroke-width="2.6" stroke-linecap="round" style="margin-top:1px;flex:0 0 12px"><path d="M20 6L9 17l-5-5"/></svg>创建基础旋转体（Spin 工具）</div>
+              <div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a8c8a8" stroke-width="2.6" stroke-linecap="round" style="margin-top:1px;flex:0 0 12px"><path d="M20 6L9 17l-5-5"/></svg>雕刻鼓腹曲线 + 上翻卷唇</div>
+              <div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a8c8a8" stroke-width="2.6" stroke-linecap="round" style="margin-top:1px;flex:0 0 12px"><path d="M20 6L9 17l-5-5"/></svg>添加贝塞尔把手并与杯身熔合</div>
+              <div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a8c8a8" stroke-width="2.6" stroke-linecap="round" style="margin-top:1px;flex:0 0 12px"><path d="M20 6L9 17l-5-5"/></svg>建立圈足与排水槽（内凹 6 mm）</div>
+              <div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a8c8a8" stroke-width="2.6" stroke-linecap="round" style="margin-top:1px;flex:0 0 12px"><path d="M20 6L9 17l-5-5"/></svg>赋予白瓷材质（Subsurface + Gloss）</div>
+            </div>
+            <div class="atext">大茶杯制作完成！所有组件已添加至场景。</div>
+
+            <!-- ===== 横向四 tab ===== -->
+            <div class="qtabs" style="margin-top:6px">
+              <div class="on" data-qt="obj">新增对象</div>
+              <div data-qt="param">参数详情</div>
+              <div data-qt="script">脚本摘要</div>
+              <div data-qt="arch">归档信息</div>
+            </div>
+
+            <div class="qpane" data-qp="obj">
+              <div class="collapsebar" id="objBar">
+                <svg class="caret" width="10" height="10" viewBox="0 0 12 12" fill="#c8c8c8"><path d="M2 4l4 4 4-4z"/></svg>
+                <span>已新增 5 个对象</span>
+                <span class="rt" id="objBarTxt">收起</span>
+              </div>
+              <div id="objBody" style="display:flex;flex-direction:column;gap:5px">
+              <div class="orow">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c9c9c9" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                <div><div class="nm">Cup_Body</div><div style="color:#8a8a8a;font-size:10px">旋转成体 · 顶点 1248</div></div>
+                <span class="ty"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Mesh</span>
+              </div>
+              <div class="orow">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c9c9c9" stroke-width="1.8"><circle cx="6" cy="18" r="4"/><path d="M9.5 14.5L19 5"/><circle cx="19" cy="5" r="2.4"/></svg>
+                <div><div class="nm">Cup_Handle</div><div style="color:#8a8a8a;font-size:10px">贝塞尔把手 · 顶点 384</div></div>
+                <span class="ty"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Mesh</span>
+              </div>
+              <div class="orow">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c9c9c9" stroke-width="1.8"><ellipse cx="12" cy="7" rx="7" ry="3"/><path d="M5 7v10c0 1.7 3.1 3 7 3s7-1.3 7-3V7"/></svg>
+                <div><div class="nm">Cup_Foot_Ring</div><div style="color:#8a8a8a;font-size:10px">圈足 ring · 顶点 96</div></div>
+                <span class="ty"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Mesh</span>
+              </div>
+              <div class="orow">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c9c9c9" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 010 18"/><path d="M12 3v18"/></svg>
+                <div><div class="nm">Mat_WhitePorcelain</div><div style="color:#8a8a8a;font-size:10px">Subsurface + Gloss Shader</div></div>
+                <span class="ty"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 010 18"/></svg>Material</span>
+              </div>
+              <div class="orow">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c9c9c9" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+                <div><div class="nm">Light_Studio</div><div style="color:#8a8a8a;font-size:10px">三点布光 · 展示用</div></div>
+                <span class="ty"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3"/></svg>Light</span>
+              </div>
+              </div>
+            </div>
+
+            <div class="qpane" data-qp="param" hidden>
+              <div class="kgrp">几何参数</div>
+              <div class="prow"><span style="color:#9a9a9a">口径</span><span class="v">11.9 cm</span></div>
+              <div class="prow"><span style="color:#9a9a9a">杯高</span><span class="v">10.0 cm</span></div>
+              <div class="prow"><span style="color:#9a9a9a">壁厚</span><span class="v">3.5 mm（均匀）</span></div>
+              <div class="prow"><span style="color:#9a9a9a">圈足内凹</span><span class="v">6 mm</span></div>
+              <div class="prow"><span style="color:#9a9a9a">上翻卷唇宽</span><span class="v">4 mm</span></div>
+              <div class="kgrp">修改器</div>
+              <div class="prow"><span style="color:#9a9a9a">Subdivision</span><span class="v">Catmull-Clark · L3</span></div>
+              <div class="prow"><span style="color:#9a9a9a">Solidify</span><span class="v">3.5 mm · Even</span></div>
+              <div class="prow"><span style="color:#9a9a9a">Boolean</span><span class="v">把手熔合 · Exact</span></div>
+              <div class="prow"><span style="color:#9a9a9a">Bevel</span><span class="v">Weight 0.02 · Seg 3</span></div>
+              <div class="kgrp">材质参数</div>
+              <div class="prow"><span style="color:#9a9a9a">Base Color</span><span class="v" style="font-family:'JetBrains Mono',monospace">#F5F0E8</span></div>
+              <div class="prow"><span style="color:#9a9a9a">Subsurface</span><span class="v">0.08</span></div>
+              <div class="prow"><span style="color:#9a9a9a">Roughness</span><span class="v">0.12</span></div>
+              <div class="prow"><span style="color:#9a9a9a">IOR</span><span class="v">1.48（瓷釉）</span></div>
+            </div>
+
+            <div class="qpane" data-qp="script" hidden>
+              <div style="color:#8a8a8a;font-size:10px;margin-bottom:2px">共 214 行 · 已脱敏</div>
+              <pre class="code">import bpy, math
+# 1) 基础旋转体
+bpy.ops.mesh.primitive_cylinder_add(vertices=96)
+lathe = body.modifiers.new("Lathe", 'SPIN')
+lathe.axis, lathe.angle, lathe.steps = (0,0,1), 2*math.pi, 96
+# 2) 鼓腹曲线 + 上翻卷唇
+prof = [(-0.045,0.000),(0.000,0.012),(0.048,0.055),
+        (0.059,0.082),(0.052,0.096),(0.044,0.100)]
+…
+# 3) 把手：贝塞尔 + Boolean UNION 熔接
+# 4) 圈足：内凹 6mm + 排水槽
+# 5) 材质：Subsurface 0.08 / Gloss 0.12 / IOR 1.48</pre>
+            </div>
+
+            <div class="qpane" data-qp="arch" hidden>
+              <div class="prow"><span style="color:#9a9a9a">撤销边界</span><span class="v">已建立 · 可回退</span></div>
+              <div class="prow"><span style="color:#9a9a9a">新增对象</span><span class="v">5</span></div>
+              <div class="prow"><span style="color:#9a9a9a">修改网格</span><span class="v">3</span></div>
+              <div class="prow"><span style="color:#9a9a9a">新增材质 / 灯光</span><span class="v">1 / 1</span></div>
+              <div class="prow"><span style="color:#9a9a9a">耗时</span><span class="v">31 秒</span></div>
+              <div class="prow"><span style="color:#9a9a9a">对话轮次</span><span class="v">3 轮</span></div>
+              <div class="prow"><span style="color:#9a9a9a">Token 消耗</span><span class="v">12 480</span></div>
+            </div>
+
+            <!-- AI 后续 -->
+            <div class="atext dim" style="font-size:10.5px">还需要调整吗？可以让我改尺寸、换材质或直接导出。</div>
+          </div>
+
+        </div><!-- /stream -->
+
+        <!-- ===== 输入区 ===== -->
+        <div class="composer">
+          <div class="quick">
+            <span class="qchip">修改尺寸</span><span class="qchip">更换材质</span>
+            <span class="qchip">添加纹理</span><span class="qchip">导出文件</span>
+          </div>
+          <div class="inwrap" id="inwrap">
+            <textarea id="ta" rows="2" placeholder="继续描述需求，或询问下一步操作…"></textarea>
+            <span class="griphint">拖我拉高</span>
+            <div class="send"><svg width="13" height="13" viewBox="0 0 24 24" fill="#fff"><path d="M21 3L3 10.5l7 2.8 2.8 7L21 3z"/></svg></div>
+            <div class="grip" id="grip"></div>
+          </div>
+          <div class="btns">
+            <div class="btn">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="#fff"><path d="M7 4l13 8-13 8z"/></svg>发送指令</div>
+            <div class="btn">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M3 8v6h6"/><path d="M3.5 14a9 9 0 105-8.6"/></svg>回退发送</div>
+          </div>
+          <div class="btns">
+            <div class="btn">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新建任务</div>
+            <div class="btn">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>清空记录</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="bld-vtab"><span class="on">AI 对话</span><span>详情</span><span>设置</span></div>
+  </div>
+
+  <!-- ======================= 改动说明 ======================= -->
+  <div class="rail">
+    <div class="rc">
+      <h4><span class="n">1</span>AI 消息去框，用户消息留框</h4>
+      <p>AI 回复直接落在面板底色上，只有头像行和正文，视觉上"轻"；用户消息保留深色框并右缩进，
+      一眼能分清谁说的话。</p>
+      <div class="demo">对比参考：MiniMax Code 的会话流就是这个处理——机器人的话不加容器。</div>
+    </div>
+
+    <div class="rc">
+      <h4><span class="n">2</span>输入框右下角可拖动拉伸</h4>
+      <p>右下角做了斜纹把手，<b>按住上下拖就能拉高输入框</b>，鼠标悬停出现"拖我拉高"提示。
+      换长需求时可以拉成六行，不必分多条发。</p>
+      <div class="demo">试试：把鼠标移到输入框右下角 ↘ 纹路上，按住往下拖。</div>
+    </div>
+
+    <div class="rc">
+      <h4><span class="n">3</span>去掉确认步骤 + 确认 / 按推荐来</h4>
+      <p>删掉了原来的「AI 复述需求 → 更改 / 确认并开始建模」整段，选完直接建模，少一次来回。
+      三组选项底部给了两个按钮：<b>确认选择</b>用你当前选的，<b>按推荐来</b>一键把三组都跳到推荐项。</p>
+      <div class="demo">试试：先随便改几项，再点「按推荐来」，选中状态和下方提示会一起变。</div>
+    </div>
+
+    <div class="rc">
+      <h4><span class="n">4</span>结果区横向四 tab + 可折叠</h4>
+      <p>新增对象 / 参数详情 / 脚本摘要 / 归档信息收成一条横排 tab，切换后下方整块替换。
+      「新增对象」额外加了折叠条，列表长的时候可以整块收起，只留一行标题。</p>
+      <div class="demo">试试：点「参数详情」切 tab，再点对象列表上方的「收起」。</div>
+    </div>
+
+    <div class="rc">
+      <h4><span class="n">5</span>取消翻页，改纵向无限滚动</h4>
+      <p>中间会话区改成可滚动容器，内容再长也不会把面板撑爆。底部输入区固定不动，
+      滚消息时随时能接着输入——这比翻页顺手。</p>
+      <div class="demo">试试：在中间区域滚轮上下滚，或直接拖右侧滚动条。</div>
+    </div>
+
+    <div class="rc">
+      <h4><span class="n">6</span>思考动效挂在 AI 头像位置</h4>
+      <p>AI 思考时头像位置变成三点跳动，外面套一圈扩散脉冲，「正在思考」紧跟在「AI 助手」后面。
+      耗时也挪到了同一行紧贴助手名，不再飘到最右边。</p>
+      <div class="demo">看用户第二条回复下面那条——头像在跳。</div>
+    </div>
+
+    <div class="rc">
+      <h4><span class="n">7</span>输入框回弹已修</h4>
+      <p>上一版松手时把高度重置回 <code>auto</code>，所以一松手就弹回去。现在拖到多高就停在多高，
+      下次发送完才恢复。四个按钮文案也统一成四个字：发送指令 / 回退发送 / 新建任务 / 清空记录。</p>
+      <div class="demo">试试：拉高输入框后松手，高度应该保持住。</div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>配色沿用 Blender 5.2.1 实测主题值；控件高度与间距为估算。本页为<b>设计原型，尚未实现</b>——
+  单选、拉伸、tab 切换、滚动在浏览器里都是真交互，可直接试用。</p>
+</footer>
+
+</div>
+
+<script>
+// ③ 单选 + 其他就地展开 + 确认选择 / 按推荐来
+var hint = document.getElementById('selHint');
+function readSel(){
+  var out = [];
+  document.querySelectorAll('[data-qg]').forEach(function(g){
+    var s = g.querySelector('[data-radio].sel');
+    if(!s) return;
+    var c = s.cloneNode(true);
+    var tg = c.querySelector('.qtag'); if(tg) tg.remove();
+    var txt = c.textContent.replace(/\s+/g,' ').trim();
+    if(txt === '其他'){
+      var inp = g.querySelector('.other-in');
+      txt = '其他' + (inp && inp.value ? '：' + inp.value : '');
+    }
+    out.push(txt);
+  });
+  return out;
+}
+function syncHint(){
+  var s = readSel();
+  hint.textContent = s.length ? ('已选 ' + s.length + ' 项 · ' + s.join(' / ')) : '还没有选择';
+}
+document.querySelectorAll('[data-qg]').forEach(function(g){
+  var slot = g.querySelector('.other-slot');
+  var inp = g.querySelector('.other-in');
+  g.querySelectorAll('[data-radio]').forEach(function(row){
+    row.addEventListener('click', function(){
+      var isOther = row.textContent.trim().indexOf('其他') === 0;
+      g.querySelectorAll('[data-radio]').forEach(function(r){ r.classList.remove('sel'); });
+      row.classList.add('sel');
+      slot.hidden = !isOther;
+      if(isOther){ setTimeout(function(){ inp.focus(); }, 0); }
+      syncHint();
+    });
+  });
+  if(inp){ inp.addEventListener('input', syncHint); }
+});
+document.getElementById('btnRec').addEventListener('click', function(){
+  document.querySelectorAll('[data-qg]').forEach(function(g){
+    var target = null;
+    g.querySelectorAll('[data-radio]').forEach(function(r){
+      if(r.querySelector('.qtag') && r.querySelector('.qtag').textContent.indexOf('推荐') >= 0) target = r;
+    });
+    if(!target) target = g.querySelectorAll('[data-radio]')[0];
+    g.querySelectorAll('[data-radio]').forEach(function(r){ r.classList.remove('sel'); });
+    target.classList.add('sel');
+    g.querySelector('.other-slot').hidden = true;
+  });
+  syncHint();
+});
+document.getElementById('btnConfirm').addEventListener('click', function(){
+  hint.textContent = '已确认：' + readSel().join(' / ');
+  hint.style.color = '#a8c8a8';
+});
+syncHint();
+
+// ② 新增对象折叠
+(function(){
+  var bar = document.getElementById('objBar');
+  var body = document.getElementById('objBody');
+  var txt = document.getElementById('objBarTxt');
+  bar.addEventListener('click', function(){
+    var closed = bar.classList.toggle('closed');
+    body.style.display = closed ? 'none' : 'flex';
+    txt.textContent = closed ? '展开' : '收起';
+  });
+})();
+
+// ④ 横向四 tab
+document.querySelectorAll('[data-qt]').forEach(function(t){
+  t.addEventListener('click', function(){
+    document.querySelectorAll('[data-qt]').forEach(function(x){ x.classList.remove('on'); });
+    t.classList.add('on');
+    document.querySelectorAll('[data-qp]').forEach(function(p){
+      p.hidden = p.getAttribute('data-qp') !== t.getAttribute('data-qt');
+    });
+  });
+});
+
+// ② 输入框右下角拖动拉伸
+(function(){
+  var grip = document.getElementById('grip');
+  var ta = document.getElementById('ta');
+  var wrap = document.getElementById('inwrap');
+  var startY = 0, startH = 0, dragging = false;
+  function down(e){
+    dragging = true;
+    startY = (e.touches ? e.touches[0].clientY : e.clientY);
+    startH = ta.offsetHeight;
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  }
+  function move(e){
+    if(!dragging) return;
+    var y = (e.touches ? e.touches[0].clientY : e.clientY);
+    var h = Math.max(34, Math.min(240, startH + (y - startY)));
+    ta.style.height = h + 'px';
+  }
+  function up(){
+    if(!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    ta.style.alignSelf = 'flex-end';
+  }
+  grip.addEventListener('mousedown', down);
+  grip.addEventListener('touchstart', down, {passive:false});
+  window.addEventListener('mousemove', move);
+  window.addEventListener('touchmove', move, {passive:false});
+  window.addEventListener('mouseup', up);
+  window.addEventListener('touchend', up);
+})();
+
+// ⑤ 滚动区初始停在最底部（新消息优先）
+window.addEventListener('load', function(){
+  var s = document.getElementById('stream');
+  s.scrollTop = s.scrollHeight;
+});
+</script>
+</body>
+</html>
