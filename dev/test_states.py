@@ -151,11 +151,16 @@ def main():
         ck("core_blocks_%s" % name,
            {CHAT_STREAM, CHAT_COMPOSER, CHAT_ACTION_ROW} <= set(ids),
            "缺常驻块，实际 %s" % ids)
-        expect_send = name not in ("clarify", "options", "running")
+        # 只有 running 该出现终止按钮。依据不是"哪些状态看着在忙"，而是
+        # worker 的真实相位：CONTROLLER.busy = run.phase in BUSY（worker.py:190），
+        # 而模型回问/回选项都是无工具调用的回复，worker.py:65-68 直接置
+        # COMPLETED，收尾 worker.py:341-342 也把 BUSY 统一映射为 COMPLETED。
+        # 所以等澄清与等选规格时面板是空闲的，必须显示发送按钮。
+        expect_stop = (name == "running")
         ck("send_stop_%s" % name,
-           (CHAT_SEND in ids) if expect_send else (CHAT_STOP in ids),
+           (CHAT_STOP in ids) if expect_stop else (CHAT_SEND in ids),
            "busy 分支不符：期望 %s，实际 %s"
-           % ("send" if expect_send else "stop", ids))
+           % ("stop" if expect_stop else "send", ids))
 
         # 5) 选项卡只在 options 状态出现（真实分支 ui.py:900-906）
         ck("options_%s" % name, (CHAT_OPTIONS in ids) == (name == "options"),

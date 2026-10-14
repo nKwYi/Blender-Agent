@@ -69,19 +69,20 @@ def capture_one(name, state):
     tree = rec.finish()
     tree["state"] = name
 
+    ids = _ids(tree)
+    n = len(ids)
+    if n < 5:
+        # 先判后写：不达标就不落盘，避免 Task 6 消费到坏产物。
+        emit("ids_ge5_%s" % name, False,
+             "只有 %d 个带 ID 节点：%s" % (n, ids))
+        return False
+
     path = os.path.join(OUT_DIR, "%s.json" % name)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(tree, fh, ensure_ascii=False, indent=2)
-
-    ids = _ids(tree)
-    n = len(ids)
+    emit("ids_ge5_%s" % name, True)
     print("WROTE %s ids=%d %s" % (name, n, ",".join(ids)))
-    if n >= 5:
-        emit("ids_ge5_%s" % name, True)
-    else:
-        emit("ids_ge5_%s" % name, False,
-             "只有 %d 个带 ID 节点：%s" % (n, ids))
-    return n
+    return True
 
 
 def main():
@@ -94,8 +95,10 @@ def main():
         try:
             spec = build(name)
             apply_spec(state, spec)
-            capture_one(name, state)
-            written.append(name)
+            # 只有真正落盘的状态才计入 written：id 不足时既不写文件
+            # 也不计数，CAPTURE_LAYOUT_OK 就不会谎报覆盖完整。
+            if capture_one(name, state):
+                written.append(name)
         except Exception as exc:
             emit("capture_%s" % name, False,
                  "抛异常 %s: %s\n%s" % (type(exc).__name__, exc,

@@ -68,52 +68,6 @@
           "active": false,
           "enabled": true,
           "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "正在构思三维几何结构与物理尺度 (6秒)",
-            "终止任务"
-          ],
-          "icons": [
-            "TIME"
-          ],
-          "ops": [
-            {
-              "id": "deepseek.stop",
-              "text": "终止任务",
-              "icon": "CANCEL",
-              "kwargs": {},
-              "assigned": {}
-            }
-          ],
-          "props": [],
-          "children": []
-        }
-      ]
-    },
-    {
-      "kind": "box",
-      "element_id": null,
-      "alert": false,
-      "active": false,
-      "enabled": true,
-      "scale_y": 1.0,
-      "alignment": "EXPAND",
-      "use_property_split": false,
-      "emboss": "NONE",
-      "texts": [],
-      "icons": [],
-      "ops": [],
-      "props": [],
-      "children": [
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
           "alignment": "RIGHT",
           "use_property_split": false,
           "emboss": "NONE",
@@ -299,7 +253,7 @@
         },
         {
           "kind": "row",
-          "element_id": "chat.stop_btn",
+          "element_id": "chat.send_btn",
           "alert": false,
           "active": false,
           "enabled": true,
@@ -308,14 +262,14 @@
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "终止任务"
+            "发送指令"
           ],
           "icons": [],
           "ops": [
             {
-              "id": "deepseek.stop",
-              "text": "终止任务",
-              "icon": "CANCEL",
+              "id": "deepseek.run_prompt",
+              "text": "发送指令",
+              "icon": "PLAY",
               "kwargs": {},
               "assigned": {}
             }

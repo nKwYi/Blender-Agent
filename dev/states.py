@@ -112,27 +112,34 @@ def build(state_name):
         }
 
     if state_name == "clarify":
-        # REQUESTING ∈ BUSY（state.py:22）：busy 盒子 + chat.stop 都该出现
+        # 等用户回话时**并不忙**：模型回问是一次无工具调用的回复，
+        # worker.py:65-68 直接把 phase 置为 COMPLETED 并写 run.reply；
+        # worker.py:341-342 收尾时也把任何 BUSY 相位统一映射成 COMPLETED。
+        # 因此真实会话此刻显示的是发送按钮，没有进度盒——相位必须是
+        # COMPLETED，用 REQUESTING 会录出真实界面永远不会出现的忙碌盒。
         r = Run(PROMPT)
-        r.phase = Phase.REQUESTING
-        r.elapsed = 6.0
+        r.phase = Phase.COMPLETED
+        r.reply = CLARIFY_REPLY
+        r.elapsed = 2.3
         return {
             "state": state_name, "run": r,
             "history": HIST_BASE + [_msg("AI", CLARIFY_REPLY)],
             "prompt": "", "active_tab": "CHAT", "busy": False,
-            "settled_err": "", "settled_phase": Phase.READY.value,
+            "settled_err": "", "settled_phase": Phase.COMPLETED.value,
             "session_topic": PROMPT, "show_approval_code": False,
         }
 
     if state_name == "options":
+        # 同 clarify：等用户点选规格时面板是空闲的（见上面的 worker 出处）
         r = Run(PROMPT)
-        r.phase = Phase.REQUESTING
-        r.elapsed = 4.0
+        r.phase = Phase.COMPLETED
+        r.reply = OPTIONS_REPLY
+        r.elapsed = 1.8
         return {
             "state": state_name, "run": r,
             "history": HIST_BASE + [_msg("AI", OPTIONS_REPLY)],
             "prompt": "", "active_tab": "CHAT", "busy": False,
-            "settled_err": "", "settled_phase": Phase.READY.value,
+            "settled_err": "", "settled_phase": Phase.COMPLETED.value,
             "session_topic": PROMPT, "show_approval_code": False,
         }
 
