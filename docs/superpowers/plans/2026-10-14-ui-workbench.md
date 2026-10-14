@@ -1386,11 +1386,15 @@ print("SIZE %dx%d" % (W, H))
 print("PANEL_LEFT %s" % edge)
 ```
 
-用 `--python` 之外的方式跑（纯 PIL，不进 Blender）：
+几何已写死进 `dev/crop_panel.py` 的 `REGION_BOX` / `SHOT_SIZE` 常量，调用只需给整窗原图：
 
 ```powershell
-python -c "import runpy,sys; sys.argv=['crop_panel.py','ui_workbench/data/shots/idle_full.png']; runpy.run_path('dev/crop_panel.py', run_name='__main__')"
+python dev\crop_panel.py ui_workbench\data\shots\idle_full.png
 ```
+
+> 旧版把坐标当必填位置参数（`crop_panel.py <src> <x0> <y0> <x1> <y1> <scale> <dst>`），
+> 与 5.x 实际落地的 CLI 不符。`--box` 现在是可选的重新测量开关。
+> 几何不符时脚本以 `CROP_BAD` + rc=3 显式失败，不会安静产出错误裁切。
 
 - [ ] **Step 4: 人工验收 7 张图**
 
@@ -1498,17 +1502,28 @@ python dev\test_workbench_data.py
 创建 `ui_workbench/style.css`：
 
 ```css
-/* 工作台样式。配色只允许取自 ui_workbench/native_api.json 的实测主题色：
-   wcol_box.inner #1d1d1d / wcol_box.outline #3d3d3d / wcol_text.text #e6e6e6
-   禁止出现任何 native_api.json 里没有的十六进制色值。 */
+/* 工作台样式。配色只允许取自 ui_workbench/native_api.json 的实测主题色。
+   实测色板共 23 个 hex，最常用的几个：
+     #3d3d3d (x30) 面板外框  #ffffff (x30) 选中文字  #4772b3 (x16) 激活/选中底
+     #e6e6e6 (x13) 常规文字 #545454 (x11) 悬停/按下   #1d1d1d (x8)  内盒底
+     #d9d9d9 (x6)  #242424 (x6)  #222222 (x5)  #181818 (x4)  #989898 (x1) 次要文字
+   圆角：ThemeWidgetColors.roundness = 0.4（部分 widget 为 1.0）。
+
+   ★ 实测色板里【没有任何红色和绿色】。#991616 / #188625 / #e0716a / #ed9a21
+   一个都不存在——主题里有，但 Python 的 ThemeWidgetColors 读不到它们。
+   这意味着 alert 的红无法被「1:1 复刻」，只能用可测量到的手段近似表达
+   （例如底色明度差 + 左侧竖线 + 图标 + 文案）。这不是偷懒，是能力边界。 */
 :root {
   --panel: #3d3d3d;
   --inner: #1d1d1d;
   --text: #e6e6e6;
   --text-dim: #989898;
   --accent: #4772b3;
-  --alert: #991616;
-  --ok: #188625;
+  --hover: #545454;
+  --sel-text: #ffffff;
+  --note-bg: #181818;
+  /* alert 没有可测量的红，用 #222222 底 + 左侧竖线表达，不要编造红色 */
+  --alert-surrogate: #222222;
 }
 * { box-sizing: border-box; }
 body {
