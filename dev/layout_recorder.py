@@ -27,12 +27,22 @@ _CONTAINER_DEFAULTS = {
 
 
 class _OpProxy:
-    """operator() 的返回值。属性赋值被吞掉——与旧 MockLayout 行为一致，
-    真实 Blender 里这些值是 Operator 属性，录制阶段不参与渲染判断。"""
+    """operator() 的返回值。
 
-    _INTERNAL = ("op_id", "text", "icon", "kwargs")
+    draw() 常在拿到返回值后赋 Operator 属性，例如：
+        op = layout.operator("preferences.addon_show", ...)
+        op.module = PACKAGE_ID          # ui.py:1130
+        op.index = i                     # ui.py:1003
+    这些值必须保留：它们是 operator 唯一携带的状态，Task 6 渲染时要读。
+    早期版本在这里静默丢弃赋值，是与本模块 docstring 相悖的隐藏坑
+    （桩比真实 API 少一样东西，同样会让真实能跑的代码在录制阶段出错），
+    因此赋值既记录又可回读，未赋值的属性仍按真实语义抛 AttributeError。
+    """
+
+    _INTERNAL = ("op_id", "text", "icon", "kwargs", "_assigned")
 
     def __init__(self, op_id, text, icon, kwargs):
+        object.__setattr__(self, "_assigned", {})
         self.op_id = op_id
         self.text = text
         self.icon = icon
@@ -41,6 +51,23 @@ class _OpProxy:
     def __setattr__(self, name, value):
         if name in self._INTERNAL:
             object.__setattr__(self, name, value)
+        else:
+            # Operator 属性：记录下来，不做 str() 化——index 是 int，
+            # Task 6 要拿原值做比较和排序。
+            object.__getattribute__(self, "_assigned")[name] = value
+
+    def __getattr__(self, name):
+        # 只在常规查找失败时触发。回读已赋值的 Operator 属性必须成功；
+        # 从未赋值的属性仍抛 AttributeError，与真实 Blender 一致。
+        try:
+            assigned = object.__getattribute__(self, "_assigned")
+        except AttributeError:
+            raise AttributeError(name)
+        try:
+            return assigned[name]
+        except KeyError:
+            raise AttributeError(
+                "Operator 属性 %r 未赋值；录制期不得假设其存在" % name)
 
 
 class RecLayout:
@@ -119,9 +146,13 @@ class RecLayout:
 
     def operator(self, op_id, text="", icon='NONE', **kw):
         op = _OpProxy(op_id, text, icon, kw)
+        # assigned 先放空 dict，随后 op.xxx = ... 写入的就是这个同一对象，
+        # 因此序列化时能拿到赋值后的最终值（赋值发生在 draw() 里、
+        # 在 operator() 返回之后）。
         self.ops.append({
             "id": op_id, "text": text, "icon": icon,
             "kwargs": {k: str(v) for k, v in kw.items()},
+            "assigned": op._assigned,
         })
         if text:
             self.texts.append(str(text))
@@ -158,7 +189,13 @@ class RecLayout:
             "emboss": self.emboss,
             "texts": list(self.texts),
             "icons": list(self.icons),
-            "ops": list(self.ops),
+            "ops": [
+                # dict(e) 复制外层，dict(e.get("assigned", {})) 复制内层——
+                # assigned 是活的 _OpProxy._assigned 引用，不复制的话
+                # finish() 之后再赋值会污染已导出的树。
+                dict(e, assigned=dict(e.get("assigned", {})))
+                for e in self.ops
+            ],
             "props": list(self.props),
             "children": [c.to_dict() for c in self.children],
         }

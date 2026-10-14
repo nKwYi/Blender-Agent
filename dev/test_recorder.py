@@ -45,23 +45,59 @@ def g(node, key):
 
 def walk(n, acc):
     acc.append(g(n, "element_id"))
-    for c in (g(n, "children") or []):
+    for c in gl(n, "children"):
         walk(c, acc)
 
 
 def find(n, eid):
     if g(n, "element_id") == eid:
         return n
-    for c in (g(n, "children") or []):
+    for c in gl(n, "children"):
         got = find(c, eid)
         if got:
             return got
     return None
 
 
+def find_op(node, op_id):
+    """在整棵树里按 operator id 找 ops 条目。"""
+    for n in _flatten(node):
+        for o in gl(n, "ops"):
+            if g(o, "id") == op_id:
+                return o
+    return None
+
+
+def gl(node, key):
+    """容错取列表字段：键缺失或类型不对时返回空列表。
+
+    不能用 `g(...) or []`——缺键时 g 返回哨兵对象（truthy），
+    迭代它会抛 TypeError，把一条断言变成 harness 崩溃。
+    """
+    v = g(node, key)
+    return v if isinstance(v, list) else []
+
+
+def gd(node, key):
+    """容错取 dict 字段：键缺失或类型不对时返回空 dict（同 gl 的理由）。"""
+    v = g(node, key)
+    return v if isinstance(v, dict) else {}
+
+
+def _raises(fn):
+    """fn 是否抛 AttributeError（用于验证真实 Blender 语义被保留）。"""
+    try:
+        fn()
+    except AttributeError:
+        return True
+    except Exception:
+        return False
+    return False
+
+
 def _flatten(node):
     yield node
-    for c in (g(node, "children") or []):
+    for c in gl(node, "children"):
         yield from _flatten(c)
 
 
@@ -87,7 +123,23 @@ def main():
     row.enabled = False
     row.scale_y = 1.4
     b.use_property_split = True
-    b.emboss = 'NONE'
+    # 必须赋非默认值：_CONTAINER_DEFAULTS["emboss"] 就是 "NONE"，
+    # 赋 'NONE' 的断言任何未实现 emboss 的实现都能通过（空洞断言）。
+    b.emboss = 'EMBOSS'
+
+    # 3b. operator 返回值的属性赋值必须被记录且可回读。
+    #     真实调用点：op.module = PACKAGE_ID（ui.py:1130）、op.index = i（ui.py:1003）。
+    op = b.operator("preferences.addon_show", text="打开完整偏好设置",
+                    icon='PREFERENCES')
+    op.module = "blender_deepseek_agent"
+    op.index = 7
+    ck("op_attr_readback", getattr(op, "module", None) == "blender_deepseek_agent",
+       "op.module 回读失败：%r" % (getattr(op, "module", "<缺失>"),))
+    ck("op_attr_readback_int", getattr(op, "index", None) == 7,
+       "op.index 回读失败：%r" % (getattr(op, "index", "<缺失>"),))
+    ck("op_unset_attr_raises",
+       _raises(lambda: getattr(op, "never_assigned")),
+       "未赋值的 Operator 属性应抛 AttributeError，与真实 Blender 一致")
 
     d = r.finish()
     ids = []
@@ -103,21 +155,44 @@ def main():
     ck("scale_y_recorded", g(undo_node, "scale_y") == 1.4, "scale_y 未记录")
     ck("use_property_split_recorded",
        g(box_node, "use_property_split") is True, "use_property_split 未记录")
-    ck("emboss_recorded", g(box_node, "emboss") == 'NONE', "emboss 未记录")
+    ck("emboss_recorded", g(box_node, "emboss") == 'EMBOSS', "emboss 未记录")
     ck("split_recorded",
        any(g(n, "kind") == "split" for n in _flatten(d)), "split 节点未记录")
     ck("split_factor_recorded",
        any(g(n, "split_factor") == 0.3 for n in _flatten(d)),
        "split_factor=0.3 未记录")
-    ck("box_child_row", g(box_node, "children") and
-       any(g(c, "kind") == "row" for c in g(box_node, "children")),
+    ck("box_child_row", any(g(c, "kind") == "row" for c in gl(box_node, "children")),
        "box 下应有 row 子节点")
 
     texts = []
     for n in _flatten(d):
-        texts.extend(n.get("texts", []))
+        texts.extend(gl(n, "texts"))
     ck("texts_recorded", "按钮" in texts and "窄列" in texts,
        "文本未记录：%s" % texts)
+    # Minor 5：operator()/textbox() 把 text 并入 texts 是 brief 之外的行为，
+    # 既然保留就必须有断言兜住，否则是无测试的行为。
+    ck("op_text_recorded", "打开完整偏好设置" in texts,
+       "operator 的 text 未并入 texts：%s" % texts)
+
+    # 3c. operator 属性赋值必须出现在树的 ops 条目里，且值不做 str() 化。
+    ops = []
+    for n in _flatten(d):
+        ops.extend(gl(n, "ops"))
+    addon_op = next((o for o in ops if g(o, "id") == "preferences.addon_show"), None)
+    ck("op_in_tree", addon_op is not None, "树中找不到 preferences.addon_show")
+    assigned = gd(addon_op, "assigned")
+    ck("op_module_in_tree",
+       assigned.get("module") == "blender_deepseek_agent",
+       "op.module 未进入 ops 条目：%r" % (assigned,))
+    ck("op_index_not_stringified", assigned.get("index") == 7,
+       "op.index 应保留原类型 int：%r" % (type(assigned.get("index")).__name__,))
+
+    # 3d. finish() 后再赋值不得污染已导出的树（assigned 必须是快照）。
+    op.module = "CHANGED_AFTER_FINISH"
+    ck("tree_is_snapshot",
+       gd(find_op(d, "preferences.addon_show"), "assigned").get("module")
+       == "blender_deepseek_agent",
+       "finish() 之后再赋值污染了已导出的树")
 
     # 4. 已实测事实：5.2.1 没有 layout.context_menu，桩不能存在。
     ck("no_context_menu_stub",
