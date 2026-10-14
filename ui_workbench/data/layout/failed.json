@@ -1,0 +1,363 @@
+{
+  "kind": "layout",
+  "element_id": "chat.stream",
+  "alert": false,
+  "active": false,
+  "enabled": true,
+  "scale_y": 1.0,
+  "alignment": "EXPAND",
+  "use_property_split": false,
+  "emboss": "NONE",
+  "texts": [
+    "我准备发起请求时被打断了。"
+  ],
+  "icons": [
+    "NONE"
+  ],
+  "ops": [],
+  "props": [],
+  "children": [
+    {
+      "kind": "row",
+      "element_id": "chat.tabbar",
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [],
+      "icons": [],
+      "ops": [],
+      "props": [
+        {
+          "data": "DEEPSEEK_PG_state",
+          "prop": "active_tab",
+          "text": "",
+          "kwargs": {
+            "expand": "True"
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "kind": "box",
+      "element_id": null,
+      "alert": true,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [
+        "任务执行中断：AUTH_INVALID",
+        "该做的事：检查设置或重试指令"
+      ],
+      "icons": [
+        "ERROR",
+        "INFO"
+      ],
+      "ops": [],
+      "props": [],
+      "children": [
+        {
+          "kind": "row",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [
+            "重新尝试"
+          ],
+          "icons": [],
+          "ops": [
+            {
+              "id": "deepseek.run_prompt",
+              "text": "重新尝试",
+              "icon": "FILE_REFRESH",
+              "kwargs": {},
+              "assigned": {}
+            }
+          ],
+          "props": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "kind": "box",
+      "element_id": null,
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [],
+      "icons": [],
+      "ops": [],
+      "props": [],
+      "children": [
+        {
+          "kind": "row",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "RIGHT",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [
+            "做一个精致的中式紫砂茶杯，"
+          ],
+          "icons": [
+            "NONE"
+          ],
+          "ops": [],
+          "props": [],
+          "children": []
+        },
+        {
+          "kind": "row",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "RIGHT",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [
+            "杯身要能看出砂颗粒的质感"
+          ],
+          "icons": [
+            "NONE"
+          ],
+          "ops": [],
+          "props": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "kind": "box",
+      "element_id": null,
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [],
+      "icons": [],
+      "ops": [],
+      "props": [],
+      "children": [
+        {
+          "kind": "row",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [
+            "修改尺寸",
+            "更换材质"
+          ],
+          "icons": [],
+          "ops": [
+            {
+              "id": "deepseek.quick_pill",
+              "text": "修改尺寸",
+              "icon": "NONE",
+              "kwargs": {},
+              "assigned": {
+                "action": "修改尺寸"
+              }
+            },
+            {
+              "id": "deepseek.quick_pill",
+              "text": "更换材质",
+              "icon": "NONE",
+              "kwargs": {},
+              "assigned": {
+                "action": "更换材质"
+              }
+            }
+          ],
+          "props": [],
+          "children": []
+        },
+        {
+          "kind": "row",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [
+            "增加倒角",
+            "平滑着色"
+          ],
+          "icons": [],
+          "ops": [
+            {
+              "id": "deepseek.quick_pill",
+              "text": "增加倒角",
+              "icon": "NONE",
+              "kwargs": {},
+              "assigned": {
+                "action": "增加倒角"
+              }
+            },
+            {
+              "id": "deepseek.quick_pill",
+              "text": "平滑着色",
+              "icon": "NONE",
+              "kwargs": {},
+              "assigned": {
+                "action": "平滑着色"
+              }
+            }
+          ],
+          "props": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "kind": "box",
+      "element_id": "chat.composer",
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [],
+      "icons": [],
+      "ops": [],
+      "props": [
+        {
+          "data": "DEEPSEEK_PG_state",
+          "prop": "prompt",
+          "text": "",
+          "is_textbox": true,
+          "kwargs": {
+            "initial_visible_lines": "3",
+            "placeholder": "用自然语言描述要建模什么，可多行"
+          }
+        }
+      ],
+      "children": [
+        {
+          "kind": "row",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [
+            "输入建模指令:"
+          ],
+          "icons": [
+            "TEXT"
+          ],
+          "ops": [],
+          "props": [
+            {
+              "data": "DEEPSEEK_PG_state",
+              "prop": "prompt_lines",
+              "text": "",
+              "kwargs": {
+                "slider": "True"
+              }
+            }
+          ],
+          "children": []
+        },
+        {
+          "kind": "row",
+          "element_id": "chat.send_btn",
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.3,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [
+            "发送指令"
+          ],
+          "icons": [],
+          "ops": [
+            {
+              "id": "deepseek.run_prompt",
+              "text": "发送指令",
+              "icon": "PLAY",
+              "kwargs": {},
+              "assigned": {}
+            }
+          ],
+          "props": [],
+          "children": []
+        },
+        {
+          "kind": "row",
+          "element_id": "chat.action_row",
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [
+            "新建任务",
+            "清空记录"
+          ],
+          "icons": [],
+          "ops": [
+            {
+              "id": "deepseek.new_task",
+              "text": "新建任务",
+              "icon": "ADD",
+              "kwargs": {},
+              "assigned": {}
+            },
+            {
+              "id": "deepseek.clear",
+              "text": "清空记录",
+              "icon": "TRASH",
+              "kwargs": {},
+              "assigned": {}
+            }
+          ],
+          "props": [],
+          "children": []
+        }
+      ]
+    }
+  ],
+  "state": "failed"
+}
