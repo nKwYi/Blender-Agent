@@ -1,0 +1,84 @@
+/* 工作台样式。
+   配色铁律：每个色值都必须能在 ui_workbench/native_api.json 里查到，
+   由 dev/test_workbench_data.py 的 colors_from_native 断言强制。
+   实测可用的十六进制全集（取自 native_api.json 的 palette）：
+     #080808 #181818 #191919 #1d1d1d #222222 #242424 #252525 #282828 #2d2d2d
+     #303030 #3d3d3d #4772b3 #545454 #727272 #989898 #999999 #9a9a9a
+     #c9c9c9 #cccccc #d9d9d9 #dddddd #e6e6e6 #ffffff
+   注意：主题里没有红/绿（constraints.json 的 warn_color / ok_color 两条
+   已确认 native_ok=false），所以「可做 / 做不到」「alert」一律靠文案与
+   图标承载语义，不靠颜色——这与 Blender 侧的能力边界保持一致。
+   圆角取 ThemeWidgetColors.roundness = 0.4 对应的 4px。 */
+:root {
+  --panel: #3d3d3d;   /* wcol_box.outline */
+  --inner: #1d1d1d;   /* wcol_box.inner */
+  --field: #222222;   /* wcol_progress.inner / wcol_pulldown.inner */
+  --text: #e6e6e6;    /* wcol_box.text */
+  --text-dim: #989898;/* wcol_tab.text */
+  --text-id: #c9c9c9; /* wcol_curve.text_sel */
+  --border: #545454;  /* wcol_box.inner_sel / wcol_regular.inner */
+  --accent: #4772b3;  /* wcol_list_item.inner_sel */
+  --hover: #181818;   /* wcol_menu_back.inner / wcol_text.inner_sel */
+  --mark: #9a9a9a;    /* wcol_curve.outline_sel，alert 边线 */
+  --fill: #545454;    /* wcol_regular.inner，neutral 填充按钮 */
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--panel); color: var(--text);
+  font: 13px/1.6 "Microsoft YaHei", sans-serif;
+}
+header {
+  display: flex; gap: 8px; padding: 8px 12px;
+  background: var(--inner); border-bottom: 1px solid var(--border);
+  align-items: center; flex-wrap: wrap;
+}
+header h1 { font-size: 14px; margin: 0 12px 0 0; font-weight: normal; }
+nav button, header > button {
+  background: var(--fill); color: var(--text); border: 1px solid var(--border);
+  padding: 4px 14px; cursor: pointer; border-radius: 4px; font: inherit;
+}
+nav button.on { background: var(--accent); border-color: var(--accent); }
+#status { margin-left: auto; color: var(--text-dim); }
+.filmstrip { display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px; }
+.filmstrip button {
+  background: var(--panel); color: var(--text-dim); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 10px; cursor: pointer;
+  white-space: nowrap; font: inherit;
+}
+.filmstrip button.on { color: var(--text); border-color: var(--accent); }
+.split { display: flex; gap: 12px; padding: 0 12px 12px; align-items: flex-start; }
+.shot-pane { flex: 0 0 420px; position: sticky; top: 8px; }
+.shot-pane img { width: 420px; border: 1px solid var(--border); border-radius: 4px; display: block; }
+.tree-pane { flex: 1 1 auto; min-width: 360px; }
+.node {
+  border-left: 2px solid transparent; padding: 2px 8px; cursor: pointer;
+  border-radius: 0 4px 4px 0;
+}
+.node:hover { background: var(--hover); }
+.node.sel { background: var(--accent); }
+.node.sel .kind, .node.sel .txt { color: var(--text); }
+.node .id { color: var(--text-id); font-family: Consolas, monospace; }
+.node .txt { color: var(--text); }
+.node .kind { color: var(--text-dim); font-size: 11px; margin-right: 6px; }
+.node.alert { border-left-color: var(--mark); }
+.node.noted::after { content: " ✎"; color: var(--text-id); }
+.node.disabled { opacity: .45; }
+.constraints { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.constraints table { border-collapse: collapse; width: 100%; }
+.constraints td, .constraints th {
+  border: 1px solid var(--border); padding: 4px 8px;
+  text-align: left; vertical-align: top;
+}
+/* 语义靠文字，不靠颜色：native_ok=true 用中性填充，false 用强调填充 */
+.badge { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; }
+.badge.ok { background: var(--fill); color: var(--text); }
+.badge.no { background: var(--accent); color: var(--text); }
+#annot { position: sticky; bottom: 0; background: var(--panel); padding-bottom: 8px; }
+#annot h3 { font-size: 13px; font-weight: normal; color: var(--text-dim); margin: 12px 0 4px; }
+.note { background: var(--hover); border: 1px solid var(--border); border-radius: 4px; padding: 8px; margin: 6px 0; }
+.note.blocked { border-color: var(--mark); }
+.note textarea {
+  width: 100%; min-height: 60px; background: var(--field); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 6px;
+  font: inherit; resize: vertical;
+}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>UI Workbench · blender_deepseek_agent</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>UI Workbench</h1>
+  <nav id="views">
+    <button data-view="mirror" class="on">镜像视图</button>
+    <button data-view="proposal">提案视图</button>
+    <button data-view="constraints">约束总表</button>
+  </nav>
+  <span id="status"></span>
+  <button id="export">导出标注</button>
+</header>
+
+<div id="filmstrip" class="filmstrip"></div>
+
+<section id="view-mirror" class="view">
+  <div class="split">
+    <div class="shot-pane">
+      <img id="shot" alt="实机截图">
+      <div id="shot-cap"></div>
+    </div>
+    <div class="tree-pane">
+      <div id="tree"></div>
+    </div>
+  </div>
+  <div id="annot"></div>
+</section>
+
+<section id="view-proposal" class="view" hidden>
+  <div id="vocab-bar"></div>
+  <div id="canvas"></div>
+  <div id="prop-notes"></div>
+</section>
+
+<section id="view-constraints" class="view" hidden>
+  <div class="constraints" id="constraints"></div>
+</section>
+
+<script src="data/data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
