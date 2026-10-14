@@ -2318,8 +2318,11 @@ python dev\test_pipeline.py
 在 `dev/run_all.ps1` 的测试清单里追加三项（保持纯 ASCII）：
 
 ```powershell
-$PY_TESTS = @('test_constraints.py', 'test_recorder.py', 'test_pipeline.py')
+$PY_TESTS = @('test_constraints.py', 'test_recorder.py', 'test_ids.py', 'test_pipeline.py')
 ```
+
+> `test_ids.py` 也必须在内。它是唯一能发现 `ui.py` 里 `mark()` 调用被删掉或拼错常量的测试
+> （MUT-3 变异证明普通 import 抓不到这类错误），漏掉它等于让埋点悄悄腐烂。
 
 并把 `build_constraints.py` / `capture_layout.py` / `build_vocabulary.py` 加进跑批前的生成步骤。写完后立刻验语法：
 
