@@ -258,6 +258,18 @@ function switchView(name) {
     bs[i].className = (bs[i].dataset.view === name) ? "on" : "";
   }
   if (name === "constraints") { renderConstraints(); }
+  if (name === "proposal") {
+    el("vocab-bar").innerHTML = "";
+    el("prop-notes").innerHTML = "";
+    loadVocab().catch(function (e) {
+      setStatus("vocabulary.json 缺失：" + e.message + "（先跑 dev/build_vocabulary.py，再跑 dev/build_data_js.py）");
+      var bad = document.createElement("div");
+      bad.className = "loaderr";
+      bad.textContent = "受限词汇表加载失败：" + e.message +
+        " ｜ 修复：python dev/build_vocabulary.py 然后 python dev/build_data_js.py";
+      el("vocab-bar").appendChild(bad);
+    });
+  }
 }
 
 function init() {
@@ -266,15 +278,296 @@ function init() {
     (function (b) { b.onclick = function () { switchView(b.dataset.view); }; }(bs[i]));
   }
   el("export").onclick = function () {
-    var blob = new Blob([JSON.stringify(annotations, null, 2)],
+    var payload = {
+      annotations: annotations,
+      proposal: proposal
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)],
                         { type: "application/json" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "annotations.json";
     a.click();
-    setStatus("已导出 annotations.json");
+    setStatus("已导出 annotations.json（含 " +
+              Object.keys(annotations).length + " 条标注，" +
+              proposal.length + " 条提案）");
   };
+  // 顺序有讲究：runDemoHook 必须赶在 loadState 之前读 hash。loadState 会把
+  // 未知 hash 归一成状态名并写回 location.hash（"#proposal-all" -> "idle"），
+  // 晚一步读就永远是 "idle"，钩子静默不触发。
+  runDemoHook(window.location.hash || "");
   loadState(stateFromHash());
+}
+
+/* ---------------- 提案视图 ---------------- */
+
+/* 提案画布是整个工作台唯一面向用户做设计决策的地方。核心约定：
+   评审提前到落笔那一秒——只有词汇表里的 12 个控件能被摆出来，参数只能在
+   allowed_props 里挑；blocked_props 里的（label 的 size/font/color 等）当场
+   标违规；想要的效果在词汇表里根本没有的，走「做不到」列表，插入的是
+   降级方案而不是原需求。
+   注意：主题里没有红也没有绿（constraints.json 的 warn_color / ok_color
+   都已确认 native_ok=false），所以「合法 / 违规 / 已降级」一律靠文案、
+   边框明度与删除线区分，不靠颜色——与 Blender 侧的能力边界保持一致。 */
+
+var proposal = [];   // [{wkey, label, uiloayout, params, id, note, errors, downgraded, blocker, fallback}]
+var vocab = null;
+
+function loadVocab() {
+  return getJSON("vocabulary.json").then(function (v) {
+    if (!v || !v.widgets || !v.rejected) {
+      throw new Error("vocabulary.json 结构不对（缺 widgets / rejected）");
+    }
+    vocab = v;
+    renderVocabBar();
+    renderRejected();
+    renderCanvas();
+    return v;
+  });
+}
+
+function renderVocabBar() {
+  var host = el("vocab-bar");
+  host.innerHTML = "";
+  var h = document.createElement("b");
+  h.textContent = "可用控件（落笔即校验）：";
+  host.appendChild(h);
+  vocab.widgets.forEach(function (w) {
+    var b = document.createElement("button");
+    b.dataset.wkey = w.key;
+    b.textContent = w.label;
+    b.title = w.uiloayout +
+      (w.allowed_props.length ? "\n可用参数：" + w.allowed_props.join(", ") : "\n无参数") +
+      (w.blocked_props.length ? "\n被拦参数：" + w.blocked_props.join(", ") : "") +
+      (w.note ? "\n" + w.note : "");
+    b.onclick = function () { addWidget(w); };
+    host.appendChild(b);
+  });
+}
+
+function renderRejected() {
+  var host = el("prop-notes");
+  host.innerHTML = "";
+  var h = document.createElement("h3");
+  h.textContent = "想做但 Blender 做不到的（点按钮插入的是降级方案，不是原需求）";
+  host.appendChild(h);
+  var row = document.createElement("div");
+  row.className = "rrow";
+  vocab.rejected.forEach(function (r) {
+    var b = document.createElement("button");
+    b.dataset.rkey = r.key;
+    b.textContent = "插入降级：" + r.label;
+    b.title = "做不到：" + r.blocker + "\n降级方案：" + r.fallback;
+    b.onclick = function () { addRejected(r); };
+    row.appendChild(b);
+  });
+  host.appendChild(row);
+}
+
+function splitParams(raw) {
+  return String(raw || "").split(/[,，\s]+/).map(function (s) { return s.trim(); })
+    .filter(function (s) { return s.length > 0; });
+}
+
+/* 单个参数的判定：返回 null 表示合法，否则返回拦截理由。
+   两类拦截要分清，不能只说「不支持」：
+     blocked_props —— 这个参数在 Blender 里确实不存在（label 没有 size）
+     允许清单之外 —— 这个控件的词汇表里没收录这个参数（怕拼错、怕自造）
+   第二类如果不做，用户写 label(size=14) 会被当成 size 被拦，而写
+   label(tooltip="x") 这种自造参数就会静默溜过去——那才是真漏。 */
+function checkProp(w, p) {
+  if (w.blocked_props.indexOf(p) >= 0) {
+    return "参数 " + p + " 不被 UILayout 支持（" + w.uiloayout.split("(")[0] + " 没有这个参数）";
+  }
+  if (w.allowed_props.indexOf(p) < 0) {
+    return "参数 " + p + " 不在「" + w.label + "」的允许清单里（可用：" +
+      (w.allowed_props.length ? w.allowed_props.join(", ") : "无") + "）";
+  }
+  return null;
+}
+
+function validateWidget(w, params) {
+  var errs = [];
+  (params || []).forEach(function (p) {
+    var msg = checkProp(w, p);
+    if (msg) { errs.push({ param: p, msg: msg }); }
+  });
+  return errs;
+}
+
+function addWidget(w) {
+  proposal.push({
+    wkey: w.key,
+    label: w.label,
+    uiloayout: w.uiloayout,
+    allowed_props: w.allowed_props,
+    blocked_props: w.blocked_props,
+    params: "",
+    id: "",
+    note: "",
+    errors: [],
+    downgraded: false
+  });
+  renderCanvas();
+}
+
+function addRejected(r) {
+  // 降级项不开放参数输入：它是「这条原需求做不到 + 这样改」的记录，
+  // 不是可拼装的控件，硬塞参数进去只会让人以为能落笔。
+  proposal.push({
+    wkey: "__downgraded__",
+    label: r.label,
+    uiloayout: "(不可用)",
+    rkey: r.key,
+    blocker: r.blocker,
+    fallback: r.fallback,
+    params: "",
+    id: "",
+    note: "",
+    errors: [],
+    downgraded: true
+  });
+  renderCanvas();
+}
+
+function setParams(n, raw) {
+  n.params = raw;
+  n.errors = validateWidget(
+    { key: n.wkey, label: n.label, uiloayout: n.uiloayout,
+      allowed_props: n.allowed_props || [], blocked_props: n.blocked_props || [] },
+    splitParams(raw));
+  renderCanvas();
+}
+
+function renderCanvas() {
+  var host = el("canvas");
+  host.innerHTML = "";
+  if (!proposal.length) {
+    var p = document.createElement("p");
+    p.id = "empty-hint";
+    p.className = "hint";
+    p.textContent = "从上面挑控件开始拼装。挑不到想要的效果时，看下方「做不到」列表——" +
+      "点它插入的是降级方案，原需求会被标成做不到。";
+    host.appendChild(p);
+    return;
+  }
+  proposal.forEach(function (n) {
+    var box = document.createElement("div");
+    box.className = "note pnode" + (n.downgraded ? " down" : (n.errors.length ? " blocked" : ""));
+    box.dataset.wkey = n.wkey;
+    box.dataset.downgraded = n.downgraded ? "1" : "0";
+    box.dataset.status = n.downgraded ? "downgraded" : (n.errors.length ? "blocked" : "ok");
+    box.dataset.errors = String(n.errors.length);
+    if (n.rkey) { box.dataset.rkey = n.rkey; }
+
+    var head = document.createElement("div");
+    head.className = "phead";
+    var tag = document.createElement("span");
+    tag.className = "ptag";
+    tag.textContent = n.downgraded ? "已降级" : (n.errors.length ? "违规 " + n.errors.length + " 项" : "合法");
+    head.appendChild(tag);
+    var nm = document.createElement("b");
+    nm.textContent = n.label;
+    head.appendChild(nm);
+    var code = document.createElement("code");
+    code.textContent = n.uiloayout;
+    head.appendChild(code);
+    box.appendChild(head);
+
+    if (n.downgraded) {
+      var fb = document.createElement("div");
+      fb.className = "pfb";
+      var req = document.createElement("span");
+      req.className = "strike";
+      req.textContent = "原需求做不到：" + n.blocker;
+      fb.appendChild(req);
+      var alt = document.createElement("div");
+      alt.textContent = "降级方案：" + n.fallback;
+      fb.appendChild(alt);
+      box.appendChild(fb);
+    } else {
+      var chips = document.createElement("div");
+      chips.className = "chips";
+      var ps = splitParams(n.params);
+      ps.forEach(function (p) {
+        var c = document.createElement("span");
+        var bad = checkProp({ label: n.label, uiloayout: n.uiloayout,
+          allowed_props: n.allowed_props || [], blocked_props: n.blocked_props || [] }, p);
+        c.className = "chip" + (bad ? " bad" : "");
+        c.textContent = p + (bad ? " ✗" : "");
+        chips.appendChild(c);
+      });
+      box.appendChild(chips);
+
+      var pin = document.createElement("input");
+      pin.className = "pin pinp";
+      pin.placeholder = "参数，逗号分隔（只认 " +
+        ((n.allowed_props || []).join(", ") || "无") + "）";
+      pin.value = n.params;
+      pin.oninput = function () { setParams(n, pin.value); };
+      box.appendChild(pin);
+    }
+
+    n.errors.forEach(function (e) {
+      var er = document.createElement("div");
+      er.className = "perr";
+      er.textContent = "✗ 拦截：" + e.msg;
+      box.appendChild(er);
+    });
+
+    var idIn = document.createElement("input");
+    idIn.className = "pin";
+    idIn.placeholder = "对应插件元素 ID（可空）";
+    idIn.value = n.id;
+    idIn.oninput = function () { n.id = idIn.value; };
+    box.appendChild(idIn);
+
+    var ta = document.createElement("textarea");
+    ta.className = "pnote";
+    ta.placeholder = "想要什么？为什么？";
+    ta.value = n.note;
+    ta.oninput = function () { n.note = ta.value; };
+    box.appendChild(ta);
+    host.appendChild(box);
+  });
+}
+
+/* 无头验收钩子：#proposal-all / #proposal-blocked / #proposal-empty。
+   dev/test_proposal_vocab.py 用 headless Edge --dump-dom 核对「12 个控件点一遍
+   全合法」与「label 写了违规参数会被拦」。这里刻意用 bs[i].click() 点真实按钮，
+   而不是直接调 addWidget——否则验的就不是用户点的那条路径了。
+   #proposal-empty 只切视图不插任何东西，用来核对空画布的初始样子
+   （普通 #proposal 走不到提案视图：loadState 会把未知 hash 归一成状态名）。
+   #proposal-blocked 会额外给文字（label）塞 size, color, scale, text：
+   前三个分别命中 blocked_props、blocked_props、允许清单之外，text 合法。 */
+function runDemoHook(hash) {
+  var h = String(hash || "").replace(/^#/, "");
+  var kind = (h === "proposal-all") ? "all"
+           : (h === "proposal-blocked") ? "blocked"
+           : (h === "proposal-empty") ? "empty" : null;
+  if (!kind) { return; }
+  switchView("proposal");
+  loadVocab().then(function () {
+    el("vocab-bar").innerHTML = "";
+    el("prop-notes").innerHTML = "";
+    renderVocabBar();
+    renderRejected();
+    if (kind === "empty") { setStatus("DEMO empty 控件 0 降级 0"); return; }
+    var bs = el("vocab-bar").querySelectorAll("button[data-wkey]");
+    for (var i = 0; i < bs.length; i++) { bs[i].click(); }
+    if (kind === "blocked") {
+      var lab = proposal.filter(function (x) { return x.wkey === "label"; })[0];
+      if (lab) { setParams(lab, "size, color, scale, text"); }
+    }
+    var rb = el("prop-notes").querySelectorAll("button[data-rkey]");
+    for (var j = 0; j < rb.length; j++) { rb[j].click(); }
+    var down = proposal.filter(function (x) { return x.downgraded; }).length;
+    var blocked = proposal.filter(function (x) { return x.errors.length > 0; }).length;
+    setStatus("DEMO " + kind + " 控件 " + (proposal.length - down) +
+      " 降级 " + down + " 违规 " + blocked);
+  }).catch(function (e) {
+    setStatus("DEMO 失败：" + e.message);
+  });
 }
 
 document.addEventListener("DOMContentLoaded", init);

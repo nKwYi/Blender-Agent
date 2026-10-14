@@ -82,3 +82,47 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
   border: 1px solid var(--border); border-radius: 4px; padding: 6px;
   font: inherit; resize: vertical;
 }
+/* ---- 提案视图 ----
+   合法 / 违规 / 已降级不靠颜色区分（主题里没有红也没有绿，见文件头）：
+   合法 = 默认边框；违规 = 加粗边框 + 「违规 N 项」文案 + 参数删除线；
+   已降级 = 虚线边框 + 「已降级」文案 + 原需求删除线。全部色值取自已声明的变量。 */
+#vocab-bar { padding: 4px 12px 0; }
+#vocab-bar b { color: var(--text-dim); font-weight: normal; }
+#vocab-bar button, .rrow button {
+  background: var(--fill); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 10px; cursor: pointer; margin: 0 6px 6px 0;
+  font: inherit;
+}
+.rrow { margin: 6px 0; }
+.loaderr {
+  background: var(--hover); border: 1px solid var(--mark); border-radius: 4px;
+  padding: 8px; margin: 6px 0; color: var(--text);
+}
+.hint { color: var(--text-dim); padding: 8px 12px; }
+.pnode .phead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.pnode .phead code {
+  color: var(--text-id); font-family: Consolas, monospace; font-size: 12px;
+}
+.pnode .ptag {
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 6px;
+  font-size: 11px; color: var(--text-dim);
+}
+.pnode.blocked { border-width: 2px; border-color: var(--mark); }
+.pnode.down { border-style: dashed; border-color: var(--text-dim); }
+.pnode .strike { text-decoration: line-through; color: var(--text-dim); }
+.pnode .pfb { margin: 6px 0; color: var(--text-dim); }
+.pnode .chips { margin: 6px 0 2px; }
+.chip {
+  display: inline-block; border: 1px solid var(--border); border-radius: 4px;
+  padding: 0 6px; margin: 0 6px 4px 0; font-size: 11px;
+  font-family: Consolas, monospace; color: var(--text);
+}
+.chip.bad {
+  text-decoration: line-through; border-color: var(--mark);
+  background: var(--panel); color: var(--text-dim);
+}
+.perr { color: var(--text); font-size: 12px; }
+.pnode .pin {
+  width: 100%; margin: 4px 0; background: var(--field); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 4px; font: inherit;
+}

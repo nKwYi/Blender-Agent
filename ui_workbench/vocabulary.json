@@ -1,0 +1,199 @@
+{
+  "generated_for": "5.2.1 LTS",
+  "widgets": [
+    {
+      "key": "row",
+      "label": "横排",
+      "uiloayout": "layout.row(align=True)",
+      "allowed_props": [
+        "align"
+      ],
+      "blocked_props": [],
+      "note": "当前代码用量 0，成本最低的层次工具"
+    },
+    {
+      "key": "column",
+      "label": "竖排",
+      "uiloayout": "layout.column(align=True)",
+      "allowed_props": [
+        "align"
+      ],
+      "blocked_props": [],
+      "note": ""
+    },
+    {
+      "key": "box",
+      "label": "内盒",
+      "uiloayout": "layout.box()",
+      "allowed_props": [
+        "alert"
+      ],
+      "blocked_props": [],
+      "note": "alert 是全 UI 唯一的红，只留给 FAILED"
+    },
+    {
+      "key": "split",
+      "label": "左右分栏",
+      "uiloayout": "layout.split(factor=0.3)",
+      "allowed_props": [
+        "factor"
+      ],
+      "blocked_props": [],
+      "note": "返回单个 layout，不是二元组"
+    },
+    {
+      "key": "grid_flow",
+      "label": "网格按钮",
+      "uiloayout": "layout.grid_flow(columns=2, even_columns=True)",
+      "allowed_props": [
+        "columns",
+        "even_columns",
+        "row_major"
+      ],
+      "blocked_props": [],
+      "note": "当前已在设置页用于模型切换"
+    },
+    {
+      "key": "panel",
+      "label": "可折叠子面板",
+      "uiloayout": "layout.panel(idname, default_closed)",
+      "allowed_props": [
+        "idname",
+        "default_closed"
+      ],
+      "blocked_props": [],
+      "note": "消化长度的唯一手段，侧栏滚不了"
+    },
+    {
+      "key": "label",
+      "label": "文字",
+      "uiloayout": "layout.label(text=..., icon=...)",
+      "allowed_props": [
+        "text",
+        "icon"
+      ],
+      "blocked_props": [
+        "size",
+        "font",
+        "color"
+      ],
+      "note": "没有 size/color/font 参数；层次靠 icon 和 scale_y"
+    },
+    {
+      "key": "operator",
+      "label": "按钮",
+      "uiloayout": "layout.operator(id, text=..., icon=...)",
+      "allowed_props": [
+        "id",
+        "text",
+        "icon",
+        "depress",
+        "emboss"
+      ],
+      "blocked_props": [
+        "color"
+      ],
+      "note": "emboss='NONE' 可去掉高光渐变"
+    },
+    {
+      "key": "prop",
+      "label": "属性行",
+      "uiloayout": "layout.prop(data, prop, text=...)",
+      "allowed_props": [
+        "prop",
+        "text"
+      ],
+      "blocked_props": [
+        "color"
+      ],
+      "note": "配 use_property_split 得到原生两列"
+    },
+    {
+      "key": "textbox",
+      "label": "多行输入",
+      "uiloayout": "layout.textbox(data, 'prompt', initial_visible_lines=3)",
+      "allowed_props": [
+        "prop",
+        "text",
+        "placeholder",
+        "initial_visible_lines"
+      ],
+      "blocked_props": [],
+      "note": "中文 IME 只能靠原生 textbox，自绘拿不到拼音组合态"
+    },
+    {
+      "key": "separator",
+      "label": "分隔线",
+      "uiloayout": "layout.separator()",
+      "allowed_props": [],
+      "blocked_props": [],
+      "note": ""
+    },
+    {
+      "key": "scale_y",
+      "label": "留白撑高",
+      "uiloayout": "layout.scale_y = 1.4",
+      "allowed_props": [
+        "scale_y"
+      ],
+      "blocked_props": [],
+      "note": "字号不可调，层次只能靠撑高和缩进"
+    }
+  ],
+  "rejected": [
+    {
+      "key": "hover",
+      "label": "鼠标悬停态",
+      "blocker": "UILayout 无任何 hover 回调；Blender 内部有 _inner_sel 配色但插件调不到",
+      "fallback": "改用 enabled / active 二态表达状态；把 hover 语义重写为「点击后进入」"
+    },
+    {
+      "key": "custom_rgb",
+      "label": "任意 RGB 颜色",
+      "blocker": "UILayout 无 color 属性，只能置 layout.alert=True 触发主题红",
+      "fallback": "只用 box.alert 表达失败；成功/警告改用图标与文案区分，不依赖颜色"
+    },
+    {
+      "key": "font_size",
+      "label": "自定义字号与字重",
+      "blocker": "label() 只有 text / text_ctxt / translate / icon / icon_value 五个参数",
+      "fallback": "用 layout.scale_y 配合空 label 撑出层次；标题感靠 icon 与分隔线建立"
+    },
+    {
+      "key": "box_shadow",
+      "label": "卡片阴影",
+      "blocker": "面板无阴影 API，theme 只有 menu_shadow_fac 作用于菜单",
+      "fallback": "用底色明度差分层：面板 #3d3d3d 对内盒 #1d1d1d"
+    },
+    {
+      "key": "real_scroll",
+      "label": "侧栏真实滚动",
+      "blocker": "侧栏滚轮实测不滚动（UI打磨执行书 v0.2.1 实测：200 行面板滚轮零变化）",
+      "fallback": "用 layout.panel() 折叠消化长度；对话记录只保留最近 N 条，其余折叠或分页"
+    },
+    {
+      "key": "anim_transition",
+      "label": "展开/收起动效",
+      "blocker": "插件无动画 API",
+      "fallback": "改用 layout.panel() 的原生折叠箭头，动效由 Blender 内置提供"
+    },
+    {
+      "key": "context_menu",
+      "label": "右键上下文菜单",
+      "blocker": "5.2.1 实测 UILayout.context_menu 已移除，116 个函数中不存在",
+      "fallback": "改用 layout.menu_pie() 或 layout.popover() 承载右键入口"
+    },
+    {
+      "key": "warn_color",
+      "label": "警告橙 wcol_state.warning",
+      "blocker": "主题里有该色但 UILayout 不暴露 ThemeWidgetColors",
+      "fallback": "用 icon='ERROR' 与文案承载「注意」语义，不靠颜色"
+    },
+    {
+      "key": "ok_color",
+      "label": "成功绿 wcol_state.success",
+      "blocker": "同上，主题里有但 Python API 调不到",
+      "fallback": "用 icon='CHECKMARK' 承载「成功」语义"
+    }
+  ]
+}
