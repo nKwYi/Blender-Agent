@@ -73,7 +73,7 @@
 - Consumes: `ui_workbench/native_api.json`（Task 0 已产出）
 - Produces:
   - `build_constraints.load_api() -> dict`
-  - `build_constraints.build(entries: list[dict], api: dict) -> dict`
+  - `build_constraints.build(api: dict) -> dict`
   - `build_constraints.main() -> int`
   - `ui_workbench/constraints.json` schema：
     ```json
@@ -209,21 +209,40 @@ def _has_prop(api, name):
 
 # 每条 entry 的 verdict 在这里计算，不允许硬编码 True/False。
 def _entry(key, title, api, call=None, prop=None, blocker="", fallback="",
-           evidence="", negated=None):
+           denied=None, negated=None):
+    """Build one registry entry.
+
+    Two evidence sources, both read from native_api.json -- never hardcoded:
+
+    * ``negated``: keys into ``ui.negatives``. NOTE the naming trap --
+      ``dev/probe_native_api.py`` builds that dict with ``hasattr(ui, "color")``
+      style probes, so ``True`` means **the capability EXISTS**, not that it is
+      denied. Do not negate it.
+    * ``denied``: a tuple of symbols that must be ABSENT for this capability to
+      be impossible (e.g. no shadow API anywhere). Any one of them present means
+      Blender grew a way to do it.
+    """
     if negated is not None:
-        ok = not api["ui"]["negatives"].get(negated, False)
-        ev = "ui.negatives.%s=%s" % (
+        ok = bool(api["ui"]["negatives"].get(negated, False))
+        ev = "ui.negatives.%s=%s (True means the capability EXISTS)" % (
             negated, json.dumps(api["ui"]["negatives"].get(negated)))
     elif call is not None:
         ok = _has_call(api, call)
         ev = "ui.functions.%s=%s" % (call, ok)
-    else:
+    elif prop is not None:
         ok = _has_prop(api, prop)
         ev = "ui.properties.%s=%s" % (prop, ok)
+    elif denied is not None:
+        hit = [s for s in denied
+               if s in api["ui"]["functions"] or s in api["ui"]["properties"]]
+        ok = bool(hit)
+        ev = "absent from api: %s (found: %s)" % (", ".join(denied), hit or "none")
+    else:
+        raise ValueError("entry %r has no evidence source" % key)
 
     item = {"key": key, "title": title, "native_ok": bool(ok), "evidence": ev}
-    if ok and call:
-        item["uiloayout"] = "layout.%s()" % call
+    if ok and (call or prop):
+        item["uiloayout"] = ("layout.%s()" % call) if call else "layout.%s = ..." % prop
     if not ok:
         item["blocker"] = blocker
         item["fallback"] = fallback
@@ -242,12 +261,15 @@ def build(api):
                blocker="label() 只有 text / text_ctxt / translate / icon / icon_value 五个参数",
                fallback="用 layout.scale_y 配合空 label 撑出层次；标题感靠 icon 与分隔线建立"),
         _entry("box_shadow", "卡片阴影", api,
+               denied=("shadow", "shadow_fac", "drop_shadow"),
                blocker="面板无阴影 API，theme 只有 menu_shadow_fac 作用于菜单",
                fallback="用底色明度差分层：面板 #3d3d3d 对内盒 #1d1d1d"),
         _entry("real_scroll", "侧栏真实滚动", api,
+               denied=("scroll", "scrollbar", "scroll_to"),
                blocker="侧栏滚轮实测不滚动（UI打磨执行书 v0.2.1 实测：200 行面板滚轮零变化）",
                fallback="用 layout.panel() 折叠消化长度；对话记录只保留最近 N 条，其余折叠或分页"),
         _entry("anim_transition", "展开/收起动效", api,
+               denied=("animation", "animate", "interpolation"),
                blocker="插件无动画 API",
                fallback="改用 layout.panel() 的原生折叠箭头，动效由 Blender 内置提供"),
         _entry("collapsible_panel", "可折叠子面板", api, call="panel",
@@ -263,11 +285,15 @@ def build(api):
         _entry("two_col_split", "左右分栏", api, call="split",
                fallback=""),
         _entry("context_menu", "上下文菜单", api, call="context_menu",
-               fallback=""),
+               blocker="Blender 5.2.1 的 UILayout 已无 context_menu"
+                       "（实测 116 个函数全表核对，只有 menu_pie 与 popover）",
+               fallback="改用 layout.menu() 或 layout.popover()"),
         _entry("warn_color", "警告橙 wcol_state.warning", api,
+               denied=("color", "theme_color", "warning_color"),
                blocker="主题里有该色但 UILayout 不暴露 ThemeWidgetColors",
                fallback="用 icon='ERROR' 与文案承载「注意」语义，不靠颜色"),
         _entry("ok_color", "成功绿 wcol_state.success", api,
+               denied=("color", "theme_color", "success_color"),
                blocker="同上，主题里有但 Python API 调不到",
                fallback="用 icon='CHECKMARK' 承载「成功」语义"),
     ]
@@ -310,7 +336,7 @@ $B='D:\blender-4.5.5-windows-x64\blender5.2\blender.exe'
 if ($LASTEXITCODE -ne 0) { throw "build_constraints failed" }
 & $B --background --factory-startup -P dev\test_constraints.py 2>&1 | Tee-Object dev\out\task1_pass.txt
 ```
-预期：生成器打印 `BLOCKED hover custom_rgb font_size box_shadow real_scroll anim_transition warn_color ok_color`，测试输出 `PASS 0  FAIL 0`，退出码 0。
+预期：生成器打印 `BLOCKED` 行，其中含 `hover custom_rgb font_size box_shadow real_scroll anim_transition context_menu warn_color ok_color` 共 **9 条**（`context_menu` 在 5.2.1 实测中不存在，故为 blocked）；测试全绿、`FAIL 0`，退出码 0。
 
 - [ ] **Step 5: 变异验证（证明断言非空洞）**
 
@@ -336,7 +362,8 @@ $B='D:\blender-4.5.5-windows-x64\blender5.2\blender.exe'
 **Interfaces:**
 - Produces:
   - `class RecLayout` — UILayout 桩，构造参数 `(kind="layout", parent=None)`
-    - 实例方法：`row(align=False)` · `column(align=False)` · `box()` · `split(factor=0.5, align=False)` · `grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=False)` · `label(text="", text_ctxt="", translate=False, icon='NONE', icon_value=0)` · `separator(factor=1.0)` · `menu(name="", icon='NONE')` · `panel(idname, default_closed=False, layout_header=None, layout_body=None)` · `prop(data, prop, text="", **kw)` · `operator(op_id, text="", icon='NONE', **kw)` · `textbox(data, prop, **kw)` · `context_menu(menu, name="", icon='NONE')`
+    - 实例方法：`row(align=False)` · `column(align=False)` · `box()` · `split(factor=0.5, align=False)` · `grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=False)` · `label(text="", text_ctxt="", translate=False, icon='NONE', icon_value=0)` · `separator(factor=1.0)` · `menu(name="", icon='NONE')` · `panel(idname, default_closed=False, layout_header=None, layout_body=None)` · `prop(data, prop, text="", **kw)` · `operator(op_id, text="", icon='NONE', **kw)` · `textbox(data, prop, **kw)`
+    - **不要**实现 `context_menu`——实测 Blender 5.2.1 的 UILayout 已经没有这个方法，`ui.py` 也不调用它。桩方法比真实 API 多只会让录制器悄悄接受真实 Blender 会崩的调用。
     - 实例属性（可读写）：`alert` · `active` · `enabled` · `scale_y` · `alignment` · `use_property_split` · `emboss` · `operator_context` · `element_id`
     - 实例方法：`tag(element_id: str) -> None`
     - 实例方法：`to_dict() -> dict`
@@ -548,11 +575,6 @@ class RecLayout:
 
     def menu(self, name="", icon='NONE', **kw):
         node = self._child("menu")
-        node.icon = icon
-        return node
-
-    def context_menu(self, menu, name="", icon='NONE', **kw):
-        node = self._child("context_menu")
         node.icon = icon
         return node
 
