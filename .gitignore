@@ -17,3 +17,5 @@ dist/
 # ---- 截图与派生图像（dev/out 全部是临时产物，不入库）----
 dev/out/
 crop_*.png
+# capture_shots.py 的整窗原图中间产物（约 1.8MB/张），裁切后的 <state>.png 才入库
+ui_workbench/data/shots/*_full.png
