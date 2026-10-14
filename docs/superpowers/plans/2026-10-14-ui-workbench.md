@@ -645,7 +645,7 @@ class Recorder:
 cd 'E:\Three JS\Blender Agent'
 & 'D:\blender-4.5.5-windows-x64\blender5.2\blender.exe' --background --factory-startup -P dev\test_recorder.py 2>&1 | Tee-Object dev\out\task2_pass.txt
 ```
-预期：`PASS 13  FAIL 0`，退出码 0。
+预期：每一行都是 `PASS`，末尾 `FAIL 0`，退出码 0。
 
 - [ ] **Step 5: 变异验证**
 
@@ -720,21 +720,21 @@ def main():
 
     ck("mark_callable", callable(ui_ids.mark), "mark 必须可调用")
 
-    # mark() 挂在真实 UILayout 上必须是空操作而不是 AttributeError
-    class FakePanel:
-        layout = None
-
-    real_layout = bpy.context.preferences.addons[
-        "bl_ext.user_default.blender_deepseek_agent"
-    ].preferences.__class__.__name__
-    ck("prefs_readable", isinstance(real_layout, str), "扩展已注册")
-
-    # 用一个不带 tag() 的对象验证 hasattr 守卫
+    # mark() 挂在没有 tag() 的对象上必须是空操作，而不是 AttributeError。
+    # 注意不要去查 bpy.context.preferences.addons[...]：本任务跑在
+    # --factory-startup 下，包名是 blender_deepseek_agent 而不是
+    # bl_ext.user_default.*，按后者取会直接 KeyError。
     class Bare:
         pass
 
     ui_ids.mark(Bare(), "chat.probe")
     ck("mark_is_noop_without_tag", True, "mark 在无 tag() 的对象上不应抛异常")
+
+    # 重复挂同一个块不应报错（draw 里一个容器可能被 mark 两次）
+    b = Bare()
+    ui_ids.mark(b, "chat.composer")
+    ui_ids.mark(b, "chat.composer")
+    ck("mark_idempotent", True, "重复 mark 不应抛异常")
 
     print("PASS %d  FAIL %d" % (TOTAL[0] - len(FAILS), len(FAILS)))
     sys.exit(1 if FAILS else 0)
@@ -1055,7 +1055,7 @@ def build(state_name):
 cd 'E:\Three JS\Blender Agent'
 & 'D:\blender-4.5.5-windows-x64\blender5.2\blender.exe' --background --factory-startup -P dev\test_states.py 2>&1 | Tee-Object dev\out\task4_pass.txt
 ```
-预期：`PASS 23  FAIL 0`，退出码 0。**若 `Run` / `ToolCall` / `Receipt` 的字段名与上面不符，先读 `blender_deepseek_agent/state.py` 与 `receipt.py` 对齐真实字段，再改本文件。**
+预期：7 个 `draw_<状态>` 全 PASS，末尾 `FAIL 0`，退出码 0。**若 `Run` / `ToolCall` / `Receipt` 的字段名与上面不符，先读 `blender_deepseek_agent/state.py` 与 `receipt.py` 对齐真实字段，再改本文件。**
 
 - [ ] **Step 5: 写导出脚本**
 
@@ -1150,19 +1150,34 @@ $B='D:\blender-4.5.5-windows-x64\blender5.2\blender.exe'
 - Consumes: `dev/states.py` 的 `build()`
 - Produces: `ui_workbench/data/shots/<state>.png`（裁切后的 N 面板）
 
-- [ ] **Step 1: 写截图脚本**
+- [ ] **Step 1: 读现成脚本，再写截图脚本**
 
-创建 `dev/capture_shots.py`：
+**先读 `dev/gui_check_v2.py`**——它已经跑通过「真实窗口 + 灌假数据 + 逐状态截图」，
+本任务的机制必须与它一致，不要从零另发明一套。它已经踩平了这几件事：
+
+| 机制 | 正确写法 | 常见错法 |
+|:---|:---|:---|
+| 切到 AI 对话页 | `region.active_panel_category = "AI 对话"` | `space.category` —— 不是那个属性，切不过去 |
+| 推进状态 | `bpy.app.timers.register` 驱动状态机 | for 循环同步跑 —— 面板来不及重绘，7 张图全是同一张 |
+| 等重绘 | `area.tag_redraw()` + `time.sleep(0.35)` | `bpy.ops.wm.redraw_timer` —— 抓不到真实绘制结果 |
+| 防挂死 | timer 计数器看门狗，超限 `wm.quit_blender()` | 无 —— 一旦不返回会留下僵尸进程 |
+| 收尾 | 全部拍完后 `wm.quit_blender()` | 忘调 —— 窗口一直挂着 |
+
+创建 `dev/capture_shots.py`，复用上述机制：
 
 ```python
 # -*- coding: utf-8 -*-
 """一次 GUI 运行产出 7 个状态的 N 面板截图。
 
-必须用最小化窗口运行，不要抢用户桌面。截图后调用 wm.quit_blender 退出，
+机制照抄 dev/gui_check_v2.py：定时器驱动状态机 + 重绘等待 + 看门狗。
+不要写成同步 for 循环——面板来不及重绘，截出来会是同一张图。
+
+必须用最小化窗口运行，不要抢用户桌面。拍完调用 wm.quit_blender 退出，
 不要留下残留进程。
 """
 import os
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -1176,71 +1191,126 @@ from dev.states import STATE_NAMES, build
 
 OUT_DIR = os.path.join(ROOT, "ui_workbench", "data", "shots")
 
+_state = {"i": 0, "settle": 0, "watchdog": 0, "taken": [], "errs": []}
 
-def panel_region():
-    """Find the N-panel UI region actually on screen right now."""
-    best = None
+
+def log(*a):
+    print("[SHOTS]", " ".join(str(x) for x in a))
+
+
+def find_ui_region():
+    """Locate the N-panel UI region and point it at the AI chat category."""
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
             if area.type != 'UI':
                 continue
             for region in area.regions:
-                if region.type == 'UI' and region.width > 200:
-                    if best is None or region.width > best[2]:
-                        best = (window, region)
-    return best
+                if region.type != 'UI' or region.width <= 200:
+                    continue
+                try:
+                    region.active_panel_category = "AI 对话"
+                except Exception as exc:
+                    log("CATEGORY_FAIL", exc)
+                    continue
+                area.tag_redraw()
+                log("category set ->", region.active_panel_category,
+                    "| region", region.x, region.y, region.width, region.height)
+                return area, region
+    return None, None
+
+
+def apply(name):
+    """Push one state into the live PropertyGroup."""
+    spec = build(name)
+    U.CONTROLLER.run = spec["run"]
+    state = bpy.context.scene.deepseek_agent
+    state.active_tab = spec.get("active_tab", "CHAT")
+    state.prompt = spec.get("prompt", "")
+    state.history.clear()
+    for role, text in spec.get("history", []):
+        state.history.add()
+        item = state.history[-1]
+        item.role = role
+        item.text = text
+    log("applied", name)
+
+
+def tick():
+    """Alternate two phases per state: apply -> settle -> shoot.
+
+    A single post-loop screenshot would only capture the LAST state. Every
+    state needs its own apply/settle/shoot cycle.
+    """
+    _state["watchdog"] += 1
+    if _state["watchdog"] > 240:
+        log("WATCHDOG_TIMEOUT taken=%d" % len(_state["taken"]))
+        bpy.ops.wm.quit_blender()
+        return None
+
+    area, region = _state.get("ar", (None, None))
+    if area is None:
+        area, region = find_ui_region()
+        _state["ar"] = (area, region)
+        if area is None:
+            log("NO_UI_REGION -- open the N panel first")
+            bpy.ops.wm.quit_blender()
+            return None
+        return 0.5
+
+    if _state["settle"] < 3:
+        _state["settle"] += 1
+        area.tag_redraw()
+        return 0.5
+    _state["settle"] = 0
+
+    pending = _state.get("pending")
+    if pending is None:
+        if _state["i"] >= len(STATE_NAMES):
+            log("CAPTURE_SHOTS_OK count=%d errs=%d"
+                % (len(_state["taken"]), len(_state["errs"])))
+            log("STATES %s" % " ".join(_state["taken"]))
+            if _state["errs"]:
+                for e in _state["errs"]:
+                    log("ERR", e)
+            bpy.ops.wm.quit_blender()
+            return None
+        pending = STATE_NAMES[_state["i"]]
+        _state["i"] += 1
+        _state["pending"] = pending
+        try:
+            apply(pending)
+        except Exception as exc:
+            _state["errs"].append("apply %s: %r" % (pending, exc))
+            log("APPLY_FAIL", pending, repr(exc))
+        return 0.5
+
+    area.tag_redraw()
+    time.sleep(0.35)
+    path = os.path.join(OUT_DIR, "%s_full.png" % pending)
+    try:
+        bpy.ops.screen.screenshot(filepath=path)
+        _state["taken"].append(pending)
+        log("shot", pending, os.path.getsize(path), "bytes")
+    except Exception as exc:
+        _state["errs"].append("shot %s: %r" % (pending, exc))
+        log("SHOT_FAIL", pending, exc)
+    _state["pending"] = None
+    return 0.5
 
 
 def main():
     bda.register()
     os.makedirs(OUT_DIR, exist_ok=True)
-    scene = bpy.context.scene
-    state = scene.deepseek_agent
-
-    taken = []
-    for name in STATE_NAMES:
-        spec = build(name)
-        U.CONTROLLER.run = spec["run"]
-        state.active_tab = spec.get("active_tab", "CHAT")
-        state.prompt = spec.get("prompt", "")
-        state.history.clear()
-        for role, text in spec.get("history", []):
-            state.history.add()
-            item = state.history[-1]
-            item.role = role
-            item.text = text
-
-        found = panel_region()
-        if found is None:
-            print("NO_UI_REGION at state=%s" % name)
-            break
-        window, region = found
-
-        # Point the N panel at the AI chat category, then force a redraw.
-        for area in window.screen.areas:
-            if area.type == 'UI':
-                for space in area.spaces:
-                    if space.type == 'SPACE_TYPE_REGION_UI':
-                        space.show_region_ui = True
-                        space.category = getattr(space, "category", None) or space.category
-        region.tag_redraw()
-        for _ in range(4):
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-
-        path = os.path.join(OUT_DIR, "%s_full.png" % name)
-        bpy.ops.screen.screenshot(filepath=path)
-        taken.append(name)
-        print("SHOT %s" % path)
-
-    print("CAPTURE_SHOTS_OK count=%d" % len(taken))
-    print("STATES %s" % " ".join(taken))
-    bpy.ops.wm.quit_blender()
+    bpy.app.timers.register(tick, first_interval=1.0)
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
 ```
+
+> `--background` 下 `bpy.app.timers` 一次都不触发（实测等 3 秒 0 次），
+> 所以本脚本**只能**用 GUI 模式跑，`--background` 会静默挂住不产出任何东西。
 
 - [ ] **Step 2: 运行（最小化，单实例）**
 
@@ -1518,6 +1588,7 @@ textarea { width: 100%; min-height: 60px; background: var(--inner); color: var(-
   <div class="constraints" id="constraints"></div>
 </section>
 
+<script src="data/data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
@@ -1551,27 +1622,34 @@ function loadAnnotations() {
 }
 
 function saveAnnotations() {
-  localStorage.setItem("uw_annotations", JSON.stringify(annotations, null, 2));
+  // file:// 下 localStorage 在 Chrome 里抛 SecurityError，Firefox 正常。
+  // 存不了就退回内存，导出按钮仍然可用——不能让一次按键崩掉整个页面。
+  try {
+    localStorage.setItem("uw_annotations", JSON.stringify(annotations, null, 2));
+  } catch (e) {
+    setStatus("（file:// 下无法持久化，标注只保存在内存，用「导出标注」保存）");
+  }
 }
 
 function el(id) { return document.getElementById(id); }
 
+var DATA = window.UW_DATA || null;
+
 function getJSON(path) {
-  // file:// 下 fetch 会被 CORS 拦，退回 XHR，再退回提示。
-  return new Promise(function (resolve, reject) {
-    var x = new XMLHttpRequest();
-    x.open("GET", path, true);
-    x.onload = function () {
-      if (x.status === 0 || (x.status >= 200 && x.status < 400)) {
-        try { resolve(JSON.parse(x.responseText)); }
-        catch (e) { reject(new Error(path + " 不是合法 JSON：" + e.message)); }
-      } else {
-        reject(new Error(path + " HTTP " + x.status));
-      }
-    };
-    x.onerror = function () { reject(new Error(path + " 读取失败")); };
-    x.send();
-  });
+  // file:// 是不透明源（opaque origin）：XMLHttpRequest / fetch 拉同目录文件
+  // 会被 CORS 直接拒掉，localStorage 也会抛 SecurityError。所以所有数据由
+  // data/data.js 以 window.UW_DATA 全局注入，这里只做查表。
+  if (!DATA) {
+    return Promise.reject(new Error(
+      "data/data.js 没加载，先跑 python dev\\build_data_js.py"));
+  }
+  var key = path.replace(/^data\//, "").replace(/\.json$/, "");
+  var v = DATA[key];
+  if (v === undefined) {
+    return Promise.reject(new Error(
+      path + " 不在 data/data.js 里，重新生成"));
+  }
+  return Promise.resolve(v);
 }
 
 function setStatus(msg) { el("status").textContent = msg || ""; }
@@ -1742,7 +1820,85 @@ function init() {
 document.addEventListener("DOMContentLoaded", init);
 ```
 
-- [ ] **Step 6: 运行测试并人工验收**
+- [ ] **Step 6: 写 data.js 生成器**
+
+创建 `dev/build_data_js.py`：
+
+```python
+# -*- coding: utf-8 -*-
+"""把工作台需要的全部 JSON 打包成一个 data.js。
+
+为什么需要它：file:// 是不透明源，浏览器用 XHR / fetch 拉同目录文件会被
+CORS 拒掉（Chrome 尤其如此，必须加 --allow-file-access-from-files 才行）。
+用 <script src> 注入全局对象是唯一能在 file:// 下零服务器取数的办法。
+
+键名规则：去掉 data/ 前缀与 .json 后缀。
+  data/layout/idle.json -> "layout/idle"
+  constraints.json      -> "constraints"
+"""
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+WB = os.path.join(ROOT, "ui_workbench")
+OUT = os.path.join(WB, "data", "data.js")
+
+
+def main():
+    payload = {}
+
+    cons = os.path.join(WB, "constraints.json")
+    if os.path.exists(cons):
+        with open(cons, encoding="utf-8") as fh:
+            payload["constraints"] = json.load(fh)
+    else:
+        print("MISSING ui_workbench/constraints.json")
+        return 1
+
+    layout_dir = os.path.join(WB, "data", "layout")
+    n_layout = 0
+    if os.path.isdir(layout_dir):
+        for fn in sorted(os.listdir(layout_dir)):
+            if not fn.endswith(".json"):
+                continue
+            with open(os.path.join(layout_dir, fn), encoding="utf-8") as fh:
+                payload["layout/" + fn[:-5]] = json.load(fh)
+                n_layout += 1
+
+    vocab = os.path.join(WB, "vocabulary.json")
+    if os.path.exists(vocab):
+        with open(vocab, encoding="utf-8") as fh:
+            payload["vocabulary"] = json.load(fh)
+
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    with open(OUT, "w", encoding="utf-8") as fh:
+        fh.write("/* GENERATED by dev/build_data_js.py -- do not edit by hand */\n")
+        fh.write("window.UW_DATA = ")
+        json.dump(payload, fh, ensure_ascii=False, sort_keys=True)
+        fh.write(";\n")
+
+    print("DATA_JS_OK keys=%d layouts=%d" % (len(payload), n_layout))
+    print("KEYS %s" % " ".join(sorted(payload)))
+    if n_layout < 7:
+        print("WARN only %d layout files, run dev/capture_layout.py" % n_layout)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+运行：
+
+```powershell
+cd 'E:\Three JS\Blender Agent'
+python dev\build_data_js.py
+```
+预期：`DATA_JS_OK keys=8 layouts=7`。`vocabulary.json` 此时还不存在（Task 7 才生成），键数 7 也可接受，Task 7 结束后要重跑一次。
+
+- [ ] **Step 7: 运行测试并人工验收**
 
 ```powershell
 cd 'E:\Three JS\Blender Agent'
@@ -1877,6 +2033,8 @@ cd 'E:\Three JS\Blender Agent'
 python dev\build_vocabulary.py
 ```
 预期：`VOCAB_OK widgets=12 rejected=8`，并逐行列出 8 条降级方案。
+
+**立刻重跑一次 `python dev\build_data_js.py`**，否则 `data/data.js` 里没有 `vocabulary` 键，提案视图会报「不在 data/data.js 里」。
 
 - [ ] **Step 3: 在 app.js 里加提案画布**
 
