@@ -183,9 +183,12 @@ def main():
 
         # 7) running 的忙碌文案必须锁在 TOOL_RUNNING 分支。
         if name == "running":
-            ck("busy_text_running", BUSY_RUNNING_TEXT in texts,
+            # 用子串判断而不是 `in texts` 的成员判断：texts 里的条目是整句
+            # （带「(6秒)」后缀），成员判断会要求完全相等而恒假。
+            ck("busy_text_running", any(BUSY_RUNNING_TEXT in t for t in texts),
                "running 没渲染出 TOOL_RUNNING 分支文案，实际 %s" % texts)
-            ck("busy_not_requesting", BUSY_REQUESTING_TEXT not in texts,
+            ck("busy_not_requesting",
+               not any(BUSY_REQUESTING_TEXT in t for t in texts),
                "running 渲染出 REQUESTING 文案，run.phase 被回退了：%s" % texts)
 
     print("PASS %d  FAIL %d" % (TOTAL[0] - len(FAILS), len(FAILS)))
