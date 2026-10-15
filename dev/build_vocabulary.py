@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """从 constraints.json 生成受限词汇表。
 
 原则：只有 native_ok=true 的能力才能进词汇表；每条 native_ok=false 的
@@ -18,6 +18,7 @@
 """
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -62,10 +63,17 @@ ELEMENT_ID_HELP = {
 
 # 一键插入的示例面板。放在数据里而不是写死成 JS 字面量：重跑本脚本时它不会丢，
 # 测试也能逐条核对里面的参数与元素 ID。
-# element_id 一律取自已提交的 7 份布局树（ui_workbench/data/layout/*.json）；
+# element_id 取自已提交的 7 份布局树（ui_workbench/data/layout/*.json）；
 # 两条留空是有意的——正好演示「元素 ID 可以不填」。
 # content 是这块里写什么字：左边预览只认它，缺了这一栏，预览就只是一排空壳。
-# 容器类控件没有 content：它们只分组，不写字。
+# 容器类控件（box/split/grid_flow/panel/separator/scale_y）没有 content：
+# 它们只分组或占位，不写字。row / column 例外——它们带一个 heading，
+# 页签条与分组标题就靠它。
+#
+# 嵌套关系（谁装在谁里面）不塞进块对象，而是单开一张 EXAMPLE_PANEL_PARENT_CHAT
+# 下标表。原因是 test_proposal_vocab 的 example_panel_schema 断言把每块的字段集
+# 钉死为 {wkey, params, element_id, note, content} 这五个；往块里加第六个字段
+# 会让那条断言变红，而它不许弱化。写成平行的表，两边都不用破例。
 EXAMPLE_PANEL = {
     "title": "AI 对话",
     "caption": "整根竖排把它们从上到下串起来，横排把同一组里的控件并排放。",
@@ -97,6 +105,22 @@ EXAMPLE_PANEL = {
     ],
 }
 
+# 块下标 -> 父块下标（"-1" 是顶层）。
+# 按下标而不是按父块的 wkey：一套面板里常有多个同 wkey 的容器（对话面板里
+# 既有根竖排 chat.stream，也有 chat.options 那个竖排），按 wkey 找会挂到
+# 最后遇到的那个上去——挂错容器在预览里几乎看不出来，只会觉得排版怪怪的。
+# 下标而不是 uid：uid 由 app.js 插入时才发，数据侧拿不到。
+EXAMPLE_PANEL_PARENT_CHAT = {
+    "0": -1,          # chat.tabbar 那一根横排在最上面，不装东西
+    "1": -1,          # chat.stream 整根竖排，自己撑起这个界面
+    "2": 1,           # 消息盒 -> 落在竖排里
+    "3": 1,           # 状态行 -> 落在竖排里
+    "4": 1,           # chat.options 规格竖排 -> 落在竖排里
+    "5": 4,           # 并排选项按钮 -> 落在 chat.options 里面
+    "6": 1,           # 输入框 -> 落在竖排里
+    "7": 1,           # 操作行 -> 落在竖排里
+}
+
 # 新积木的起手内容。空按钮定不了形、也看不出这是个什么控件，所以每个有内容
 # 的控件一放上来就写一句能看懂的话。容器不给起手内容（空的横排竖排本来就该
 # 是空的，写死了反而不像刚放上去的）。row / column 的 heading 之所以算内容
@@ -106,6 +130,210 @@ STARTER_CONTENT = {
     "operator": {"text": "发送指令", "icon": "PLAY"},
     "prop": {"label": "API Key", "value": "（未填）"},
     "textbox": {"placeholder": "在这里输入建模指令…", "lines": 3},
+}
+
+# 详情界面的示例面板。结构逐段照着 blender_deepseek_agent/ui.py 的
+# draw_detail_content() 抄，不凭空编：那里依次是
+#   1) 工具调用 box（tbox.label 标题 + 每次调用 srow 一行）
+#   2) 转录 box（box.label 标题 + box.prop(transcript)）
+#   3) 用量 box（标题 + 输入/缓存、输出、轮次耗时三行 label）
+#   4) 导出按钮  5) 空态提示
+# box 里放的是 label 而不是给 box 本身写 heading：容器一个字都不写，
+# 而 ui.py 里 title 本来也是 tbox.label(text=...) 这么写的。
+EXAMPLE_PANEL_DETAIL = {
+    "title": "详情",
+    "caption": "工具调用 + 转录 + 本次用量，和真实面板的 draw_detail_content() 一一对应。",
+    "blocks": [
+        {"wkey": "column", "params": "align", "element_id": "detail.stream",
+         "note": "整根竖排：下面几块都落在它里面",
+         "content": {"heading": "任务详情"}},
+        {"wkey": "box", "params": "", "element_id": "detail.calls",
+         "note": "工具调用记录容器：标题 + 每次调用各占一行",
+         "content": {}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "box 的标题（ui.py 里是 tbox.label(text=f\"工具调用（{len(run.calls)}）\")）",
+         "content": {"text": "工具调用（4）", "icon": "CONSOLE"}},
+        {"wkey": "row", "params": "align", "element_id": "",
+         "note": "一次工具调用：状态图标 + 名字 + 摘要，三段并排",
+         "content": {"heading": "1. list_scene_objects　球体·立方体·灯"}},
+        {"wkey": "row", "params": "align", "element_id": "",
+         "note": "再来一次调用，结构同上",
+         "content": {"heading": "2. create_lathe_profile　经典直筒微收口"}},
+        {"wkey": "row", "params": "align", "element_id": "",
+         "note": "失败的一次调用（ui.py 里这类 icon 换 ERROR）",
+         "content": {"heading": "3. apply_modifier　倒角参数越界"}},
+        {"wkey": "box", "params": "", "element_id": "detail.transcript",
+         "note": "完整转录容器（ui.py 里是 box.prop(state.transcript)）",
+         "content": {}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "box 的标题",
+         "content": {"text": "详情 / 转录内容", "icon": "CONSOLE"}},
+        {"wkey": "prop", "params": "prop", "element_id": "",
+         "note": "转录正文绑到插件属性上（可写多行）",
+         "content": {"label": "转录", "value": "（在这里放完整转录）"}},
+        {"wkey": "box", "params": "", "element_id": "detail.usage",
+         "note": "本次用量容器：输入 / 缓存命中 / 输出 / 轮次与耗时",
+         "content": {}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "box 的标题（ui.py 里 icon='INFO'）",
+         "content": {"text": "本次用量（实测）", "icon": "INFO"}},
+        {"wkey": "label", "params": "text", "element_id": "",
+         "note": "输入 token 与缓存命中同一行（ui.py 里是一条 label 写两项）",
+         "content": {"text": "输入 4820 · 缓存命中 3960"}},
+        {"wkey": "label", "params": "text", "element_id": "",
+         "note": "输出 token 一行",
+         "content": {"text": "输出 612"}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "轮次与耗时一行（ui.py 里带 icon='TIME'）",
+         "content": {"text": "轮次：3/12 · 耗时：41.2s", "icon": "TIME"}},
+        {"wkey": "operator", "params": "id, text, icon", "element_id": "detail.export",
+         "note": "导出完整转录（ui.py 里的 layout.operator(\"deepseek.export\")）",
+         "content": {"text": "导出完整转录", "icon": "EXPORT"}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "空态：还没有任务记录时，这一行代替上面三块",
+         "content": {"text": "还没有任务记录", "icon": "INFO"}},
+    ],
+}
+
+EXAMPLE_PANEL_PARENT_DETAIL = {
+    "0": -1,        # detail.stream 自己撑起整根竖排
+    "1": 0,         # 工具调用容器
+    "2": 1,         # 它的标题
+    "3": 1,         # 第 1 次调用
+    "4": 1,         # 第 2 次调用
+    "5": 1,         # 第 3 次调用
+    "6": 0,         # 转录容器
+    "7": 6,         # 转录容器标题
+    "8": 6,         # 转录正文
+    "9": 0,         # 用量容器
+    "10": 9,        # 用量容器标题
+    "11": 9,        # 输入 / 缓存命中
+    "12": 9,        # 输出
+    "13": 9,        # 轮次与耗时
+    "14": 0,        # 导出按钮
+    "15": 0,        # 空态提示
+}
+
+# 设置界面的示例面板。结构照着 ui.py 的 draw_settings_content() 抄：那里开了
+# use_property_split（所以属性是左右两列），依次是
+#   1) 服务商 box（标题 + prop(provider) + 打开官方文档按钮）
+#   2) API Key box（标题 + prop(api_key) + 生效状态一行）
+#   3) 模型 box（标题 + prop(model) + 获取列表按钮 + grid_flow 预置模型按钮）
+#   4) 高级运行参数 box（标题 + prop(base_url) + 两行并排属性）
+#   5) 打开完整偏好设置按钮
+EXAMPLE_PANEL_SETTINGS = {
+    "title": "详情",
+    "caption": "服务商 + API Key + 模型 + 高级参数，和真实面板的 draw_settings_content() 一一对应。",
+    "blocks": [
+        {"wkey": "column", "params": "align", "element_id": "settings.stream",
+         "note": "整根竖排：下面几块都落在它里面",
+         "content": {"heading": "设置"}},
+        {"wkey": "box", "params": "", "element_id": "settings.provider",
+         "note": "服务商配置容器：属性行 + 一行「打开官方文档」按钮",
+         "content": {}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "box 的标题（ui.py 里 icon='PREFERENCES'）",
+         "content": {"text": "服务商配置", "icon": "PREFERENCES"}},
+        {"wkey": "prop", "params": "prop", "element_id": "",
+         "note": "服务商下拉（ui.py 里是 prop(provider, text=\"服务商\")）",
+         "content": {"label": "服务商", "value": "DeepSeek"}},
+        {"wkey": "operator", "params": "id, text, icon", "element_id": "settings.doc",
+         "note": "打开官方文档（wm.url_open）",
+         "content": {"text": "打开 DeepSeek 官方文档", "icon": "URL"}},
+        {"wkey": "box", "params": "", "element_id": "settings.key",
+         "note": "API Key 配置容器：一行属性 + 一行生效状态",
+         "content": {}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "box 的标题（ui.py 里 icon='KEYINGSET'）",
+         "content": {"text": "API Key 配置", "icon": "KEYINGSET"}},
+        {"wkey": "prop", "params": "prop", "element_id": "",
+         "note": "API Key 输入（留空时 ui.py 会把这行 alert=True）",
+         "content": {"label": "API Key", "value": "（未填）"}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "生效状态一行（已生效 / 未配置）",
+         "content": {"text": "未配置 API Key（也可配置环境变量 DEEPSEEK_API_KEY）",
+                     "icon": "ERROR"}},
+        {"wkey": "box", "params": "", "element_id": "settings.model",
+         "note": "模型配置容器：当前模型 + 获取列表按钮 + 两列预置模型网格",
+         "content": {}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "box 的标题（ui.py 里 icon='PLUGIN'）",
+         "content": {"text": "模型配置", "icon": "PLUGIN"}},
+        {"wkey": "prop", "params": "prop", "element_id": "",
+         "note": "当前模型（ui.py 里是 prop(model, text=\"当前模型\")）",
+         "content": {"label": "当前模型", "value": "deepseek-chat"}},
+        {"wkey": "operator", "params": "id, text, icon", "element_id": "settings.fetch",
+         "note": "获取最新模型列表（deepseek.fetch_models）",
+         "content": {"text": "获取最新模型列表", "icon": "FILE_REFRESH"}},
+        {"wkey": "grid_flow", "params": "columns, even_columns, even_rows, row_major",
+         "element_id": "settings.models",
+         "note": "预置模型按钮：ui.py 就是 grid_flow(row_major=True, columns=2, "
+                 "even_columns=True, even_rows=False)，这里照抄那个形状",
+         "content": {}},
+        {"wkey": "operator", "params": "id, text", "element_id": "",
+         "note": "一个预置模型按钮（deepseek.set_model）",
+         "content": {"text": "deepseek-chat"}},
+        {"wkey": "operator", "params": "id, text", "element_id": "",
+         "note": "第二个预置模型按钮，和上一个并排成两列",
+         "content": {"text": "deepseek-reasoner"}},
+        {"wkey": "box", "params": "", "element_id": "settings.advanced",
+         "note": "高级运行参数容器：Base URL + 两行并排属性",
+         "content": {}},
+        {"wkey": "label", "params": "text, icon", "element_id": "",
+         "note": "box 的标题",
+         "content": {"text": "高级运行参数", "icon": "PREFERENCES"}},
+        {"wkey": "prop", "params": "prop", "element_id": "",
+         "note": "Base URL 整行一个（ui.py 里是 abox.prop(base_url)）",
+         "content": {"label": "Base URL", "value": "https://api.deepseek.com"}},
+        {"wkey": "row", "params": "align", "element_id": "",
+         "note": "两个属性并排：超时(秒) + 最大轮次",
+         "content": {"heading": "超时(秒)　　最大轮次"}},
+        {"wkey": "row", "params": "align", "element_id": "",
+         "note": "两个属性并排：时间预算(秒) + 面板历史条数",
+         "content": {"heading": "时间预算(秒)　　面板历史条数"}},
+        {"wkey": "operator", "params": "id, text, icon", "element_id": "settings.prefs",
+         "note": "打开完整偏好设置（preferences.addon_show）",
+         "content": {"text": "打开完整偏好设置", "icon": "PREFERENCES"}},
+    ],
+}
+
+EXAMPLE_PANEL_PARENT_SETTINGS = {
+    "0": -1,         # settings.stream 自己撑起整根竖排
+    "1": 0,          # 服务商容器
+    "2": 1,          # 标题
+    "3": 1,          # 服务商属性行
+    "4": 1,          # 打开官方文档
+    "5": 0,          # API Key 容器
+    "6": 5,          # 标题
+    "7": 5,          # API Key 属性行
+    "8": 5,          # 生效状态
+    "9": 0,          # 模型容器
+    "10": 9,         # 标题
+    "11": 9,         # 当前模型属性行
+    "12": 9,         # 获取最新模型列表
+    "13": 9,         # 两列预置模型网格
+    "14": 13,        # 网格里的第一个模型按钮
+    "15": 13,        # 网格里的第二个模型按钮
+    "16": 0,         # 高级运行参数容器
+    "17": 16,        # 标题
+    "18": 16,        # Base URL
+    "19": 16,        # 超时 + 最大轮次（并排）
+    "20": 16,        # 时间预算 + 历史条数（并排）
+    "21": 0,         # 打开完整偏好设置
+}
+
+# 三个界面各一套示例面板。key 与 app.js 里的 activeTab 一致。
+EXAMPLE_PANELS = {
+    "chat": EXAMPLE_PANEL,
+    "detail": EXAMPLE_PANEL_DETAIL,
+    "settings": EXAMPLE_PANEL_SETTINGS,
+}
+
+# 每个界面的嵌套表，与 EXAMPLE_PANELS 一一对应。
+EXAMPLE_PANEL_PARENTS = {
+    "chat": EXAMPLE_PANEL_PARENT_CHAT,
+    "detail": EXAMPLE_PANEL_PARENT_DETAIL,
+    "settings": EXAMPLE_PANEL_PARENT_SETTINGS,
 }
 
 # (key, label, uiloayout, allowed_props, blocked_props, note, constraint_key,
@@ -207,6 +435,63 @@ class VocabularyError(Exception):
     """词汇表与 constraints.json 打架了。停下来，不要带着矛盾继续生成。"""
 
 
+def check_example_panels(widgets):
+    """三个界面的示例面板必须自洽，否则用户一点就看到违规块或一堆孤儿。
+
+    四条硬检查：
+      1) 参数必须逐个落在该控件的 allowed_props 里，且不在 blocked_props 里
+         ——示例参数要是自己违规了，用户一插入就被标「违规」，工作台等于在骗人。
+      2) 嵌套表的下标必须正好是 0..N-1 的完整区间，且父块的 wkey 必须真实存在。
+         越界或指向不存在的块，子积木会静默留在顶层，看着像「归属没生效」。
+      3) 父块必须是容器。不能往文字 / 按钮里塞东西，Blender 那边也写不出来。
+      4) 一字都不写的容器不许带 content ——容器只分组，不写字。
+    """
+    allowed = {w["key"]: w for w in widgets}
+    # 能装孩子的容器（含 row / column——它们带一个 heading，但照样是分组容器）
+    containers = {"row", "column", "box", "split", "grid_flow", "panel"}
+    # 一个字都不写的容器。row / column 不在此列：它们有 heading 内容字段，
+    # 页签条与分组标题就靠它，与既有断言 preview_example_containers_have_no_content 同源。
+    silent = {"box", "split", "grid_flow", "panel", "separator", "scale_y"}
+    for tab in sorted(EXAMPLE_PANELS):
+        blocks = EXAMPLE_PANELS[tab]["blocks"]
+        parents = EXAMPLE_PANEL_PARENTS[tab]
+        keys = [b["wkey"] for b in blocks]
+        if sorted(int(k) for k in parents) != list(range(len(blocks))):
+            raise VocabularyError(
+                "%s 示例面板的嵌套表下标必须是 0..%d 的完整区间，实际 %s"
+                % (tab, len(blocks) - 1, sorted(parents, key=int)))
+        for i, b in enumerate(blocks):
+            w = allowed.get(b["wkey"])
+            if w is None:
+                raise VocabularyError("%s 示例面板用了词汇表里没有的控件 %s"
+                                      % (tab, b["wkey"]))
+            for p in [x for x in re.split(r"[,，\s]+", b.get("params") or "") if x]:
+                if p in w["blocked_props"]:
+                    raise VocabularyError("%s 示例面板 %s 用了被拦参数 %s"
+                                          % (tab, b["wkey"], p))
+                if p not in w["allowed_props"]:
+                    raise VocabularyError(
+                        "%s 示例面板 %s 的参数 %s 不在允许清单里（可用：%s）"
+                        % (tab, b["wkey"], p, ", ".join(w["allowed_props"]) or "无"))
+            pw = int(parents[str(i)])
+            if pw >= 0:
+                if pw >= len(blocks):
+                    raise VocabularyError(
+                        "%s 示例面板第 %d 块的父下标 %d 越界（共 %d 块）"
+                        % (tab, i, pw, len(blocks)))
+                if pw == i:
+                    raise VocabularyError("%s 示例面板第 %d 块把自己当成了父块"
+                                          % (tab, i))
+                if blocks[pw]["wkey"] not in containers:
+                    raise VocabularyError(
+                        "%s 示例面板第 %d 块挂在第 %d 块（%s）下面，"
+                        "但那个不是容器" % (tab, i, pw, blocks[pw]["wkey"]))
+            if b["wkey"] in silent and b.get("content"):
+                raise VocabularyError(
+                    "%s 示例面板的容器 %s 不该带 content（容器只分组，不写字）"
+                    % (tab, b["wkey"]))
+
+
 def build(constraints):
     reg = {e["key"]: e for e in constraints["entries"]}
 
@@ -248,6 +533,8 @@ def build(constraints):
                 for e in constraints["entries"]
                 if e["native_ok"] and e["key"] not in mapped]
 
+    check_example_panels(widgets)
+
     return {
         "generated_for": constraints["generated_for"],
         "props_scope": PROPS_SCOPE,
@@ -255,7 +542,12 @@ def build(constraints):
         "rejected": rejected,
         "unmapped_ok": unmapped,
         "element_id_help": ELEMENT_ID_HELP,
+        # example_panel 是「对话」那套的老键，保留：既有断言按它逐条核对块序、
+        # 参数与元素 ID。example_panels 是三个界面各一套的新键。
         "example_panel": EXAMPLE_PANEL,
+        "example_panels": EXAMPLE_PANELS,
+        # 嵌套关系单独一张表：块下标 -> 父块 wkey（"" = 顶层）。
+        "example_panel_parents": EXAMPLE_PANEL_PARENTS,
         "starter_content": STARTER_CONTENT,
         "icons": load_icon_names(),
     }

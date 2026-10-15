@@ -512,6 +512,76 @@ def demo_static_checks(vocab):
     ck("example_panel_uses_row_and_column", n_row >= 2 and n_col >= 2,
        "示例面板里横排 %d 块 / 竖排 %d 块——这套示例本来就要示范两者怎么配合"
        % (n_row, n_col))
+
+    # --- Task 14：三个界面各一套示例面板 + 嵌套表 ---
+    # 必须逐条对着真实面板核，而不是「有三套就行」：
+    # 详情 / 设置这两套是从 blender_deepseek_agent/ui.py 的 draw_detail_content()
+    # 与 draw_settings_content() 抄结构来的，抄漏了这里就该红。
+    panels = vocab.get("example_panels") or {}
+    parents = vocab.get("example_panel_parents") or {}
+    ck("example_panels_three_tabs",
+       sorted(panels) == ["chat", "detail", "settings"],
+       "example_panels 应覆盖对话 / 详情 / 设置三个界面，实际 %s" % sorted(panels))
+    ck("example_panel_parents_three_tabs", sorted(parents) == sorted(panels),
+       "嵌套表必须与三套面板一一对应：%s vs %s" % (sorted(parents), sorted(panels)))
+    ck("example_panel_chat_unchanged",
+       (panels.get("chat") or {}).get("blocks") == blocks,
+       "example_panels.chat 必须与老键 example_panel 一致（既有断言按老键核对）")
+    for tab in sorted(panels):
+        pb = panels[tab].get("blocks") or []
+        pm = parents.get(tab) or {}
+        ck("example_panels_%s_nonempty" % tab, len(pb) >= 8,
+           "%s 示例面板应至少 8 块，实际 %d" % (tab, len(pb)))
+        ck("example_panels_%s_parent_index_complete" % tab,
+           sorted(int(k) for k in pm) == list(range(len(pb))),
+           "%s 的嵌套表下标必须是 0..%d 的完整区间，实际 %s"
+           % (tab, len(pb) - 1, sorted(pm, key=int)))
+        ck("example_panels_%s_parents_in_range" % tab,
+           all(-1 <= int(v) < len(pb) for v in pm.values()),
+           "%s 的嵌套表有越界的父下标：%s" % (tab, sorted(pm.items())))
+        ck("example_panels_%s_parents_are_containers" % tab,
+           all(pb[int(v)]["wkey"] in CONTAINER_WKEYS + ["row", "column"]
+               for v in pm.values() if int(v) >= 0),
+           "%s 有块挂在非容器下面（Blender 那边写不出来）：%s"
+           % (tab, sorted(pm.items())))
+        ck("example_panels_%s_has_nesting" % tab,
+           any(int(v) >= 0 for v in pm.values()),
+           "%s 示例面板一块都没嵌套——容器能装孩子却没装" % tab)
+        bad_p2 = []
+        for b in pb:
+            w = reg.get(b["wkey"])
+            if not w:
+                continue
+            for t in toks(b["params"]):
+                if t in w["blocked_props"] or t not in w["allowed_props"]:
+                    bad_p2.append("%s:%s" % (b["wkey"], t))
+        ck("example_panels_%s_params_allowed" % tab, not bad_p2,
+           "%s 示例面板里有粘进去就被拦的参数：%s" % (tab, bad_p2))
+        ck("example_panels_%s_containers_silent" % tab,
+           all(not (b.get("content") or {}) for b in pb if b["wkey"] in CONTAINER_WKEYS),
+           "%s 的容器类控件不该带 content" % tab)
+
+    # 详情 / 设置这两套必须真的长成两个不同的界面：
+    # 只查「有三套」的话，把 detail 复制一份 settings 就照样绿。
+    dkeys = [(b["wkey"], b["element_id"]) for b in (panels.get("detail") or {}).get("blocks", [])]
+    skeys = [(b["wkey"], b["element_id"]) for b in (panels.get("settings") or {}).get("blocks", [])]
+    ck("example_panels_detail_is_its_own",
+       dkeys and any("detail." in (i or "") for _, i in dkeys),
+       "详情面板的元素 ID 该带 detail. 前缀（真实面板里就是 detail 这一套）：%s" % dkeys[:4])
+    ck("example_panels_settings_is_its_own",
+       skeys and any("settings." in (i or "") for _, i in skeys),
+       "设置面板的元素 ID 该带 settings. 前缀：%s" % skeys[:4])
+    ck("example_panels_detail_vs_settings_differ", dkeys != skeys,
+       "详情与设置不能是同一套面板换个名字（块序与元素 ID 必须不同）")
+    # 详情要有「用量 / 转录」这两块真实结构，设置要有「服务商 / API Key / 模型」。
+    dtext = json.dumps(panels.get("detail"), ensure_ascii=False)
+    stext = json.dumps(panels.get("settings"), ensure_ascii=False)
+    for want in ("工具调用", "转录", "本次用量"):
+        ck("example_panel_detail_has_%s" % want, want in dtext,
+           "详情示例面板缺少真实面板里的「%s」那段" % want)
+    for want in ("服务商", "API Key", "当前模型"):
+        ck("example_panel_settings_has_%s" % want, want in stext,
+           "设置示例面板缺少真实面板里的「%s」那段" % want)
     ck("app_example_panel_button",
        'id = "demo-panel-btn"' in app and "insertExamplePanel" in app,
        "app.js 没有「插入示例面板」按钮 / 没有对应的插入函数")
@@ -901,6 +971,7 @@ def dom_checks():
         examples_checks(dump(exe, url + "#proposal-examples", profile), vjson)
         panel_checks(dump(exe, url + "#proposal-panel", profile), vjson)
         preview_checks(dump(exe, url + "#proposal-preview", profile), vjson)
+        nest_checks(dump(exe, url + "#proposal-nest", profile), vjson)
     finally:
         shutil.rmtree(profile, ignore_errors=True)
 
@@ -1158,6 +1229,72 @@ def panel_checks(page, vjson):
        is not None,
        "示例面板的输入框在预览里应是 3 行高（3*16+8），实际 %r"
        % re.findall(r'<div[^>]*data-pv="textbox"[^>]*>', pv))
+
+
+def nest_checks(page, vjson):
+    """Task 14：积木嵌套 + 三个界面各自独立的列表。
+
+    读数全部来自浏览器真算出来的 DOM 父子关系与真点过的按钮结果，不是数组自证：
+      pv-max-depth —— 预览节点在 DOM 里最多套着几层别的预览节点
+      groups       —— 画布上渲染出的分组框数
+      dup-count    —— 复制一个容器之后净增几块（子树复制则 > 1）
+      dup-tree     —— 副本 uid:它的直接孩子数（孩子必须改指副本，不能还挂在原件下）
+      tabs         —— 三个子页签各自的块数
+      sel-*        —— 归属下拉的选项数与选项文本
+    """
+    at = report(page, "nest-report")
+    ck("nest_hook_ran", bool(at.get("pv-count")) and bool(at.get("tabs")),
+       "嵌套钩子没跑起来：%s" % at)
+    if not at.get("pv-count"):
+        return
+
+    # --- 预览是不是真的树 ---
+    # 容器不装孩子时 maxDepth 会掉到 1（全是 panel-root 的直接孩子）。
+    # 写死 >= 2，不写「preview 里出现过 data-pv=column」那种恒真写法。
+    d = at.get("pv-max-depth", "0")
+    ck("nest_preview_is_tree", d.isdigit() and int(d) >= 2,
+       "预览里容器没把子控件装进去（最大套嵌层数 %r，期望 >= 2）" % d)
+    ck("nest_preview_node_per_block",
+       at.get("pv-count") == at.get("blocks") and int(at.get("pv-count", "0")) > 0,
+       "预览应每块积木一个节点：预览 %s 块 / 积木 %s 块"
+       % (at.get("pv-count"), at.get("blocks")))
+
+    # --- 画布上的分组框 ---
+    ck("nest_groups_rendered", at.get("groups", "0").isdigit()
+       and int(at.get("groups", "0")) > 0,
+       "画布上没渲染出任何分组框（容器积木没把孩子装进去）：%s" % at.get("groups"))
+
+    # --- 复制容器 = 连子树一起复制，且子孙改指副本 ---
+    # chat.stream 的子树是 7 块（自己 + 5 个直接孩子 + 规格竖排里那个横排）；
+    # 副本的直接孩子是 5 个（规格竖排那条算孙块）。写死，不写 >= 1。
+    ck("nest_dup_copies_subtree", at.get("dup-count") == "7",
+       "复制 chat.stream（整棵子树 7 块）应净增 7 块，实际 %s" % at.get("dup-count"))
+    mt = re.match(r"^(\w+):(\d+)$", at.get("dup-tree", ""))
+    ck("nest_dup_children_reparented", bool(mt) and mt.group(2) == "5",
+       "副本应带 5 个直接孩子（规格竖排那条是孙块），且它们的 parent 必须改指副本的"
+       "新 uid，否则改一块会动两处：dup-tree=%r" % at.get("dup-tree"))
+
+    # --- 删除容器 = 整棵子树一起删 ---
+    # chat.tabbar 是个空容器（没装孩子），删它只该掉 1 块。
+    ck("nest_del_single_leaf_container", at.get("del-count") == "1",
+       "删一个空容器应只掉 1 块，实际 %s" % at.get("del-count"))
+
+    # --- 三个界面各自独立 ---
+    ck("nest_tabs_independent",
+       at.get("tabs", "").count("=") == 3
+       and "detail=0" in at.get("tabs", "") and "settings=0" in at.get("tabs", ""),
+       "三个界面应各有独立列表：对话那边增删过之后，详情 / 设置仍应是 0 块，实际 %r"
+       % at.get("tabs"))
+
+    # --- 归属下拉：首项是顶层，选项数与文本数一致 ---
+    texts = [t for t in at.get("sel-texts", "").split("|") if t]
+    ck("nest_parent_select_present", bool(texts), "画布上没渲染出归属下拉")
+    ck("nest_parent_select_lists_top", bool(texts) and texts[0] == "（顶层）",
+       "归属下拉第一项必须是「（顶层）」，实际 %r" % (texts[:1] or None))
+    ck("nest_parent_select_excludes_leaves",
+       bool(texts) and at.get("sel-options") == str(len(texts)),
+       "归属下拉的选项数与读到的文本数对不上：%s vs %d"
+       % (at.get("sel-options"), len(texts)))
 
 
 def vocab_bar_of(p):

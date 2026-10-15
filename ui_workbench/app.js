@@ -285,7 +285,9 @@ function init() {
   el("export").onclick = function () {
     var payload = {
       annotations: annotations,
-      proposal: proposal
+      proposal: proposal,
+      active_tab: activeTab,
+      boards: boards
     };
     var blob = new Blob([JSON.stringify(payload, null, 2)],
                         { type: "application/json" });
@@ -316,7 +318,22 @@ function init() {
    都已确认 native_ok=false），所以「合法 / 违规 / 已降级」一律靠文案、
    边框明度与删除线区分，不靠颜色——与 Blender 侧的能力边界保持一致。 */
 
-var proposal = [];   // [{uid, wkey, label, uiloayout, params, id, note, errors, downgraded, blocker, fallback}]
+/* 一个界面 = 一份独立的积木列表。真实面板（blender_deepseek_agent/ui.py 的
+   DEEPSEEK_PT_chat.draw）顶上就是一根横排装着三个页签：对话 / 详情 / 设置，
+   点哪个就画哪一份内容。所以工作台这边也必须有三份互不干扰的列表——共用一份的话，
+   「搭对话面板搭到一半想看看设置长什么样」就会把半成品混进去。
+
+   boards 是全部三份的真身；proposal 始终指向当前页签的那一份。
+   保留 proposal 这个名字、并且让它是个普通变量（不是每次都写 boards[activeTab]），
+   是为了让拖拽 / 删除 / 复制 / 撤销 / 各个无头钩子这些既有代码一行都不用改：
+   它们读写的都是当前界面，切页签时只换一次指针。 */
+var boards = { chat: [], detail: [], settings: [] };
+var activeTab = "chat";
+var proposal = boards.chat;
+
+var TAB_LABELS = { chat: "对话", detail: "详情", settings: "设置" };
+var TAB_ORDER = ["chat", "detail", "settings"];
+
 var vocab = null;
 
 /* 积木身份：每块拿到一个单调递增、永不复用的 uid（b1、b2……）。
@@ -344,6 +361,57 @@ var lastDeleted = null; // {node: object, index: int}
    把积木静默插到最后一个元素之前——正是 delNode 当初要加守卫的那一类。
    今天 UI 走不到（dropIndexAt 只给 0..n），但本函数被明确导出为
    「拖拽与测试共用」的入口，只有兄弟一半的守卫纪律说不过去。 */
+/* 同一个父级内重排。拖拽语义只保证「同一父级内换位」：把兄弟积木在
+   proposal 数组里的先后对调，再重新渲染。
+
+   为什么不做跨父级拖动（YAGNI）：跨父级要同时改 parent 与落位点，
+   一旦算错就会出现「拖进容器里但没进去」或「进去了却在数组里留在外面」，
+   而这两种错在界面上都长得像「拖坏了」。归属下拉是主操作路径，够用。
+
+   实现上走「按 uid 定位 + 整段搬移」而不是给 splice 传算出来的下标：
+   嵌套之后数组里同父级的兄弟不再连续，下标算错就是静默插错位置。 */
+function reorderSibling(uid, targetUid, before) {
+  var i = idxByUid(uid);
+  if (i < 0) {
+    setStatus("这块积木在拖动期间已经不在画布上了，顺序没变");
+    return;
+  }
+  var node = proposal[i];
+  if (targetUid && targetUid !== uid) {
+    var j = idxByUid(targetUid);
+    if (j < 0) {
+      setStatus("落点那块积木已经不在画布上了，顺序没变");
+      return;
+    }
+    if ((proposal[j].parent || null) !== (node.parent || null)) {
+      // 不同父级：不动。跨父级拖动这一轮明确不做（见上面的说明），
+      // 这里必须说话——静默不动会让用户以为拖拽坏了。
+      setStatus("只能和同一个容器里的积木换位；换容器请用「归属」下拉");
+      return;
+    }
+  }
+  var rest = proposal.filter(function (n) {
+    return (n.parent || null) === (node.parent || null) && n.uid !== uid;
+  });
+  var at = rest.length;
+  if (targetUid) {
+    for (var k = 0; k < rest.length; k++) {
+      if (rest[k].uid === targetUid) { at = before ? k : k + 1; break; }
+    }
+  }
+  var ordered = rest.slice(0, at);
+  ordered.push(node);
+  ordered = ordered.concat(rest.slice(at));
+
+  // 把算好的顺序写回数组：只在同父级的那些槽位上换，原地不动其他块。
+  var slots = [];
+  proposal.forEach(function (n, ix) {
+    if ((n.parent || null) === (node.parent || null)) { slots.push(ix); }
+  });
+  for (var s = 0; s < slots.length; s++) { proposal[slots[s]] = ordered[s]; }
+  renderCanvas();
+}
+
 function reorderTo(fromIdx, toIdx) {
   if (fromIdx === toIdx) { return; }        // 拖回自己的原位：正常无事，不是异常
   if (fromIdx < 0 || fromIdx >= proposal.length) {
@@ -362,11 +430,15 @@ function reorderTo(fromIdx, toIdx) {
   renderCanvas();
 }
 
-/* 指针落在哪一格：返回「插在当前第几块之前」，值域 0..块数。
+/* 指针落在哪一格：返回「插在当前兄弟里的第几块之前」，值域 0..兄弟数。
    越过某块的中线就算落到下一格去——这是列表拖拽的通用手感，
-   半高判定对不齐的时候宁可用中线，别让两块之间出现死区。 */
-function dropIndexAt(clientY) {
-  var boxes = el("canvas").querySelectorAll(".pnode");
+   半高判定对不齐的时候宁可用中线，别让两块之间出现死区。
+
+   只看同一个父级里的兄弟：嵌套之后画布上 .pnode 的文档顺序是
+   「容器、它的孩子、它的孩子…、下一个容器」，直接数全部 .pnode 会把
+   孩子算进指示线的格子里，拖一下就跳位。 */
+function dropIndexAt(clientY, parentUid) {
+  var boxes = siblingBoxes(parentUid);
   for (var i = 0; i < boxes.length; i++) {
     var r = boxes[i].getBoundingClientRect();
     if (clientY < r.top + r.height / 2) { return i; }
@@ -374,9 +446,21 @@ function dropIndexAt(clientY) {
   return boxes.length;
 }
 
-/* 把落位指示线挪到第 idx 格。指示线是 #canvas 的直接子元素，不是某块积木的
-   子节点——放进 .pnode 的话，它会跟着那一块一起被 renderCanvas 摘掉。 */
-function moveDropLine(idx) {
+/* 同一父级下的兄弟节点，按 DOM 顺序（也就是数组顺序）。 */
+function siblingBoxes(parentUid) {
+  var host = el("canvas");
+  var all = host.querySelectorAll(".pnode[data-uid]");
+  var out = [];
+  var want = parentUid || "";
+  for (var i = 0; i < all.length; i++) {
+    if ((all[i].dataset.parent || "") === want) { out.push(all[i]); }
+  }
+  return out;
+}
+
+/* 把落位指示线挪到第 idx 格。指示线挂在那一组兄弟的共同父容器里，
+   不是某块积木的子节点——放进 .pnode 的话，它会跟着那一块一起被 renderCanvas 摘掉。 */
+function moveDropLine(idx, parentUid) {
   var host = el("canvas");
   var line = host.querySelector(".drop-line");
   if (!line) {
@@ -385,7 +469,17 @@ function moveDropLine(idx) {
     line.setAttribute("aria-hidden", "true");
   }
   if (line.parentNode !== host) { host.appendChild(line); }
-  var ref = host.querySelectorAll(".pnode")[idx] || null;
+  var pid = parentUid || "";
+  var ref = null;
+  var sibs = siblingBoxes(pid);
+  if (sibs[idx]) {
+    ref = sibs[idx];
+  } else if (sibs.length) {
+    // 落在最后一块之后：插到这一组兄弟的末尾（容器里就插在它最后一个孩子之后）
+    ref = sibs[sibs.length - 1].nextSibling;
+  } else if (pid) {
+    ref = el("canvas").querySelector('.pgroup[data-parent="' + pid + '"]');
+  }
   if (ref) { host.insertBefore(line, ref); } else { host.appendChild(line); }
 }
 
@@ -417,9 +511,13 @@ function bindCanvasDnd() {
     // 从展开 / 复制 / 删除按钮上按下就会变成一次拖拽，点按钮变成点不动。
     if (e.target && e.target.closest &&
         e.target.closest("input, textarea, button")) { return; }
+    // select 单独挡：归属下拉也是「按住拖一下换个值」的手势，
+    // 被拖拽抢走的话，用户根本没法用下拉选别的容器。
+    if (e.target && e.target.closest && e.target.closest("select")) { return; }
     var box = e.target && e.target.closest ? e.target.closest(".pnode") : null;
     if (!box) { return; }
-    dragState = { uid: box.dataset.uid, fromIdx: idxByUid(box.dataset.uid) };
+    dragState = { uid: box.dataset.uid, parent: box.dataset.parent || null,
+                  fromIdx: siblingIndexOf(box.dataset.uid) };
     box.classList.add("dragging");
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
@@ -431,17 +529,43 @@ function bindCanvasDnd() {
     if (!dragState) { return; }
     e.preventDefault();                 // 不 preventDefault 的话 drop 根本不触发
     if (e.dataTransfer) { e.dataTransfer.dropEffect = "move"; }
-    moveDropLine(dropIndexAt(e.clientY));
+    moveDropLine(dropIndexAt(e.clientY, dragState.parent), dragState.parent);
   });
   canvas.addEventListener("drop", function (e) {
     if (!dragState) { return; }
     e.preventDefault();
-    var from = dragState.fromIdx;
-    var to = dropIndexAt(e.clientY);
+    var uid = dragState.uid;
+    var parent = dragState.parent;
+    var idx = dropIndexAt(e.clientY, parent);
+    var sibs = siblingBoxes(parent);
+    // 指示线说的是「插在第 idx 块之前」。把那个块当成锚点，
+    // 比反推被拖积木自己原来的下标更不容易错（拖到自己前后都归一到它自己）。
+    var anchor = null;
+    var self = sibs.filter(function (b) { return b.dataset.uid === uid; })[0];
+    var selfPos = -1;
+    for (var i = 0; i < sibs.length; i++) { if (sibs[i] === self) { selfPos = i; } }
+    if (idx > selfPos) { anchor = idx - 1 < sibs.length ? sibs[idx - 1] : null; }
+    else { anchor = sibs[idx] || null; }
+    var before = idx <= selfPos;
+    var targetUid = anchor ? anchor.dataset.uid : null;
     clearDrag();                          // 先收尾再重排：renderCanvas 会清空整列
-    reorderTo(from, to);
+    if (targetUid === uid) { return; }
+    if (!targetUid) {
+      // 落在这一组最后：直接告诉 reorderSibling 移到末尾。
+      reorderSibling(uid, null, true);
+      return;
+    }
+    reorderSibling(uid, targetUid, before);
   });
   document.addEventListener("dragend", clearDrag);
+}
+
+/* 这块在同父级兄弟里排第几（-1 = 不在画布上）。拖拽起点用它记位置，
+   免得 drop 时再去猜「它原来在哪」。 */
+function siblingIndexOf(uid) {
+  var sibs = siblingBoxes(null);
+  for (var i = 0; i < sibs.length; i++) { if (sibs[i].dataset.uid === uid) { return i; } }
+  return -1;
 }
 
 function nextUid() {
@@ -454,6 +578,91 @@ function idxByUid(uid) {
     if (proposal[i].uid === uid) { return i; }
   }
   return -1;
+}
+
+/* ---------------- 积木嵌套 ----------------
+
+   容器类控件（CONTAINER_WKEYS）能装孩子，其余不能。凭什么这么划：只有它们在
+   Blender 里真的会收走后面若干个 draw 调用；文字 / 按钮 / 属性行是叶子，
+   往里塞东西在 ui.py 里根本写不出来，词汇表也不许这么承诺。
+
+   parent 存的是父积木的 uid，顶层为 null。存 uid 不存下标，理由和 identity
+   用 uid 而不是下标是同一条：删掉中间一块、拖动换位之后下标全变，父指针
+   一变就整棵树错位。 */
+var CONTAINER_WKEYS = ["row", "column", "box", "split", "grid_flow", "panel"];
+
+function isContainer(n) {
+  return n && !n.downgraded && CONTAINER_WKEYS.indexOf(n.wkey) >= 0;
+}
+
+/* 当前层级的积木：parent 为 null 的按数组顺序；其余按 parent 过滤。
+   顺序一律以 proposal 数组里的先后为准——拖拽排序改的也是这个数组，
+   两边必须看同一份顺序，否则「拖完顺序没变」这种 bug 会被藏起来。 */
+function nodesAtDepth(parentUid) {
+  return proposal.filter(function (n) { return (n.parent || null) === (parentUid || null); });
+}
+
+function childrenOf(uid) {
+  return proposal.filter(function (n) { return n.parent === uid; });
+}
+
+/* 整棵子树的 uid 顺序（自己 + 所有后代），按数组顺序。
+   删除要拿它、复制要拿它，两处都必须把子孙算进去，否则删掉容器会留下一堆
+   指向已不存在 uid 的孤儿（它们 parent 着一个没人认领的 uid，既不显示也删不掉）。 */
+function subtreeUids(uid) {
+  var out = [];
+  var walk = function (u) {
+    var n = proposal.filter(function (x) { return x.uid === u; })[0];
+    if (!n) { return; }
+    out.push(n.uid);
+    proposal.forEach(function (c) { if (c.parent === u) { walk(c.uid); } });
+  };
+  walk(uid);
+  return out;
+}
+
+/* 环检测：把 uid 挂到 uid2 底下之前必须先确认 uid2 不是自己的子孙，
+   否则渲染会无限递归直接把页面卡死。归属下拉只列「别的容器」，
+   但数据来自 vocabulary.json 的示例面板，那边写错一个 parent 就会自环，
+   所以这里仍然挡一道。 */
+function wouldCycle(uid, newParent) {
+  if (!newParent) { return false; }
+  if (uid === newParent) { return true; }
+  return subtreeUids(uid).indexOf(newParent) >= 0;
+}
+
+/* 改归属。返回值给状态条用：被环挡住时必须说话，不能静默不动。 */
+function reparent(uid, newParent) {
+  var i = idxByUid(uid);
+  if (i < 0) { setStatus("这块积木已经不在画布上了，归属没变"); return false; }
+  if (wouldCycle(uid, newParent)) {
+    setStatus("不能把一块积木放进它自己的里面（会绕成圈）");
+    return false;
+  }
+  if (!newParent && !isContainer(proposal[i])) {
+    setStatus("「" + proposal[i].label + "」不是容器，装不了别的积木");
+    return false;
+  }
+  proposal[i].parent = newParent || null;
+  /* 挂到别人底下之后，兄弟顺序只由数组顺序决定，所以要把它挪到父容器
+     那些孩子的位置上——留在原地的话它会插在父容器自己后面，
+     渲染成「父容器里第一个孩子」之外的位置，顺序看着像随机。 */
+  var moved = proposal.splice(i, 1)[0];
+  moved.parent = newParent || null;
+  if (!newParent) { proposal.push(moved); }
+  else {
+    var kids = proposal.filter(function (n) { return n.parent === newParent; });
+    if (!kids.length) { proposal.push(moved); }
+    else {
+      var lastKid = kids[kids.length - 1];
+      proposal.splice(proposal.indexOf(lastKid) + 1, 0, moved);
+    }
+  }
+  renderCanvas();
+  setStatus("「" + moved.label + "」已移到「" + (newParent ?
+    (proposal.filter(function (n) { return n.uid === newParent; })[0] || {}).label || ""
+    : "顶层") + "」");
+  return true;
 }
 
 function loadVocab() {
@@ -472,9 +681,59 @@ function loadVocab() {
   });
 }
 
+/* ---------------- 三个界面（对话 / 详情 / 设置）----------------
+
+   真实面板顶上就是一根横排装着三个页签（ui.py 的 active_tab 枚举 +
+   DEEPSEEK_PT_chat.draw 里的 layout.row(align=True) + prop(expand=True)），
+   点哪个就画哪一份内容。这边照抄这个结构：三个子页签，三份独立积木列表。
+
+   为什么必须是三份独立列表而不是一份加个筛选：一块积木的归属、内容、
+   折叠状态都是搭界面时攒下来的半成品。共用一份的话，搭到一半想切到
+   「设置」看看会变成什么样，半成品就跟着过去了——用户没法同时对照
+   两个界面搭。 */
+function renderSubtabs(host) {
+  var row = document.createElement("div");
+  row.className = "subtabs";
+  row.id = "subtabs";
+  var cap = document.createElement("b");
+  cap.textContent = "要搭哪个界面：";
+  row.appendChild(cap);
+  TAB_ORDER.forEach(function (k) {
+    var b = document.createElement("button");
+    b.dataset.tab = k;
+    b.textContent = TAB_LABELS[k];
+    b.title = "「" + TAB_LABELS[k] + "」界面（" + boards[k].length + " 块积木）";
+    b.className = (k === activeTab) ? "on" : "";
+    b.onclick = function () { switchTab(k); };
+    row.appendChild(b);
+  });
+  var cnt = document.createElement("span");
+  cnt.className = "scope";
+  cnt.textContent = "三个界面各有一份积木列表，互不干扰——切过去不会带走这一边的半成品。";
+  row.appendChild(cnt);
+  host.appendChild(row);
+}
+
+/* 切子页签。只换 proposal 指针 + 重画，不碰另外两份列表的内容。 */
+function switchTab(name) {
+  if (!boards[name]) { return; }
+  activeTab = name;
+  proposal = boards[name];
+  // 换界面就等于换了一份画布，撤销不该跨界面生效。
+  lastDeleted = null;
+  clearDrag();
+  renderCanvas();
+  renderVocabBar();
+  renderRejected();
+  renderElementIdHelp();
+  renderUnmapped();
+  setStatus("已切到「" + TAB_LABELS[name] + "」界面（" + proposal.length + " 块积木）");
+}
+
 function renderVocabBar() {
   var host = el("vocab-bar");
   host.innerHTML = "";
+  renderSubtabs(host);
   var h = document.createElement("b");
   h.textContent = "可用控件（点一下落到画布最下面，搭好后可拖动换位）：";
   host.appendChild(h);
@@ -492,10 +751,11 @@ function renderVocabBar() {
   var demoB = document.createElement("button");
   demoB.id = "demo-panel-btn";
   demoB.dataset.act = "demo-panel";
-  demoB.textContent = "插入示例面板";
-  demoB.title = "一套能直接抄进 ui.py 的 AI 对话面板骨架：从上到下 8 块，"
-    + "每块都已填好可用的参数示例和真实元素 ID。想先看「一个界面是怎么拼出来的」，"
-    + "点这个；看完不满意再一块块删。";
+  demoB.textContent = "插入「" + TAB_LABELS[activeTab] + "」示例面板";
+  demoB.title = "一套能直接抄进 ui.py 的「" + TAB_LABELS[activeTab] + "」界面骨架："
+    + "从上到下每块都已填好可用的参数示例和真实元素 ID，容器块里的子积木"
+    + "已经缩进装在里面。想先看「一个界面是怎么拼出来的」，点这个；"
+    + "看完不满意再一块块删。";
   demoB.onclick = function () { insertExamplePanel(); };
   prow.appendChild(demoB);
   host.appendChild(prow);
@@ -606,22 +866,49 @@ function widgetByKey(k) {
   return null;
 }
 
-/* 一键插入一套能直接抄的面板。数据在 vocabulary.json 的 example_panel 里，
-   每块都带真实的参数示例与元素 ID——用户点开任一块，看到的就是成品，
-   而不是一堆空输入框。 */
+/* 一键插入一套能直接抄的面板。数据在 vocabulary.json 的 example_panels 里
+   （对话 / 详情 / 设置各一套），每块都带真实的参数示例与元素 ID——
+   用户点开任一块，看到的就是成品，而不是一堆空输入框。
+
+   按当前子页签取对应那套：对话沿用原来那 8 块，详情与设置是另两套，
+   内容各自照着真实面板（ui.py 的 draw_detail_content / draw_settings_content）
+   的结构写的，不是把对话那套换个名字。
+
+   嵌套关系在 vocabulary.json 的 example_panel_parents 里，是一张
+   「块下标 -> 父块下标」的表（父下标为 "-1" 或缺省 = 顶层）。按下标而不是
+   按 wkey 指父：一套面板里常有多个同 wkey 的容器（对话面板有根竖排 chat.stream，
+   也有 chat.options 那个竖排），按 wkey 找会挂到最靠后的那个上去——
+   挂错容器在预览里几乎看不出来，只会觉得「排版怪怪的」。
+   必须两遍：先把块全插进去拿到 uid，再按下标挂 parent——一遍做完的话，
+   挂的时候父块的 uid 还不存在。 */
 function insertExamplePanel() {
-  var p = vocab && vocab.example_panel;
+  var all = (vocab && vocab.example_panels) || {};
+  var p = all[activeTab] || (vocab && vocab.example_panel);
   if (!p || !p.blocks || !p.blocks.length) {
-    setStatus("vocabulary.json 里没有示例面板，先重跑 dev/build_vocabulary.py");
+    setStatus("vocabulary.json 里没有「" + (TAB_LABELS[activeTab] || activeTab) +
+      "」的示例面板，先重跑 dev/build_vocabulary.py");
     return;
   }
+  var parentMap = (vocab && vocab.example_panel_parents &&
+                   vocab.example_panel_parents[activeTab]) || {};
   var n = 0;
-  p.blocks.forEach(function (b) {
-    if (addExampleBlock(b)) { n++; }
+  var made = [];
+  p.blocks.forEach(function (b, i) {
+    var node = addExampleBlock(b);
+    if (!node) { return; }
+    n++;
+    made.push({ spec: b, node: node, idx: i });
+  });
+  made.forEach(function (m) {
+    var pi = parentMap[String(m.idx)];
+    var host = (pi === undefined || pi === null || pi === "" || Number(pi) < 0)
+      ? null : (made[Number(pi)] ? made[Number(pi)].node : null);
+    m.node.parent = host ? host.uid : null;
   });
   renderCanvas();
-  setStatus("已插入示例面板「" + (p.title || "") + "」" + n + " 块：" +
-    (p.caption || "") + "（第 2 块是整根竖排，其余块都落在它里面）");
+  var nested = made.filter(function (m) { return !!m.node.parent; }).length;
+  setStatus("已插入示例面板「" + (p.title || "") + "」" + n + " 块（其中 " + nested +
+    " 块装在容器里）：" + (p.caption || ""));
 }
 
 function addExampleBlock(b) {
@@ -629,6 +916,7 @@ function addExampleBlock(b) {
   if (!w) { return null; }   // 词汇表里没有这个控件：不插，也不让整批示例崩掉
   var n = {
     uid: nextUid(),
+    parent: null,
     wkey: w.key,
     label: w.label,
     uiloayout: w.uiloayout,
@@ -666,8 +954,10 @@ function renderUndoBar() {
   b.id = "undo-del";
   b.dataset.act = "undo";
   b.textContent = "撤销上一次删除";
-  b.title = lastDeleted
-    ? "把刚删掉的「" + lastDeleted.node.label + "」放回画布" +
+  b.title = lastDeleted && lastDeleted.nodes && lastDeleted.nodes.length
+    ? "把刚删掉的「" + lastDeleted.nodes[0].label + "」" +
+      (lastDeleted.nodes.length > 1 ? ("连同它里面的 " + (lastDeleted.nodes.length - 1) + " 块") : "") +
+      "放回画布" +
       "（位置会尽量靠近删除处；要是删除之后又拖动过别的积木，就不一定还在原位）"
     : "还没有删过东西";
   b.disabled = !lastDeleted;
@@ -790,6 +1080,7 @@ function validateWidget(w, params) {
 function addWidget(w) {
   proposal.push({
     uid: nextUid(),
+    parent: null,
     wkey: w.key,
     label: w.label,
     uiloayout: w.uiloayout,
@@ -814,6 +1105,7 @@ function addRejected(r) {
   // 不是可拼装的控件，硬塞参数进去只会让人以为能落笔。
   proposal.push({
     uid: nextUid(),
+    parent: null,
     wkey: "__downgraded__",
     label: r.label,
     uiloayout: "(不可用)",
@@ -851,34 +1143,57 @@ function setParams(n, raw) {
    剩下的积木不会被重新编号，删中间一块也不会把后面的焦点拽走。
    idx < 0 守卫不能省：idxByUid 未命中时返回 -1，而 proposal.splice(-1, 1)
    在 JS 里是合法的、会把最后一块静默删掉。今天点不出这个路径（闭包节点
-   一定还在数组里），但拖拽排序一行就会踩到，所以与 dupNode 一样挡掉。 */
+   一定还在数组里），但拖拽排序一行就会踩到，所以与 dupNode 一样挡掉。
+
+   删容器时连带删掉整棵子树（选项 A，不做「提升到顶层」）。理由：把子积木
+   提升到顶层会让面板凭空多出一堆没人认领的控件——原来它们是「这段里的
+   三行」，删掉这段之后它们就没有位置依据了。连带删 + 单步撤销一起做，
+   子树是可逆的，所以这个选择不会造成不可恢复的数据损失。 */
 function delNode(idx) {
   if (idx < 0) { return; }
-  // 撤销用：整块原样存下来（含 uid），而不是只记个名字。
+  var victim = proposal[idx];
+  if (!victim) { return; }
+  // 撤销用：整棵子树原样存下来（含各自 uid 与 parent），而不是只记个名字。
   // 删除和复制两个按钮紧挨着、点错没有确认，误删的参数和标注就找不回来了。
-  lastDeleted = { node: proposal[idx], index: idx };
-  proposal.splice(idx, 1);
+  var uids = subtreeUids(victim.uid);
+  var nodes = [];
+  for (var k = 0; k < uids.length; k++) {
+    var nn = proposal.filter(function (x) { return x.uid === uids[k]; })[0];
+    if (nn) { nodes.push(nn); }
+  }
+  lastDeleted = { nodes: nodes, index: idx, parent: victim.parent || null };
+  for (var i = nodes.length - 1; i >= 0; i--) {
+    var at = idxByUid(nodes[i].uid);
+    if (at >= 0) { proposal.splice(at, 1); }
+  }
   renderCanvas();
   renderUndoBar();
+  if (nodes.length > 1) {
+    setStatus("已删除「" + victim.label + "」连同它里面的 " + (nodes.length - 1) + " 块");
+  }
 }
 
 /* 单步撤销，不是撤销栈：只救最近一次删除，救完就作废。
    放回的是「原来那个对象」，所以 uid 一字不改——它是恢复，不是新建。
-   万一原位置已经越界（后面又删过别的），夹到合法区间里即可，
-   位置对不上也比数据丢了强。 */
+   子树按原顺序一并放回；万一原位置已经越界（后面又删过别的），夹到合法
+   区间里即可，位置对不上也比数据丢了强。 */
 function undoDelete() {
   if (!lastDeleted) { setStatus("没有可撤销的删除"); return; }
+  var nodes = lastDeleted.nodes || [];
   var at = Math.max(0, Math.min(lastDeleted.index, proposal.length));
-  proposal.splice(at, 0, lastDeleted.node);
-  var label = lastDeleted.node.label;
+  for (var i = 0; i < nodes.length; i++) { proposal.splice(at + i, 0, nodes[i]); }
+  var label = nodes.length ? nodes[0].label : "";
   lastDeleted = null;
   renderCanvas();
   renderUndoBar();
-  setStatus("已撤销删除：「" + label + "」回到第 " + (at + 1) + " 位");
+  setStatus("已撤销删除：「" + label + "」" + (nodes.length > 1 ?
+    ("连同它里面的 " + (nodes.length - 1) + " 块") : "") + "回到第 " + (at + 1) + " 位");
 }
 
 /* 复制一块，副本紧跟原块。副本必须领新的 uid：沿用原 uid 的话，焦点保存、
-   标注绑定、后续排序都会把两块当成同一块，改一块另一块跟着变。 */
+   标注绑定、后续排序都会把两块当成同一块，改一块另一块跟着变。
+   容器连同整棵子树一起复制，且子孙的 parent 改指到副本的新 uid——
+   否则副本里的孩子还挂在原件底下，改一块动两处。 */
 function dupNode(idx) {
   var src = proposal[idx];
   if (!src) { return; }   // uid 对不上（块刚被别的操作删掉）：不崩，什么也不做
@@ -896,7 +1211,27 @@ function dupNode(idx) {
      折叠态也是这块的一部分。强制 copy.expanded = false 的话，复制一块配好的
      积木会把刚抄过来的参数又藏回折叠态（用户得多点一次才看得见自己复制了什么），
      而复制一块刚建、还没配置的积木反倒会弹开——两头的直觉都是反的。 */
-  proposal.splice(idx + 1, 0, copy);
+  var insertAt = idx + 1;
+
+  var uids = subtreeUids(src.uid);
+  var uidMap = {};
+  var clones = [];
+  for (var c = 0; c < uids.length; c++) {
+    var node = proposal.filter(function (x) { return x.uid === uids[c]; })[0];
+    if (!node) { continue; }
+    var cl = {};
+    for (var f in node) { if (node.hasOwnProperty(f)) { cl[f] = node[f]; } }
+    cl.uid = nextUid();
+    cl.errors = (node.errors || []).slice();
+    uidMap[node.uid] = cl.uid;
+    clones.push(cl);
+  }
+  // 第二遍统一改写 parent：必须等 uidMap 齐了才能改，
+  // 否则孙块的 parent 会被指向一个还没定下来的 uid。
+  clones.forEach(function (cl) {
+    cl.parent = (cl.parent && uidMap[cl.parent]) ? uidMap[cl.parent] : (cl.parent || null);
+  });
+  for (var j = 0; j < clones.length; j++) { proposal.splice(insertAt + j, 0, clones[j]); }
   renderCanvas();
 }
 
@@ -940,6 +1275,13 @@ function renderEmptyHint() {
   return p;
 }
 
+/* 画布按树递归渲染。顶层积木各自一块；容器积木额外带一个 .pgroup，
+   它的孩子缩进画在那个分组框里——用户要能一眼看出「这几行是装在这个容器里的」，
+   而不是左缩进几格就完事（光靠缩进，看不出边界在哪、拖起来也不知道能拖到哪）。
+
+   为什么递归而不是先把树拍平成带 depth 的列表：拍平会让 .pnode 的文档顺序
+   与数组顺序不一致，而既有断言逐位比对 DOM 里的 uid 顺序，嵌套一上来就全红。
+   递归渲染时，兄弟的文档顺序仍等于数组顺序，只有跨层级时才出现父子关系。 */
 function renderCanvas() {
   var host = el("canvas");
   var keep = captureFocus(host);
@@ -949,12 +1291,45 @@ function renderCanvas() {
     host.appendChild(renderEmptyHint());
     return;
   }
-  proposal.forEach(function (n, i) {
-    var box = document.createElement("div");
+  renderLevel(host, null);
+  restoreFocus(host, keep);
+}
+
+/* 渲染一整层：parent 为 null 就是顶层，否则是那个容器里的孩子。 */
+function renderLevel(host, parentUid) {
+  nodesAtDepth(parentUid).forEach(function (n) {
+    var pair = renderNode(n);
+    if (isContainer(n)) {
+      var grp = document.createElement("div");
+      grp.className = "pgroup";
+      grp.dataset.parent = parentUid || "";
+      // 数据属性写在 className 之后、其余属性之前：既有断言按
+      // class -> draggable -> data-idx -> data-uid -> data-wkey 的顺序做正则匹配。
+      grp.appendChild(pair);
+      renderLevel(grp, n.uid);
+      host.appendChild(grp);
+      return;
+    }
+    host.appendChild(pair);
+  });
+}
+
+/* 渲染一块积木（不含它的孩子）。返回那个 .pnode 元素。
+   抽成独立函数是因为树递归之后「画一块」这件事要能被单独调用——
+   容器那层自己套一个 .pgroup 把孩子装进去。 */
+function renderNode(n) {
+  var i = idxByUid(n.uid);   // 仅供调试看顺序，任何定位都不许用它
+  var box = document.createElement("div");
     box.className = "note pnode" + (n.downgraded ? " down" : (n.errors.length ? " blocked" : ""));
     box.setAttribute("draggable", "true");   // 必须在 dataset 之前写，否则会插到
                                             // 既有属性中间，打断按顺序匹配的 DOM 断言
-    box.dataset.idx = String(i);      // 仅供调试看顺序，任何定位都不许用它
+    // data-parent 插在 data-uid 之前：既有断言里 data-uid -> data-wkey ->
+    // data-downgraded -> data-status -> data-errors -> data-rkey 是一串连续的
+    // 正则（dom_all_widgets_ok / dom_all_downgraded 都这么写），插在中间会全打瞎。
+    // 放在 data-uid 之前是安全的：那些正则都以 `class="note pnode"[^>]*` 起头，
+    // 中间多几个属性不影响匹配。
+    box.dataset.parent = n.parent || "";
+    box.dataset.idx = String(i);
     box.dataset.uid = n.uid;
     box.dataset.wkey = n.wkey;
     box.dataset.downgraded = n.downgraded ? "1" : "0";
@@ -1045,8 +1420,7 @@ function renderCanvas() {
     /* 以下全部只在展开时渲染。折叠态还留着标题行那个「违规 N 项」徽标，
        所以收起之后用户依然看得出这块被拦了，只是被拦的理由不占地方。 */
     if (!n.expanded) {
-      host.appendChild(box);
-      return;
+      return box;
     }
 
     if (!n.downgraded) {
@@ -1127,9 +1501,45 @@ function renderCanvas() {
     ta.value = n.note;
     ta.oninput = function () { n.note = ta.value; };
     box.appendChild(ta);
-    host.appendChild(box);
-  });
-  restoreFocus(host, keep);
+
+    /* 归属下拉。这是换容器的主操作路径：拖拽只管同父级内换位，
+       把一块搬进另一个容器得靠这里。放在展开态里、跟参数框排在一起——
+       折叠时它不占地方，展开时它就在「这块是谁」旁边，一眼看懂。
+
+       选项只有「（顶层）」和别的容器积木：叶子控件装不了东西，
+       容器也不能选自己或自己的子孙（那会绕成圈，reparent 会挡）。 */
+    var sel = document.createElement("select");
+    sel.className = "pin psel";
+    sel.dataset.field = "parent";
+    sel.dataset.uid = n.uid;
+    sel.title = "把这一块放进哪个容器里。拖拽只能和同一个容器里的积木换位，"
+      + "换容器请用这里。";
+    var topOpt = document.createElement("option");
+    topOpt.value = "";
+    topOpt.textContent = "（顶层）";
+    sel.appendChild(topOpt);
+    var myUids = subtreeUids(n.uid);
+    proposal.forEach(function (c) {
+      if (!isContainer(c) || myUids.indexOf(c.uid) >= 0) { return; }
+      var o = document.createElement("option");
+      o.value = c.uid;
+      o.textContent = c.label + (c.parent ? "（在「" +
+        ((proposal.filter(function (x) { return x.uid === c.parent; })[0] || {}).label || "")
+        + "」里）" : "");
+      sel.appendChild(o);
+    });
+    sel.value = n.parent || "";
+    sel.onchange = function () { reparent(n.uid, sel.value || null); };
+    var selWrap = document.createElement("div");
+    selWrap.className = "crow";
+    var selLab = document.createElement("span");
+    selLab.className = "clab";
+    selLab.textContent = "归属";
+    selWrap.appendChild(selLab);
+    selWrap.appendChild(sel);
+    box.appendChild(selWrap);
+
+    return box;
 }
 
 /* 无头验收钩子：#proposal-all / #proposal-blocked / #proposal-empty / #proposal-typing。
@@ -1669,7 +2079,7 @@ function pvEl(cls, kind) {
 function pvSlot(txt) {
   var s = pvEl("pv-slot pv-empty", "slot");
   s.dataset.empty = "1";
-  s.textContent = txt || "空容器 · 控件放这里";
+  s.textContent = txt || "（空容器 · 控件放这里）";
   return s;
 }
 
@@ -1705,8 +2115,24 @@ function renderPreview() {
       + "它会从上到下长出来：横排并排、竖排堆叠、框和输入框都长面板里的样子。";
     panel.appendChild(hint);
   }
-  proposal.forEach(function (n) { panel.appendChild(pvNode(n)); });
+  // 顶层积木就地遍历（也就是「当前这份列表里 parent 为空的那几块」）；
+  // 再往下的层级交给 pvLevel 递归——容器要把孩子放进自己肚子里，
+  // 所以每块都得知道自己被谁装着，没法一次 forEach 拍平。
+  proposal.forEach(function (n) {
+    if (n.parent) { return; }
+    panel.appendChild(pvNode(n));
+  });
   host.appendChild(panel);
+}
+
+/* 预览按树递归渲染：容器自己成为一个 flex/grid 容器，
+   它的孩子真的放进去（不再是那个空占位格子）。
+   这就是「横排里装着按钮」能出现在截图里的原因——容器渲染成
+   layout.row() 那个 flex，子积木渲染成它里面的按钮。 */
+function pvLevel(host, parentUid) {
+  nodesAtDepth(parentUid).forEach(function (n) {
+    host.appendChild(pvNode(n));
+  });
 }
 
 function pvNode(n) {
@@ -1726,6 +2152,21 @@ function pvNode(n) {
   return d;
 }
 
+/* 往一个容器节点里放它的孩子。
+
+   没有孩子时才画占位格子，而且只在「这个容器一眼看不出该放什么」时画：
+   row / column 带了 heading（页签条、分组标题就是它）就不再画占位——
+   Blender 里 layout.row(align=True, heading="AI 对话") 底下没东西时就只画那个标题，
+   多画一个虚线格子反而会让预览比真实面板多出一行，看着像排版出了错。 */
+function pvFill(d, n) {
+  if (childrenOf(n.uid).length) { pvLevel(d, n.uid); return; }
+  if (n.wkey === "row" || n.wkey === "column") {
+    var h = (n.content || {}).heading || paramValue(n, "heading", null);
+    if (h) { return; }
+  }
+  d.appendChild(pvSlot());
+}
+
 function pvWidget(n) {
   var k = n.wkey;
   var c = n.content || {};
@@ -1736,12 +2177,12 @@ function pvWidget(n) {
        页签条 / 分组标题只能靠内容），没有内容再退回参数里的裸 heading。 */
     var head = c.heading || paramValue(n, "heading", null);
     if (head) { d.appendChild(pvEl("pv-head", "heading")).textContent = head; }
-    d.appendChild(pvSlot());
+    pvFill(d, n);
     return d;
   }
   if (k === "box") {
     d = pvEl("pv-box" + (hasParam(n, "alert") ? " alert" : ""), "box");
-    d.appendChild(pvSlot("消息 / 一条内容"));
+    pvFill(d, n);
     return d;
   }
   if (k === "split") {
@@ -1749,10 +2190,21 @@ function pvWidget(n) {
     var f = Math.max(0.05, Math.min(0.95, numParam(n, "factor", 0.3)));
     var l = pvEl("pv-half", "split-left");
     l.style.flex = "0 0 " + Math.round(f * 100) + "%";
-    l.appendChild(pvSlot("左"));
     var r = pvEl("pv-half", "split-right");
     r.style.flex = "1 1 auto";
-    r.appendChild(pvSlot("右"));
+    /* 分栏的两个孩子分头放：没有孩子就各留一个占位格子。
+       真面板里的左右分栏本来就是「一边的控件」和「另一边的控件」，
+       全部堆在左栏会让预览跟真实面板长得不一样。 */
+    var kids = childrenOf(n.uid);
+    if (kids.length) {
+      l.appendChild(pvNode(kids[0]));
+      if (kids.length > 1) {
+        for (var q = 1; q < kids.length; q++) { r.appendChild(pvNode(kids[q])); }
+      } else { r.appendChild(pvSlot("右")); }
+    } else {
+      l.appendChild(pvSlot("左"));
+      r.appendChild(pvSlot("右"));
+    }
     d.appendChild(l);
     d.appendChild(r);
     return d;
@@ -1761,7 +2213,12 @@ function pvWidget(n) {
     d = pvEl("pv-grid", "grid_flow");
     var cols = Math.max(1, Math.min(4, Math.round(numParam(n, "columns", 2))));
     d.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
-    for (var i = 0; i < cols; i++) { d.appendChild(pvSlot()); }
+    var gk = childrenOf(n.uid);
+    if (gk.length) {
+      gk.forEach(function (g) { d.appendChild(pvNode(g)); });
+    } else {
+      for (var i = 0; i < cols; i++) { d.appendChild(pvSlot()); }
+    }
     return d;
   }
   if (k === "panel") {
@@ -1774,7 +2231,7 @@ function pvWidget(n) {
     /* 折叠态面板不画内容区：Blender 里 closed 的 panel 本来就只剩标题条。 */
     var body = pvEl("pv-body" + (closed ? " pv-empty" : ""), "panel-body");
     if (closed) { body.dataset.empty = "1"; }
-    else { body.appendChild(pvSlot()); }
+    else { pvFill(body, n); }
     d.appendChild(body);
     return d;
   }
@@ -1938,6 +2395,98 @@ function previewReport() {
   setStatus("DEMO preview 预览 " + nodes + " 节点");
 }
 
+/* #proposal-nest：把嵌套相关的几条路径各真跑一遍，然后把读数报出来。
+   存在的理由：这一轮新增的行为（归属下拉 / 子树复制 / 子树删除 / 三界面独立）
+   都没有既成的无头钩子覆盖。少一个钩子，这些行为就只剩「代码看着对」。
+
+   报的每一项都是浏览器真算出来的东西或真点过的按钮的结果，不是数组自证：
+     tree —— 「容器uid>孩子uid」拼成的层级串，用来核对树结构本身
+     dupTree / dupCount —— 复制一个容器后，副本是不是连子树一起复制了
+     delCount —— 删掉一个容器后，孙块是不是也跟着没了
+     tabs —— 三个子页签各自的块数，用来核对三份列表互不干扰
+     selOptions —— 归属下拉里的选项数（含「（顶层）」） */
+function nestReport() {
+  var btn = el("demo-panel-btn");
+  if (btn) { btn.click(); }
+
+  var stream = proposal.filter(function (n) { return n.id === "chat.stream"; })[0];
+  var opts = proposal.filter(function (n) { return n.id === "chat.tabbar"; })[0];
+
+  var tree = proposal.map(function (n) {
+    return (n.parent ? n.parent : "-") + ">" + n.uid;
+  }).join("|");
+
+  /* 复制容器：副本必须带整棵子树，且子孙的 parent 改指副本的新 uid。 */
+  var dupTree = "";
+  var dupCount = -1;
+  if (stream) {
+    var before = proposal.length;
+    dupNode(idxByUid(stream.uid));
+    dupCount = proposal.length - before;
+    var copy = proposal.filter(function (n) { return n.id === "chat.stream"; })[1];
+    dupTree = copy ? copy.uid + ":" + childrenOf(copy.uid).length : "nocopy";
+  }
+
+  /* 删容器：整棵子树一起走，单独留下一个块数。 */
+  var delCount = -1;
+  if (opts) {
+    var b2 = proposal.length;
+    delNode(idxByUid(opts.uid));
+    delCount = b2 - proposal.length;
+  }
+
+  /* 三个界面各自的块数：切过去记个数，切回来再记一次。
+     对话这一份刚才被增删过，详情与设置应当仍是 0。 */
+  var tabs = [];
+  TAB_ORDER.forEach(function (k) {
+    switchTab(k);
+    tabs.push(k + "=" + proposal.length);
+  });
+  switchTab("chat");
+
+  /* 归属下拉只画在展开态里（折叠时它不占地方），所以先展开一块再数选项。 */
+  var probe = proposal.filter(function (n) { return n.id === "chat.stream"; })[0];
+  if (probe && !probe.expanded) { probe.expanded = true; renderCanvas(); }
+  var sel = el("canvas").querySelector('.pnode[data-uid="' +
+    (probe ? probe.uid : "") + '"] [data-field="parent"]');
+  /* 选项里必须只有容器积木 + （顶层）：叶子控件和「自己 / 自己的子孙」
+     都列进去的话，用户点一下就会把积木挂到非法位置。 */
+  var optTexts = [];
+  if (sel) {
+    for (var q = 0; q < sel.options.length; q++) { optTexts.push(sel.options[q].textContent); }
+  }
+  /* 预览是不是真的树：数每个预览节点在 DOM 里套着几层别的预览节点。
+     这是浏览器算出来的父子关系，不是我们自己写的 class 名——
+     把 pvFill 改成永远画占位（容器不装孩子）的话，这里的 maxDepth 会掉到 1。 */
+  var maxDepth = 0;
+  var pvs = el("preview").querySelectorAll("[data-pvuid]");
+  for (var i = 0; i < pvs.length; i++) {
+    var d = 0;
+    var up = pvs[i].parentElement;
+    while (up) {
+      if (up.dataset && up.dataset.pvuid) { d++; }
+      up = up.parentElement;
+    }
+    if (d > maxDepth) { maxDepth = d; }
+  }
+
+  appendReport("nest-report", {
+    tree: tree,
+    dupTree: dupTree,
+    dupCount: String(dupCount),
+    delCount: String(delCount),
+    tabs: tabs.join(","),
+    selOptions: String(sel ? sel.options.length : 0),
+    selTexts: optTexts.join("|"),
+    groups: String(el("canvas").querySelectorAll(".pgroup").length),
+    pvMaxDepth: String(maxDepth),
+    pvCount: String(pvs.length),
+    blocks: String(proposal.length)
+  });
+  setStatus("DEMO nest 树 " + proposal.length + " 块 / 分组 " +
+    el("canvas").querySelectorAll(".pgroup").length);
+}
+
 function runDemoHook(hash) {
   var h = String(hash || "").replace(/^#/, "");
   var kind = (h === "proposal-all") ? "all"
@@ -1951,6 +2500,8 @@ function runDemoHook(hash) {
            : (h === "proposal-examples") ? "examples"
            : (h === "proposal-panel") ? "panel"
            : (h === "proposal-preview") ? "preview"
+           : (h === "proposal-nest") ? "nest"
+           : (h.indexOf("proposal-demo-") === 0) ? "demo-" + h.slice("proposal-demo-".length)
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
   switchView("proposal");
@@ -1964,6 +2515,18 @@ function runDemoHook(hash) {
     if (kind === "empty") { setStatus("DEMO empty 控件 0 降级 0"); return; }
     if (kind === "examples") { examplesReport(); return; }
     if (kind === "panel") { panelReport(); return; }
+    if (kind === "nest") { nestReport(); return; }
+    /* #proposal-demo-<tab>：切到那个子页签并插入它自己的示例面板。
+       给无头截图用——人眼要看的就是「切到详情之后，右边是不是详情那套积木」，
+       而这件事只有走真实的 switchTab + 真实的示例面板按钮才说得清。
+       截图是给人看的，所以这里只把画布摆好，不往 DOM 里塞验收报告。 */
+    if (kind.indexOf("demo-") === 0) {
+      var tab = kind.slice(5);
+      switchTab(tab);
+      var btn = el("demo-panel-btn");
+      if (btn) { btn.click(); }
+      return;
+    }
     var bs = el("vocab-bar").querySelectorAll("button[data-wkey]");
     for (var i = 0; i < bs.length; i++) { bs[i].click(); }
     if (kind === "typing") { typeReport("scale_y", "scale_ys"); return; }

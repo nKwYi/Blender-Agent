@@ -105,6 +105,36 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
   font-family: Consolas, monospace; font-size: 12px;
 }
 .scope { color: var(--text-dim); font-size: 11px; margin: 2px 0 6px; }
+/* ---- 三个界面（对话 / 详情 / 设置）----
+   照抄真实面板顶上那根页签条的样子：三个并排的页签，当前页签用
+   --accent（实测 wcol_list_item.inner_sel）填底。
+   主题里没有红也没有绿，所以「当前页签」靠填充色 + 加深边框表达。 */
+.subtabs {
+  display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); padding: 4px 0 6px; margin: 0 0 6px;
+}
+.subtabs b { color: var(--text-dim); font-weight: normal; margin-right: 4px; }
+.subtabs button {
+  background: var(--fill); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 14px; cursor: pointer; font: inherit;
+}
+.subtabs button.on { background: var(--accent); border-color: var(--accent); }
+/* ---- 积木嵌套 ----
+   容器积木的孩子缩进在一个分组框里：左竖线（--border）+ 左内缩进。
+   缩进本身不足以说明「边界在哪、能拖到哪」，所以配一条竖线。
+   不靠颜色语义：竖线用的是与普通边框同一支色值。 */
+.pgroup {
+  border-left: 2px solid var(--border);
+  margin: 6px 0 6px 4px; padding-left: 10px;
+}
+/* 分组框本身是「这一层有哪些孩子」的可视边界。缩进要够，一眼能数出层级；
+   竖线用与普通边框同一支色值——不靠颜色语义，靠位置与明度差。 */
+.pgroup > .pnode:first-child { margin-top: 0; }
+.pnode .psel {
+  width: auto; flex: 1 1 auto; margin: 0; background: var(--field);
+  color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px; font: inherit;
+}
 .loaderr {
   background: var(--hover); border: 1px solid var(--mark); border-radius: 4px;
   padding: 8px; margin: 6px 0; color: var(--text);
