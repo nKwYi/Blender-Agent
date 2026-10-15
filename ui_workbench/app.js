@@ -37,6 +37,146 @@ function saveAnnotations() {
   }
 }
 
+/* ---------------- 方案自动保存 ----------------
+   用户的原话是「不然我调好了怎么告诉你然后落实呢」——这句话拆开是两件事：
+   一是别丢（刷新还在），二是能交出去（导出，见文件末尾的导出段）。
+   这一段只管第一件。
+
+   为什么沿用 lsOK 那套降级而不是直接 localStorage.setItem：
+   file:// 在 Chrome 里是不透明源，setItem 直接抛 SecurityError。抛在
+   renderCanvas 里会让每一次改字都炸掉整个页面——所以照旧：抛了就翻脸
+   （lsOK=false）、退回内存、并把这件事顶到页面最上面说清楚。
+   「保存失败」最难受的地方不是失败，是静默：不说话的话，用户改了一下午，
+   刷新之后才发现全没了。 */
+
+var PLAN_KEY = "uw_plan_v1";
+
+/* 这次启动恢复了多少块。0 = 没恢复（或被夹具 hash 跳过）。
+   单独拎出来是因为状态条那句提示要在两个地方用：loadState 收尾时给用户看，
+   以及 #proposal-restore 钩子核对「用户看到的到底是不是这句」。 */
+var restoredBlocks = 0;
+
+function planPayload() {
+  return {
+    format: "ui_workbench_plan",
+    version: 1,
+    saved_at: new Date().toISOString(),
+    active_tab: activeTab,
+    uid_seq: uidSeq,
+    // boards 是三个界面的全部积木，node 对象本身就是内容 + 归属 + 标注的
+    // 唯一真身（content / parent / note / id 都在里面），所以整份存进去即可，
+    // 不另开一套「存档结构」——两份结构迟早会对不上。
+    boards: boards
+  };
+}
+
+/* 返回 true = 真的落盘了；false = 只在内存里（lsOK 已翻脸）。
+   调用方不必处理返回值：翻脸的那一次已经把话说到了页面上。 */
+function savePlan() {
+  if (!lsOK) { return false; }
+  try {
+    localStorage.setItem(PLAN_KEY, JSON.stringify(planPayload()));
+    return true;
+  } catch (e) {
+    lsOK = false;
+    renderStoreNote();
+    return false;
+  }
+}
+
+function loadPlan() {
+  var raw = null;
+  try {
+    raw = localStorage.getItem(PLAN_KEY);
+  } catch (e) {
+    // 只有 SecurityError（file:// + Chrome）能证明「这台机器存不了」。
+    // 数据损坏那种错不算——那是内容坏了，不是通道坏了，不该连累 lsOK。
+    if (e && e.name === "SecurityError") { lsOK = false; renderStoreNote(); }
+    return null;
+  }
+  if (!raw) { return null; }
+  try {
+    var d = JSON.parse(raw);
+    return (d && d.boards) ? d : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/* 把存档里的一块补齐成画布认得的形状。
+   为什么需要：将来加字段时，老存档里那块就少几个键。少键不该让整份存档
+   作废（用户攒了两小时的东西），所以逐块补默认，而不是整份丢弃。 */
+function normalizeNode(raw) {
+  var n = raw || {};
+  return {
+    uid: String(n.uid || nextUid()),
+    parent: n.parent || null,
+    wkey: String(n.wkey || "label"),
+    label: String(n.label || "（存档里的块）"),
+    uiloayout: String(n.uiloayout || ""),
+    allowed_props: n.allowed_props || [],
+    blocked_props: n.blocked_props || [],
+    params: String(n.params || ""),
+    id: String(n.id || ""),
+    note: String(n.note || ""),
+    content: (n.content && typeof n.content === "object") ? n.content : {},
+    errors: [],
+    expanded: !!n.expanded,
+    downgraded: !!n.downgraded
+  };
+}
+
+/* 读回存档。返回恢复出来的块数（0 = 没有可恢复的东西）。
+
+   刻意跳过 #proposal-* 这一类 hash：那些是测试与截图用的夹具，
+   每次都自带一套积木（点满 12 个控件、插示例面板……），要是再把上次
+   存的方案铺进去，块数就既不是夹具的也不是存档的，测出来的东西没有意义。
+   真人打开工作台永远是空 hash 或 #idle，照样恢复。
+
+   #proposal-restore 是唯一的例外，而且它存在的全部意义就是要恢复：
+   它跑在「上一趟已经存过盘」的那份浏览器档案里，用的就是真实刷新那条路径。 */
+function restorePlan() {
+  var h = String(window.location.hash || "");
+  if (h.indexOf("#proposal") === 0 && h !== "#proposal-restore") { return 0; }  var d = loadPlan();
+  if (!d) { return 0; }
+  var got = 0;
+  TAB_ORDER.forEach(function (k) {
+    var list = d.boards[k];
+    if (!list || !list.length) { return; }
+    boards[k] = list.map(normalizeNode);
+    got += list.length;
+  });
+  if (!got) { return 0; }
+  if (TAB_ORDER.indexOf(d.active_tab) >= 0) { activeTab = d.active_tab; }
+  // uidSeq 必须跟着涨：不然恢复出来的 b17 之后，下一块新积木又从 b1 开始，
+  // 两块撞 uid，标注就会贴到另一块身上。
+  if (typeof d.uid_seq === "number" && d.uid_seq > uidSeq) { uidSeq = d.uid_seq; }
+  proposal = boards[activeTab];
+  restoredBlocks = got;
+  return got;
+}
+
+/* 页面顶部那句提示 / 导出面板里那行小字。共用一套文案：同一个事实
+   不许在页面上有两种说法。lsOK = true 时警告条收起来（不是留着占位）。 */
+function storeMsg() {
+  return lsOK
+    ? "自动保存已开启：三个界面的积木（内容 / 归属 / 标注）每次改动都会写进 "
+      + "localStorage，刷新页面不丢。"
+    : "自动保存不可用：这个浏览器在 file:// 下禁用了 localStorage"
+      + "（Chrome 会抛 SecurityError，Edge 正常）。方案目前只存在内存里，"
+      + "刷新或关掉页面就没了——请用下方「下载方案 JSON」把它存到磁盘。";
+}
+
+function renderStoreNote() {
+  var w = el("store-warn");
+  if (w) {
+    if (lsOK) { w.hidden = true; w.textContent = ""; }
+    else { w.hidden = false; w.textContent = "⚠ " + storeMsg(); }
+  }
+  var note = el("store-note");
+  if (note) { note.textContent = storeMsg(); }
+}
+
 /* file:// 下 XHR / fetch 拉同目录 JSON 会被 CORS 直接拒掉，所以全部数据由
    data/data.js 以 window.UW_DATA 注入，这里只做查表。
    键名规则：去掉 data/ 前缀与 .json 后缀。
@@ -54,6 +194,17 @@ function getJSON(path) {
 }
 
 function setStatus(msg) { el("status").textContent = msg || ""; }
+
+/* 恢复提示的唯一出处。放在这里（而不是 init 里直接 setStatus）是因为
+   loadState 收尾时会把状态条清空——写在 init 里的那句会被它抹掉，
+   用户看到的就只剩一片空白，正好是「到底恢复没恢复」最需要说话的时刻。 */
+function restoreNotice() {
+  if (!restoredBlocks) { return ""; }
+  return "已恢复上次存的方案：" + restoredBlocks + " 块积木（" +
+    TAB_ORDER.map(function (k) {
+      return TAB_LABELS[k] + " " + boards[k].length;
+    }).join(" / ") + "）。继续搭或者直接导出都行。";
+}
 
 function stateFromHash() {
   var h = (window.location.hash || "").replace(/^#/, "");
@@ -85,7 +236,8 @@ function loadState(name) {
     tree = t;
     renderTree();
     renderAnnot();
-    setStatus(lsOK ? "" : "（file:// 下无法持久化，标注只存在内存，用「导出标注」保存）");
+    setStatus(restoreNotice() ||
+      (lsOK ? "" : "（file:// 下无法持久化，标注只存在内存，用「导出标注」保存）"));
   }).catch(function (e) {
     setStatus("布局树缺失：" + e.message + "（先跑 dev/capture_layout.py）");
     el("tree").innerHTML = "";
@@ -282,23 +434,15 @@ function init() {
   for (var i = 0; i < bs.length; i++) {
     (function (b) { b.onclick = function () { switchView(b.dataset.view); }; }(bs[i]));
   }
-  el("export").onclick = function () {
-    var payload = {
-      annotations: annotations,
-      proposal: proposal,
-      active_tab: activeTab,
-      boards: boards
-    };
-    var blob = new Blob([JSON.stringify(payload, null, 2)],
-                        { type: "application/json" });
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "annotations.json";
-    a.click();
-    setStatus("已导出 annotations.json（含 " +
-              Object.keys(annotations).length + " 条标注，" +
-              proposal.length + " 条提案）");
-  };
+  // 顺序有讲究：restorePlan 必须赶在 runDemoHook 之前跑——它决定 boards 里
+  // 现在有什么，而 runDemoHook / loadState 都要在 boards 上作画。放在它们
+  // 后面，恢复出来的积木得刷新一次才看得见，那不叫「刷新不丢」。
+  // （restorePlan 内部自己跳过 #proposal-* 这类夹具 hash，所以下面的
+  //  runDemoHook 拿到的仍是干净的空画布。）
+  renderStoreNote();
+  restorePlan();
+  bindSelection();
+  renderExportPanel();
   // 顺序有讲究：runDemoHook 必须赶在 loadState 之前读 hash。loadState 会把
   // 未知 hash 归一成状态名并写回 location.hash（"#proposal-all" -> "idle"），
   // 晚一步读就永远是 "idle"，钩子静默不触发。
@@ -810,6 +954,93 @@ function reparent(uid, newParent) {
   return true;
 }
 
+/* ---------------- 选中：右栏积木 <-> 左栏预览，双向同步 ----------------
+   需求原话：「点右栏任一积木，左边预览里对应的那个渲染区域要用天蓝色描一圈」。
+
+   为什么预览这一侧是重点：右边是零件表，左边才是「拼起来长什么样」。
+   零件表上一格一格地点，对不上脑子里那块面板；能指着屏幕说「这一块就是
+   这个按钮」才是搭得下去的证据。所以两侧必须同时动。
+
+   三条纪律：
+   1) 描边色只许是 --accent（#4772b3，native_api.json 实测 panel_active，
+      这张实测色板里唯一的蓝，也是 Blender 里你点东西时看到的那个选中色）。
+      语义不靠别的信息承载；但「选中与否」是交互态不是数据，允许用蓝。
+   2) 状态写在 data-sel 属性上，不加 class。既有断言按
+      `class="note pnode"[^>]*` 与 .pv-row / .pv-grid 这些类名查形状，
+      往 className 里塞一个字会把它们整片打瞎。
+   3) 不重新渲染。选中只改属性：重画一次画布会顺手把焦点、滚动位置、
+      用户刚展开/折起的块全抖一遍，而选中是一个纯粹的视觉反馈。 */
+var selUid = null;
+
+function selectBlock(uid) {
+  if (uid && !nodeByUid(uid)) { return; }     // 点了已经不在画布上的块：不做声
+  selUid = (selUid === uid) ? null : uid;      // 再点一次 = 取消选中
+  paintSelection();
+  setStatus(selUid
+    ? ("已选中「" + nodeByUid(selUid).label + "」：左边预览里那一圈是它占的地方")
+    : "已取消选中");
+}
+
+function clearSelection() {
+  if (!selUid) { return; }
+  selUid = null;
+  paintSelection();
+}
+
+/* 把选中态刷到 DOM 上。只动 data-sel，其它一律不碰。 */
+function paintSelection() {
+  var c = el("canvas");
+  if (c) {
+    var boxes = c.querySelectorAll(".pnode[data-uid]");
+    var i;
+    for (i = 0; i < boxes.length; i++) {
+      mark(boxes[i], selUid && boxes[i].dataset.uid === selUid);
+    }
+    // 容器外面那圈分组框也要跟上：右栏的 .pgroup 才是「这一整块」的边界，
+    // 只描标题行的话，选中一个装着五块东西的容器，框出来的却只有一行。
+    var grps = c.querySelectorAll(".pgroup[data-owner]");
+    for (i = 0; i < grps.length; i++) {
+      mark(grps[i], selUid && grps[i].dataset.owner === selUid);
+    }
+  }
+  var p = el("preview");
+  if (!p) { return; }
+  var pvs = p.querySelectorAll("[data-pvuid]");
+  for (var j = 0; j < pvs.length; j++) {
+    mark(pvs[j], selUid && pvs[j].dataset.pvuid === selUid);
+  }
+}
+
+function mark(e, on) {
+  if (on) { e.dataset.sel = "1"; }
+  else if (e.dataset.sel) { delete e.dataset.sel; }   // 摘干净：取消选中不留残留属性
+}
+
+/* 一个委托监听挂在两个栏上：点哪边都只改 selUid 这一个变量，
+   两侧的视觉由 paintSelection 统一刷，所以同步是结构上的，不是两处各写一遍。 */
+function bindSelection() {
+  var canvas = el("canvas");
+  if (canvas) {
+    canvas.addEventListener("click", function (e) {
+      // 按钮和输入框上的点击是它们自己的事（复制 / 删除 / 打字），
+      // 顺手改选中会让「我想删这一块」变成「先选中再删」，一步变两步。
+      if (e.target.closest("input, textarea, button")) { return; }
+      var box = e.target.closest(".pnode[data-uid]");
+      selectBlock(box ? box.dataset.uid : null);   // 点空白处 = 取消
+    });
+  }
+  var pv = el("preview");
+  if (pv) {
+    pv.addEventListener("click", function (e) {
+      // closest 认的是最近的祖先：点在某个子块上就选中那个子块，
+      // 点在容器自己的空白处才选中容器。预览里容器真的是孩子们的祖先，
+      // 所以这个判定同时解释了「整个容器区域含子块都被描边」。
+      var n = e.target.closest("[data-pvuid]");
+      selectBlock(n ? n.dataset.pvuid : null);
+    });
+  }
+}
+
 function loadVocab() {
   return getJSON("vocabulary.json").then(function (v) {
     if (!v || !v.widgets || !v.rejected) {
@@ -867,6 +1098,9 @@ function switchTab(name) {
   // 换界面就等于换了一份画布，撤销不该跨界面生效。
   lastDeleted = null;
   clearDrag();
+  // 选中同理：uid 是全局唯一的，但一份画布里未必真有那一块，
+  // 硬留着会在新界面上留一个指向空气的描边。
+  if (selUid && !nodeByUid(selUid)) { selUid = null; }
   renderCanvas();
   renderVocabBar();
   renderRejected();
@@ -1434,10 +1668,17 @@ function renderCanvas() {
   renderPreview();
   if (!proposal.length) {
     host.appendChild(renderEmptyHint());
-    return;
+  } else {
+    renderLevel(host, null);
   }
-  renderLevel(host, null);
   restoreFocus(host, keep);
+  // 两条都挂在重画之后：重画会把 DOM 全换一遍，先前打上的选中标记一律失效，
+  // 不补这一笔就会「点一下选中，再改个字标记就没了」。
+  paintSelection();
+  savePlan();
+  // 那段 ui.py 是从 proposal 推出来的，所以跟着画布一起重算：
+  // 右边改一个字，下面那份草稿得当场跟着变，否则用户会照着一份过期的代码抄。
+  renderPyOut();
 }
 
 /* 渲染一整层：parent 为 null 就是顶层，否则是那个容器里的孩子。
@@ -1696,7 +1937,9 @@ function renderNode(n) {
       (eh.examples && eh.examples.length ? "（例：" + eh.examples.join(" / ") + "）" : "");
     idIn.title = (eh.what || "") + "\n" + (eh.naming || "") + "\n" + (eh.optional || "");
     idIn.value = n.id;
-    idIn.oninput = function () { n.id = idIn.value; };
+    // 这里不重画画布（会把这个输入框本身换掉、光标跳走），但必须存盘：
+    // 元素 ID 是标注与导出的挂钩，刷新丢了就等于用户白填。
+    idIn.oninput = function () { n.id = idIn.value; savePlan(); };
     box.appendChild(idIn);
 
     var ta = document.createElement("textarea");
@@ -1705,7 +1948,7 @@ function renderNode(n) {
     ta.dataset.uid = n.uid;
     ta.placeholder = "想要什么？为什么？";
     ta.value = n.note;
-    ta.oninput = function () { n.note = ta.value; };
+    ta.oninput = function () { n.note = ta.value; savePlan(); renderPyOut(); };
     box.appendChild(ta);
 
     /* 归属下拉。这是换容器的主操作路径：拖拽只管同父级内换位，
@@ -2844,6 +3087,839 @@ function moveReport() {
     " / 拖进容器 -> " + dragParent);
 }
 
+/* ---------------- 导出：把这一版交出去 ----------------
+   需求原话：「不然我调好了怎么告诉你然后落实呢」。
+   「告诉你」和「落实」是两条路，所以出口也分两条：
+
+     ui.py（代码）      —— 落实。照 blender_deepseek_agent/ui.py 里
+                          draw_chat_content() 的写法，把积木树翻成
+                          layout.row / box / label / operator / prop …
+     方案说明（Markdown）—— 告诉你。一份人能读、AI 也能直接读成实施计划的文档。
+     方案 JSON          —— 存档。三个界面全在里面，以后接着改。
+     自动保存           —— 别丢。见文件开头那段。
+
+   三条纪律：
+   1) 这份 ui.py 是**草稿**，从没在真实 Blender 里跑过。文件头和每一块的
+      注释里都必须写明这句话——不写就成了「看起来能跑的代码」，那比不给更糟。
+   2) 翻译不出来的东西不许假装翻译了：算子名 / 属性名缺了就发 TODO，
+      并汇总进文末的「必须人工补」清单。
+   3) 降级块（Blender 里做不到的）不生成代码，只生成注释记录。 */
+
+var UNVERIFIED_NOTICE =
+  "工具生成 · 未经验证：这段代码由 UI Workbench 从积木树自动导出，"
+  + "从没在真实 Blender 里跑过。是草稿，不是能直接粘贴就用的成品。";
+
+/* 各控件的默认参数（取自 vocabulary.json 的 uiloayout，界面只负责排版）。 */
+var PY_DEFAULT_KW = {
+  row: "align=True",
+  column: "align=True",
+  box: "",
+  split: "factor=0.3",
+  grid_flow: "columns=2, even_columns=True",
+  panel: ""
+};
+
+/* 这些是「赋值给容器」而不是「传进调用」的参数，照样写成属性赋值行。 */
+var PY_ATTRS = ["alert", "scale_y", "use_property_split"];
+
+/* 光写名字不带取值的参数 = 「打开这个开关」。
+   必须补成 =True：照原样吐出去会生成 layout.row(align, ...)，
+   那在 Python 里就是语法错误——一份连 ast.parse 都过不去的「草稿」
+   连草稿都算不上。（Blender 这几个开关的默认值就是 True，所以补 True
+   与用户「打开它」的意思一致。） */
+var PY_TRUE_FLAGS = ["align", "even_columns", "even_rows", "row_major",
+                     "default_closed", "use_property_split", "translate"];
+
+function pyStr(s) {
+  return '"' + String(s == null ? "" : s)
+    .replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n") + '"';
+}
+
+/* True / False / None / 数字照抄，其余一律当字符串加引号。
+   不判断的话 align=False 会被写成 align="False"——那在 Blender 里是
+   一个非空的字符串，真值，参数等于反过来生效。 */
+function pyScalar(v) {
+  var t = String(v == null ? "" : v).trim();
+  if (/^(True|False|None)$/.test(t) || /^-?[0-9]+(\.[0-9]+)?$/.test(t)) { return t; }
+  return pyStr(t);
+}
+
+function pyIndent(depth) { return new Array(depth + 1).join("    "); }
+
+function pyVarName(base, used) {
+  used[base] = (used[base] || 0) + 1;
+  return used[base] === 1 ? base : (base + used[base]);
+}
+
+/* 参数表：词汇表给的默认值打底，用户写的同名键覆盖它。
+   注意覆盖而不是拼接——align=True 后面再来一个 align=False，
+   拼起来就成了 layout.row(align=True, align=False)，那在 Python 里
+   直接是语法错误。
+
+   光写名字没写取值的参数 = 「打开这个开关」，必须补成 =True：
+   照原样吐出去会生成 layout.row(align, ...)，一份连 ast.parse 都过不去的
+   「草稿」连草稿都算不上。补 True 与用户「打开它」的意思一致
+   （Blender 这几个开关的默认值就是 True），而不在清单里的裸参数
+   另记一条，让人自己核对。 */
+function pyKw(n, todo) {
+  var vals = {};
+  var defaults = {};
+  var order = [];
+  function add(t, dflt) {
+    var i = t.indexOf("=");
+    var k = (i < 0 ? t : t.slice(0, i)).trim();
+    if (!(k in vals)) { order.push(k); }
+    // defaults 只记第一次（也就是词汇表给的那个）。用户后写的裸 tokens
+    // 如果把这里也覆盖成 ""，columns 就会从 2 变成 None——网格静默塌成一列。
+    if (!(k in defaults)) { defaults[k] = dflt; }
+    vals[k] = (i < 0 ? "" : t.slice(i + 1).trim());
+  }
+  splitParams(PY_DEFAULT_KW[n.wkey] || "").forEach(function (t) { add(t, t); });
+  splitParams(n.params).forEach(function (t) {
+    var k = t.split("=")[0].trim();
+    if (PY_ATTRS.indexOf(k) >= 0) { return; }
+    add(t, "");
+  });
+  return order.map(function (k) {
+    if (vals[k] !== "") { return k + "=" + pyScalar(vals[k]); }
+    /* 裸参数有两种意思，得分开处理，混起来会静默改坏面板：
+       - 它是个开关（align / even_columns）：补 =True，与「打开它」一致；
+       - 它是个取值没写完（columns、factor）：保留词汇表给的默认值，
+         另记一条。写成 columns=True 会让网格真的只剩一列，而且不报错。 */
+    if (PY_TRUE_FLAGS.indexOf(k) >= 0) { return k + "=True"; }
+    if (todo) {
+      todo.push("「" + n.label + "」的参数 " + k + " 没写取值，已保留词汇表给的默认"
+        + (defaults[k] ? ("（" + defaults[k] + "）") : "（没有默认，已写 None）")
+        + "——请补上你想要的取值");
+    }
+    return defaults[k] ? (k + "=" + pyScalar(defaults[k].split("=")[1]))
+      : (k + "=None");
+  }).join(", ");
+}
+
+function pyAttrLines(n, varName, ind) {
+  var out = [];
+  splitParams(n.params).forEach(function (t) {
+    var i = t.indexOf("=");
+    var k = (i < 0 ? t : t.slice(0, i)).trim();
+    if (PY_ATTRS.indexOf(k) < 0 || n.wkey === "scale_y") { return; }
+    out.push(ind + varName + "." + k + " = " +
+      (i < 0 ? "True" : pyScalar(t.slice(i + 1))));
+  });
+  return out;
+}
+
+function pyOperatorId(n, todo) {
+  var id = String(n.id || "").trim();
+  if (id.indexOf("deepseek.") === 0) { return id; }
+  if (id) {
+    todo.push("算子「" + n.label + "」的元素 ID 是「" + id +
+      "」，不是 deepseek.* 开头，已补成 deepseek." + id + "——请核对真实算子名");
+    return "deepseek." + id;
+  }
+  todo.push("算子「" + n.label + "」还没填元素 ID，代码里留的是 TODO 占位——请填真实算子名");
+  return "deepseek.TODO_填算子名";
+}
+
+function pyPropName(n, todo) {
+  var id = String(n.id || "").trim();
+  if (id) { return id; }
+  todo.push("「" + n.label + "」还没填元素 ID，属性名留的是 TODO 占位——请填真实的 Property 名字");
+  return "TODO_属性名";
+}
+
+function pyNoteLines(n, ind) {
+  var out = [ind + "#   想做什么 · 为什么：" +
+    (n.note ? n.note : "（这块没写标注）")];
+  if (n.downgraded) {
+    out.push(ind + "#   拦路：" + (n.blocker || "（没记）"));
+    out.push(ind + "#   改成：" + (n.fallback || "（没记）"));
+  }
+  /* 被拦下的参数不在这里逐条抄一遍：那些话已经写在积木上了，
+     再抄一遍只会让这份代码和画布长得像两套东西。改在文末汇总成一条，
+     让人知道「有几块还没过参数这一关」，具体哪几块看方案说明。 */
+  if (n.errors && n.errors.length) {
+    out.push(ind + "#   ⚠ 这块有 " + n.errors.length + " 个参数被工作台拦下了（见文末清单）");
+  }
+  return out;
+}
+
+/* 递归翻译一层。host = 生成出来的代码里「这些东西该往哪放」的变量名。 */
+function pyLevel(out, todo, used, parentUid, host, depth) {
+  var ind = pyIndent(depth);
+  nodesAtDepth(parentUid).forEach(function (n, i) {
+    var c = n.content || {};
+    var head = ind + "# ── " + (i + 1) + ") " +
+      (n.id || "（没填元素 ID）") + " · " + n.label;
+    out.push(head + "  —— 工作台自动生成，未经验证");
+    pyNoteLines(n, ind).forEach(function (l) { out.push(l); });
+
+    if (n.downgraded) {
+      // 降级块在 Blender 里根本没有对应东西：生成代码就是谎称它会出现。
+      out.push(ind + "# ✗ 做不到，所以这里不生成代码（只是这条需求的记录）");
+      return;
+    }
+
+    if (n.wkey === "separator") {
+      out.push(ind + host + ".separator()");
+      return;
+    }
+    if (n.wkey === "scale_y") {
+      var sy = paramValue(n, "scale_y", null);
+      out.push(ind + host + ".scale_y = " + (sy === null ? "1.0" : pyScalar(sy)));
+      return;
+    }
+
+    /* 只有容器才需要 pyKw：叶子的 text / icon / columns / prop 这些写在参数框里，
+       它们描述的是「这块叫什么」，已经由 pyLeaf 按各自的调用形式发出去了。
+       再让 pyKw 走一遍，叶子的每一个参数都会被当成「开关名没写取值」报一遍，
+       文末清单立刻被无意义的条目淹没——清单一旦嘈杂就等于没有清单。 */
+    var kw = (CONTAINER_WKEYS.indexOf(n.wkey) >= 0) ? pyKw(n, todo) : "";
+    var base = null;
+    var stmt = null;
+    if (n.wkey === "row" || n.wkey === "column") {
+      var kwc = kw;
+      var head2 = c.heading || paramValue(n, "heading", null);
+      if (head2 && !/heading=/.test(kwc)) {
+        kwc = kwc ? (kwc + ", heading=" + pyStr(head2)) : ("heading=" + pyStr(head2));
+      }
+      base = (n.wkey === "row") ? "row" : "col";
+      stmt = host + "." + n.wkey + "(" + kwc + ")";
+    } else if (n.wkey === "box") {
+      base = "box";
+      stmt = host + ".box(" + kw + ")";
+    } else if (n.wkey === "split") {
+      base = "split";
+      stmt = host + ".split(" + kw + ")";
+    } else if (n.wkey === "grid_flow") {
+      base = "grid";
+      stmt = host + ".grid_flow(" + kw + ")";
+    } else if (n.wkey === "panel") {
+      base = "panel";
+      var idn = paramValue(n, "idname", null) || n.id;
+      if (!idn) {
+        todo.push("子面板「" + n.label + "」还没填元素 ID，panel 的 idname 留的是 TODO 占位");
+      }
+      stmt = host + ".panel(" + (idn ? pyStr(idn) : "TODO_子面板ID") +
+        (hasParam(n, "default_closed") ? ", default_closed=True" : "") + ")";
+    } else {
+      stmt = pyLeaf(n, host, todo);
+    }
+
+    if (base) {
+      var vn = pyVarName(base, used);
+      out.push(ind + vn + " = " + stmt);
+      pyAttrLines(n, vn, ind).forEach(function (l) { out.push(l); });
+      // 容器自己那些「非参数」的设置：heading 是 row/column 的分组标题，
+      // 在 Blender 里它就是行内的一块子面板标题，必须跟着这行一起出现。
+      if ((n.wkey === "row" || n.wkey === "column") && head2) {
+        out.push(ind + "# 上面这行的 heading 就是这一段的分组标题");
+      }
+      pyLevel(out, todo, used, n.uid, vn, depth + 1);
+    } else {
+      out.push(ind + stmt);
+      pyAttrLines(n, host, ind).forEach(function (l) { out.push(l); });
+    }
+  });
+}
+
+function pyLeaf(n, host, todo) {
+  var c = n.content || {};
+  /* 图标用单引号，跟 ui.py 里的写法一致（'PLAY' 而不是 "PLAY"）。
+     两边都对，但抄改的人习惯在既有文件里看到的那一种。 */
+  var icon = c.icon ? (", icon='" + String(c.icon).replace(/'/g, "") + "'") : "";
+  if (n.wkey === "label") {
+    return host + ".label(text=" + pyStr(c.text || "TODO_文字") + icon + ")";
+  }
+  if (n.wkey === "operator") {
+    return host + ".operator(" + pyStr(pyOperatorId(n, todo)) +
+      ", text=" + pyStr(c.text || "TODO_按钮文字") + icon + ")";
+  }
+  if (n.wkey === "prop") {
+    return host + ".prop(state, " + pyStr(pyPropName(n, todo)) +
+      (c.label ? (", text=" + pyStr(c.label)) : "") + ")";
+  }
+  if (n.wkey === "textbox") {
+    var ln = Number(c.lines) > 0 ? Math.min(10, Number(c.lines)) : 3;
+    return host + ".textbox(state, " + pyStr(pyPropName(n, todo)) +
+      (c.placeholder ? (", text=" + pyStr(c.placeholder)) : "") +
+      ", initial_visible_lines=" + ln + ")";
+  }
+  todo.push("app.js 认识的控件「" + n.wkey + "」没有对应的代码翻译，人工补");
+  return "# ⚠ 未知控件 " + n.wkey + "：app.js 与这份导出不同步，请人工补这一行";
+}
+
+function buildPy() {
+  var out = [];
+  var todo = [];
+  var used = {};
+  var now = new Date().toISOString().replace("T", " ").slice(0, 19);
+  out.push("# -*- coding: utf-8 -*-");
+  out.push("#");
+  out.push("# ⚠ " + UNVERIFIED_NOTICE);
+  out.push("#");
+  out.push("# 由 UI Workbench 从「" + TAB_LABELS[activeTab] + "」界面的积木树导出，生成时间 "
+    + now + "，共 " + proposal.length + " 块。");
+  out.push("# 积木的先后顺序 = 面板从上到下的顺序；容器积木 = 一层 layout 容器，");
+  out.push("# 容器里的子积木就画在它下面那几行。");
+  out.push("");
+  out.push("");
+  out.push("def draw_" + activeTab + "_content(layout, state):");
+  out.push('    """「' + TAB_LABELS[activeTab] + '」界面。' + UNVERIFIED_NOTICE + '"""');
+  if (!proposal.length) {
+    out.push("    # 这一份还没有积木：Blender 侧这里也应该是空的。");
+  } else {
+    pyLevel(out, todo, used, null, "layout", 1);
+  }
+  out.push("");
+  out.push("");
+  out.push("# ---- 落笔前必须人工处理的 " + todo.length + " 处 ----");
+  if (!todo.length) {
+    out.push("# （没有发现缺算子名 / 缺属性名的地方。但这段代码仍然没在 Blender 里跑过，");
+    out.push("#   至少要先把整段贴进 Blender 看一眼渲染结果，再合进 ui.py。）");
+  } else {
+    todo.forEach(function (t, i) { out.push("# " + (i + 1) + ". " + t); });
+  }
+  return out.join("\n");
+}
+
+/* ---------------- 方案说明（Markdown）----------------
+   这是「告诉你」的主渠道，所以格式必须干净：只讲搭了什么、你想了什么、
+   哪里降级了、哪些还没验证。一行调试信息都不塞。 */
+function mdIndent(depth) { return new Array(depth + 1).join("  "); }
+
+function mdBlock(n, depth) {
+  var ind = mdIndent(depth);
+  var c = n.content || {};
+  var head = ind + "- **" + n.label + "**（" + n.wkey + "）";
+  if (n.downgraded) {
+    return [head + " —— 降级项，Blender 里做不到，不生成代码",
+      ind + "  - 原需求：" + n.label,
+      ind + "  - 拦路：" + (n.blocker || "（没记）"),
+      ind + "  - 改成：" + (n.fallback || "（没记）")];
+  }
+  var lines = [head];
+  lines.push(ind + "  - 元素 ID：" + (n.id ? ("`" + n.id + "`") : "（没填）"));
+  lines.push(ind + "  - 代码形态：" + n.uiloayout);
+  if (n.params) { lines.push(ind + "  - 参数：" + n.params); }
+  var bits = [];
+  var spec = contentSpec(n.wkey);
+  if (spec) {
+    spec.forEach(function (f) {
+      var v = c[f.field];
+      if (v !== undefined && v !== null && v !== "") {
+        bits.push(f.label + " = " + v);
+      }
+    });
+  }
+  if (bits.length) { lines.push(ind + "  - 内容：" + bits.join("；")); }
+  if (n.errors && n.errors.length) {
+    n.errors.forEach(function (e) {
+      lines.push(ind + "  - ⚠ 参数被拦：" + e.msg);
+    });
+  }
+  var kids = childrenOf(n.uid);
+  if (kids.length) {
+    lines.push(ind + "  - 归属：容器，装了 " + kids.length + " 块子积木");
+    kids.forEach(function (k) {
+      lines.push.apply(lines, mdBlock(k, depth + 2));
+    });
+  } else if (n.parent) {
+    lines.push(ind + "  - 归属：装在「" +
+      ((nodeByUid(n.parent) || {}).label || n.parent) + "」里");
+  } else {
+    lines.push(ind + "  - 归属：顶层");
+  }
+  return lines;
+}
+
+/* 一个界面的树形清单。序号打在每个顶层块的第一行上，不另起一行——
+   拆成「1.」+「- …」两行的话，Markdown 里会渲染成两个列表项。 */
+function mdTab(k, startNo) {
+  var list = boards[k];
+  var out = ["### " + TAB_LABELS[k] + "界面（" + list.length + " 块）"];
+  if (!list.length) {
+    out.push("");
+    out.push("还没搭任何积木。");
+    return out;
+  }
+  var i = startNo || 0;
+  list.forEach(function (n) {
+    if (n.parent) { return; }
+    var lines = mdBlock(n, 0);
+    i++;
+    lines[0] = lines[0].replace(/^- \*\*/, i + ". **");
+    out.push("");
+    out.push.apply(out, lines);
+  });
+  return out;
+}
+
+function buildMarkdown() {
+  var out = [];
+  var now = new Date().toISOString().replace("T", " ").slice(0, 19);
+  var noted = [];
+  var downs = [];
+  TAB_ORDER.forEach(function (k) {
+    boards[k].forEach(function (n) {
+      if (n.downgraded) { downs.push({ tab: TAB_LABELS[k], n: n }); }
+      if (n.note) {
+        noted.push("- **" + TAB_LABELS[k] + "** / " + n.label +
+          (n.id ? ("（`" + n.id + "`）") : "（没填元素 ID）") + "：" + n.note);
+      }
+    });
+  });
+
+  out.push("# 界面方案说明（UI Workbench 导出）");
+  out.push("");
+  out.push("导出时间：" + now + "　当前界面：**" + TAB_LABELS[activeTab] + "**");
+  out.push("");
+  out.push("> **这版还没有在真实 Blender 里验证过。**");
+  out.push("> 它是在工作台里用积木搭出来的草稿：控件、参数、内容都对着 Blender 实测过的");
+  out.push("> 能力边界填，但没有真的 render 过、真的点过。下面附的 ui.py 只是把积木树");
+  out.push("> 直译成代码，**不要直接粘进 ui.py 就当完成**——先在 Blender 里跑一遍看效果。");
+  out.push("");
+  out.push("## 一、当前搭了什么");
+  out.push("");
+  // 三个界面连续编号：编号只在「一」这一节里有意义，分头从 1 开始会撞号。
+  var seq = 0;
+  TAB_ORDER.forEach(function (k) {
+    out.push.apply(out, mdTab(k, seq));
+    seq += boards[k].filter(function (n) { return !n.parent; }).length;
+    out.push("");
+  });
+  out.push("## 二、你的标注原文");
+  out.push("");
+  if (!noted.length) {
+    out.push("（还没有任何标注。选中一块积木、展开它，在「我为什么这么摆」里写一句，");
+    out.push("这里就会逐条列出，并标明它挂在哪一块上。）");
+  } else {
+    out.push("以下是你写的每一条标注，原文照抄，括号里是它挂在哪块上：");
+    out.push("");
+    out.push.apply(out, noted);
+  }
+  out.push("");
+  out.push("## 三、降级方案（Blender 里做不到的）");
+  out.push("");
+  if (!downs.length) {
+    out.push("（没有降级项。）");
+  } else {
+    out.push("下面这些是「这条原需求做不到」的记录。代码里不生成对应内容——");
+    out.push("谎称它们会出现，预览和 ui.py 就都不诚实了。");
+    out.push("");
+    downs.forEach(function (d) {
+      out.push("- **" + d.n.label + "**（" + d.tab + "界面）");
+      out.push("  - 拦路：" + (d.n.blocker || "（没记）"));
+      out.push("  - 改成：" + (d.n.fallback || "（没记）"));
+    });
+  }
+  out.push("");
+  out.push("## 四、这版还没验证过");
+  out.push("");
+  out.push("- 没有在真实 Blender 里 render 过，控件的实际尺寸 / 对齐 / 分栏比例都可能要调。");
+  out.push("- ui.py 里凡是标着 TODO 的地方（缺算子名、缺属性名）都还没填。");
+  out.push("- 参数只对着实测过的允许清单填了，Blender 版本一变就该重测。");
+  out.push("");
+  return out.join("\n");
+}
+
+function buildJSON() {
+  return {
+    format: "ui_workbench_plan",
+    version: 1,
+    generated_at: new Date().toISOString(),
+    verified_in_blender: false,
+    notice: UNVERIFIED_NOTICE,
+    // annotations / proposal 这两个键原样留着：既有断言按
+    // `var payload = { ... }` 里的这两个字段核对导出内容，不能改名。
+    annotations: annotations,
+    proposal: proposal,
+    active_tab: activeTab,
+    boards: boards,
+    ui_py: buildPy(),
+    markdown: buildMarkdown()
+  };
+}
+
+/* ---------------- 拿文件：下载 + 复制（两条都有降级）---------------- */
+
+function downloadText(name, text, mime) {
+  var blob = new Blob([text], { type: mime || "text/plain;charset=utf-8" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  // Blob URL 不 revoke 的话会一直挂在文档的 URL 表上，导个十几次就攒一堆。
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 30000);
+  return name;
+}
+
+/* 剪贴板三级降级：
+     1) navigator.clipboard.writeText —— file:// 下多半没有，或直接被拒；
+     2) textarea + execCommand("copy") —— 老办法，Chrome/Edge 的 file:// 通常可行；
+     3) 选中文本留在页面上，让人自己 Ctrl+C —— 页面里那份 <pre> 本来就选得中。
+   任何一级都不许抛到外面：拿不到剪贴板是一次「没复制上」，不是页面崩了。 */
+function copyText(text, done) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        done("clipboard", "已复制到剪贴板");
+      }, function () { legacy(); });
+      return;
+    }
+  } catch (e) { /* 走到下面那一级去 */ }
+  legacy();
+
+  function legacy() {
+    var ta = document.createElement("textarea");
+    ta.className = "clipboard-fallback";
+    ta.setAttribute("readonly", "readonly");
+    ta.value = text;
+    // 必须真的挂在文档里：脱离文档的 textarea 选不中，execCommand 直接空转。
+    var host = el("py-out") && el("py-out").parentNode;
+    (host || document.body).appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    if (ok) {
+      if (ta.parentNode) { ta.parentNode.removeChild(ta); }
+      done("exec-command", "已复制到剪贴板（降级路径）");
+    } else {
+      ta.dataset.pick = "1";
+      done("select-only",
+        "这个浏览器不让脚本写剪贴板：代码已经全选在页面上了，按 Ctrl+C 复制");
+    }
+  }
+}
+
+function renderExportPanel() {
+  var host = el("export-btns");
+  if (!host) { return; }
+  host.innerHTML = "";
+  function btn(id, text, title, fn) {
+    var b = document.createElement("button");
+    b.id = id;
+    b.textContent = text;
+    b.title = title;
+    b.onclick = fn;
+    host.appendChild(b);
+  }
+  btn("x-py-copy", "复制 ui.py 代码",
+    "把生成的 Python 片段放进剪贴板。剪贴板不可用时会自动降级："
+    + "先把代码全选在页面上，你按 Ctrl+C 一样能拿走。",
+    function () {
+      copyText(buildPy(), function (how, msg) {
+        setStatus(msg + "（" + how + "）");
+        el("py-out").dataset.copied = how;
+      });
+    });
+  btn("x-py-dl", "下载 ui.py",
+    "存成 .py 文件。和上面那一份内容完全一样，只是路径不同。",
+    function () {
+      var n = downloadText("ui_plan_" + activeTab + ".py", buildPy(),
+                           "text/x-python;charset=utf-8");
+      setStatus("已下载 " + n + "（草稿，未在 Blender 里验证过）");
+    });
+  btn("x-md-dl", "下载方案说明（Markdown）",
+    "一份人能读、也能据此写实施计划的文档：搭了什么、你的标注原文、"
+    + "哪些降级了、哪些还没验证。",
+    function () {
+      var n = downloadText("ui_plan_" + activeTab + ".md", buildMarkdown(),
+                           "text/markdown;charset=utf-8");
+      setStatus("已下载 " + n);
+    });
+  btn("x-json-dl", "下载方案文件（JSON）",
+    "三个界面的完整存档（含内容 / 归属 / 标注 / 生成的那份 ui.py），"
+    + "以后接着改就靠它。取代了原来那个「导出标注」按钮——那是同一份数据的旧壳。",
+    function () {
+      var n = downloadText("ui_plan.json",
+                           JSON.stringify(buildJSON(), null, 2),
+                           "application/json");
+      setStatus("已下载 " + n + "（三个界面 " +
+        TAB_ORDER.map(function (k) { return TAB_LABELS[k] + " " + boards[k].length; }).join(" / ") +
+        "）");
+    });
+  renderPyOut();
+}
+
+function renderPyOut() {
+  var pre = el("py-out");
+  if (pre) { pre.textContent = buildPy(); }
+}
+
+/* #proposal-select：从右栏点 <-> 从左栏点，两个方向各走一遍真 click。
+   存在理由：这一轮新增的双向选中同步没有任何既成钩子覆盖，
+   少一个钩子它就只剩「代码看着对」。
+
+   报的每一条都是浏览器真算出来的东西：
+     pvSel / pnodeSel  —— 两侧各标了几块（真点一次之后的 DOM 状态）
+     outline*          —— getComputedStyle 读出来的描边，不是我们写的类名。
+                          把 --accent 换成任何别的色值，这三条立刻红。
+     covered / inside  —— 被描边的容器区域里，装着几块子积木、其中几块
+                          真的落在那道描边围出来的矩形之内（几何判定）。
+                          只描标题行的话 inside 会掉到 0。
+     pgroupSel         —— 右栏那个容器的分组框是不是也跟上了 */
+function selectReport(fromPreview) {
+  var btn = el("demo-panel-btn");
+  if (btn) { btn.click(); }
+  /* 挑 chat.options（规格竖排）：它是容器，里面还套着「细节横排 -> 三个勾选
+     选项」，选中它一次能同时验掉「容器区域含子块都被描边」和「只描标题行不算」。 */
+  var target = proposal.filter(function (n) { return n.id === "chat.options"; })[0]
+            || proposal.filter(function (n) { return isContainer(n); })[0];
+
+  var attrs = {};
+  if (target) {
+    var box = el("canvas").querySelector('.pnode[data-uid="' + target.uid + '"]');
+    if (fromPreview) {
+      var pv = pvOf(target.uid);
+      if (pv) {
+        pv.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      }
+    } else if (box) {
+      box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+  }
+
+  var sel = selUid ? pvOf(selUid) : null;
+  var cs = sel ? getComputedStyle(sel) : null;
+  var covered = 0;
+  var inside = 0;
+  if (sel) {
+    var kids = sel.querySelectorAll("[data-pvuid]");
+    covered = kids.length;
+    var sr = sel.getBoundingClientRect();
+    for (var i = 0; i < kids.length; i++) {
+      var kr = kids[i].getBoundingClientRect();
+      // 判定用矩形包含而不是 DOM 包含：DOM 包含证明不了「描边真的圈住了它」，
+      // 而圈不住正是「只描了标题行」那种做法的症状。
+      if (kr.left >= sr.left - 2 && kr.right <= sr.right + 2 &&
+          kr.top >= sr.top - 2 && kr.bottom <= sr.bottom + 2) {
+        inside++;
+      }
+    }
+  }
+  attrs.selUid = String(selUid || "");
+  attrs.targetId = target ? target.id : "";
+  attrs.pvSel = String(el("preview").querySelectorAll('[data-pvuid][data-sel="1"]').length);
+  attrs.pnodeSel = String(el("canvas").querySelectorAll('.pnode[data-sel="1"]').length);
+  attrs.pgroupSel = String(el("canvas").querySelectorAll('.pgroup[data-sel="1"]').length);
+  attrs.outlineColor = cs ? cs.outlineColor : "";
+  attrs.outlineWidth = cs ? cs.outlineWidth : "";
+  attrs.outlineStyle = cs ? cs.outlineStyle : "";
+  attrs.covered = String(covered);
+  attrs.inside = String(inside);
+  attrs.status = el("status").textContent || "";
+
+  /* 再点一次 = 取消。量的是点完之后两侧各剩几个标记。 */
+  var box2 = el("canvas").querySelector('.pnode[data-uid="' + (selUid || "") + '"]');
+  if (box2) { box2.dispatchEvent(new MouseEvent("click", { bubbles: true })); }
+  attrs.togglePv = String(el("preview").querySelectorAll('[data-pvuid][data-sel="1"]').length);
+  attrs.togglePnode = String(el("canvas").querySelectorAll('.pnode[data-sel="1"]').length);
+  attrs.toggleStatus = el("status").textContent || "";
+
+  /* 点空白：点在预览根上（它自己没有 data-pvuid，closest 认不到块）。
+     已经取消过了，所以这一步单独量的是「点空白不会凭空把谁选中」。 */
+  el("preview").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  attrs.blankPv = String(el("preview").querySelectorAll('[data-pvuid][data-sel="1"]').length);
+  attrs.blankSelUid = String(selUid || "");
+
+  /* 反向：这次从预览点，量右栏是不是跟着选中（上面那次量的是预览）。
+     留一个真的选中态在页面上，给那张截图用。 */
+  if (target) {
+    var pv2 = pvOf(target.uid);
+    if (pv2) { pv2.dispatchEvent(new MouseEvent("click", { bubbles: true })); }
+  }
+  attrs.backPvSel = String(el("preview").querySelectorAll('[data-pvuid][data-sel="1"]').length);
+  attrs.backPnodeSel = String(el("canvas").querySelectorAll('.pnode[data-sel="1"]').length);
+
+  appendReport("select-report", attrs);
+  setStatus("DEMO select 描边 " + attrs.pvSel + " / 容器内 " +
+    inside + "/" + covered + " 子块在框内");
+}
+
+/* #proposal-select-leaf：从预览点一个**叶子**块（多行输入框）。
+   和 #proposal-select 分开是因为叶子没有子块，量的是另一件事：
+   描边应当只圈住它自己那一格，不牵连容器里的别的块。
+   也给「点预览里的区域」那张截图用——容器那张与 #proposal-select 长得一样。 */
+function selectLeafReport() {
+  var btn = el("demo-panel-btn");
+  if (btn) { btn.click(); }
+  var target = proposal.filter(function (n) { return n.wkey === "textbox"; })[0];
+  if (target) {
+    var pv = pvOf(target.uid);
+    if (pv) { pv.dispatchEvent(new MouseEvent("click", { bubbles: true })); }
+  }
+  var sel = selUid ? pvOf(selUid) : null;
+  var cs = sel ? getComputedStyle(sel) : null;
+  appendReport("select-leaf-report", {
+    targetWkey: target ? target.wkey : "",
+    selUid: String(selUid || ""),
+    pvSel: String(el("preview").querySelectorAll('[data-pvuid][data-sel="1"]').length),
+    pnodeSel: String(el("canvas").querySelectorAll('.pnode[data-sel="1"]').length),
+    covered: String(sel ? sel.querySelectorAll("[data-pvuid]").length : -1),
+    outlineColor: cs ? cs.outlineColor : "",
+    outlineWidth: cs ? cs.outlineWidth : "",
+    status: el("status").textContent || ""
+  });
+  setStatus("DEMO select-leaf 从预览点中一个叶子块");
+}
+
+/* #proposal-save：把方案写进 localStorage，再原样读回来逐字核对。
+   核对的是「读回来的东西」而不是「写的时候没抛异常」——JSON.stringify
+   对着一个带环的对象会安静地抛 TypeError，对着一个少字段的对象会安静地
+   写出去，两种都得在这里现形。 */
+function saveReport() {
+  var btn = el("demo-panel-btn");
+  if (btn) { btn.click(); }
+  /* 真敲一次标注进去：只存内容的存盘，标注丢了照样全绿，
+     而标注恰恰是「告诉你」这件事里唯一不可替代的部分。 */
+  var target = proposal.filter(function (n) { return n.id === "chat.stream"; })[0];
+  var noteBox = null;
+  if (target) {
+    target.expanded = true;
+    renderCanvas();
+    var tbox = el("canvas").querySelector('.pnode[data-uid="' + target.uid + '"]');
+    noteBox = tbox ? tbox.querySelector('[data-field="note"]') : null;
+  }
+  if (noteBox) {
+    noteBox.value = "这句注解必须在刷新之后还在";
+    noteBox.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  var blocks = proposal.length;
+  var wrote = savePlan();
+
+  var back = null;
+  try {
+    back = JSON.parse(localStorage.getItem(PLAN_KEY) || "null");
+  } catch (e) {
+    back = null;
+  }
+  var got = back && back.boards && back.boards.chat ? back.boards.chat : [];
+  var rt = got.filter(function (n) { return n.id === "chat.stream"; })[0];
+  var nested = got.filter(function (n) { return n.parent; }).length;
+
+  appendReport("save-report", {
+    lsOK: lsOK ? "1" : "0",
+    wrote: wrote ? "1" : "0",
+    blocks: String(blocks),
+    stored: String(got.length),
+    nested: String(nested),
+    note: rt ? (rt.note || "") : "",
+    content: rt && rt.content ? JSON.stringify(rt.content) : "",
+    parent: rt ? String(rt.parent || "") : "",
+    uidSeq: String(back && back.uid_seq >= 0 ? back.uid_seq : -1),
+    banner: el("store-warn").hidden ? "" : "shown"
+  });
+  setStatus("DEMO save 存了 " + got.length + " / " + blocks + " 块");
+}
+
+/* #proposal-restore：另一个页面（同一份浏览器档案，所以 localStorage 是通的）
+   冷启动时把存档读回来。跑在两个不同的 --dump-dom 里，与真实刷新同一条路径。 */
+function restoreReport() {
+  var back = loadPlan();
+  var got = back && back.boards && back.boards.chat ? back.boards.chat : [];
+  var rt = got.filter(function (n) { return n.id === "chat.stream"; })[0];
+  /* 报用户实际会看到的那句，而不是钩子自己编的一句：
+     loadState 收尾时会用它改写状态条，所以它就是真正的出口。 */
+  var notice = restoreNotice();
+  setStatus(notice);
+  appendReport("restore-report", {
+    lsOK: lsOK ? "1" : "0",
+    restored: String(proposal.length),
+    blocks: String(boards.chat.length),
+    detail: String(boards.detail.length),
+    settings: String(boards.settings.length),
+    note: rt ? (rt.note || "") : "",
+    nested: String(got.filter(function (n) { return n.parent; }).length),
+    uidSeq: String(uidSeq),
+    status: notice
+  });
+  setStatus(notice || ("DEMO restore 恢复 " + proposal.length + " 块"));
+}
+
+/* #proposal-export：把三种导出各真跑一遍，把产物报出来。
+   报的必须是「生成出来的字符串」，不是「有没有点过按钮」——
+   生成器本身写错了（少一层缩进、把 note 吞了）的话，点一百次也是错的。 */
+function exportReport() {
+  var btn = el("demo-panel-btn");
+  if (btn) { btn.click(); }
+  /* 示例面板里没有分隔线，所以顺手真点一个上来：
+     翻译器里 separator / scale_y 那两条分支，光靠示例数据永远走不到，
+     「代码看着对」就又变成了唯一证据。 */
+  var vb = el("vocab-bar").querySelector('button[data-wkey="separator"]');
+  if (vb) { vb.click(); }
+  var py = buildPy();
+  var md = buildMarkdown();
+  var js = buildJSON();
+  /* 标注那一条必须对着真数据核对：随便找一条带标注的积木，
+     检查它的原文真的进了 Markdown。写死一句示例文案的话，
+     生成器把 note 整个吞掉也照样绿。 */
+  var noted = proposal.filter(function (n) { return !!n.note; })[0];
+  /* 缩进是这个生成器最要紧的形状：容器必须比它的直接孩子深正好一层。
+     量法：找到第一行「变量 = 某容器.xxx(」的容器语句，再往下找第一条
+     非注释语句，两行的列差必须正好是 4。
+     之前那版量的是「box 行和后面某条 label 行的差」——它们其实是兄弟，
+     差值 0 看着像失败，其实是探针挑错了行。 */
+  var depths = [];
+  var lines = py.split("\n");
+  var CONTAINER_CALL = /^\s*(\w+) = [\w.]+\.(row|column|box|split|grid_flow|panel)\(/;
+  for (var i = 0; i < lines.length && depths.length < 3; i++) {
+    var cm = CONTAINER_CALL.exec(lines[i]);
+    if (!cm) { continue; }
+    for (var j = i + 1; j < lines.length; j++) {
+      var t = lines[j];
+      if (!t.trim() || /^\s*#/.test(t)) { continue; }
+      depths.push(t.length - t.replace(/^\s*/, "").length -
+                  (lines[i].length - lines[i].replace(/^\s*/, "").length));
+      break;
+    }
+  }
+  var pyLines = lines.length;
+  /* 数的是「哪种调用出现了几次」，不是「有几行字里写着 layout.」：
+     子积木画在容器变量上（row.operator(...)），不是全都挂在 layout 上，
+     按 layout.operator( 数会一个都数不到——这条断言就是这么写错过一次的。 */
+  var sepLines = lines.filter(function (l) {
+    return /\.separator\(\)/.test(l);
+  }).length;
+  var opLines = lines.filter(function (l) {
+    return /\.operator\(/.test(l);
+  }).length;
+  /* TODO 只数「代码里那些占位」，不算文末清单里复述它们的那几行：
+     清单条目本身也写着 TODO_填算子名，一并数进去就翻倍了。 */
+  var cut = lines.findIndex(function (l) {
+    return /落笔前必须人工处理的/.test(l);
+  });
+  var codePart = lines.slice(0, cut < 0 ? lines.length : cut).join("\n");
+  appendReport("export-report", {
+    pyLines: String(pyLines),
+    pyHead: lines.slice(0, 4).join(" / ").slice(0, 200),
+    pyHasFunc: /def draw_chat_content\(layout, state\):/.test(py) ? "1" : "0",
+    pyHasIndent: depths.length ? String(depths[0]) : "",
+    pyIndentN: String(depths.length),
+    pyHasNote: noted && py.indexOf(noted.note) >= 0 ? "1" : "0",
+    pyHasUnverified: (py.match(/未经验证/g) || []).length,
+    pyHasSep: String(sepLines),
+    pyHasOp: String(opLines),
+    pyTodo: String((codePart.match(/TODO/g) || []).length),
+    pyChecks: (py.match(/必须人工处理的 (\d+) 处/) || [0, "?"])[1],
+    mdLines: String(md.split("\n").length),
+    mdHasTree: /## 一、当前搭了什么/.test(md) ? "1" : "0",
+    mdHasNotes: /## 二、你的标注原文/.test(md) ? "1" : "0",
+    mdHasDown: /## 三、降级方案/.test(md) ? "1" : "0",
+    mdHasUnverified: /还没有在真实 Blender 里验证过/.test(md) ? "1" : "0",
+    mdHasNoteText: noted && md.indexOf(noted.note) >= 0 ? "1" : "0",
+    mdNoteId: noted ? (noted.id || "") : "",
+    jsonKeys: Object.keys(js).sort().join(","),
+    jsonBoards: String(Object.keys(js.boards || {}).length),
+    jsonPy: js.ui_py === py ? "1" : "0",
+    jsonVerified: js.verified_in_blender === false ? "1" : "0",
+    pre: (el("py-out").textContent || "").length
+  });
+  setStatus("DEMO export ui.py " + pyLines + " 行 / 说明 " +
+    md.split("\n").length + " 行");
+}
+
 /* #proposal-demo-<tab> 里的 <tab>：子页签名，结尾可以缀一个 "-open"
    （全部展开，给「要看清树线」的那张截图用）。这里只做切分，
    switchTab 仍然只接受 boards 里真有的名字——写错页签名照样什么都不做。 */
@@ -2867,6 +3943,12 @@ function runDemoHook(hash) {
            : (h === "proposal-preview") ? "preview"
            : (h === "proposal-nest") ? "nest"
            : (h === "proposal-move") ? "move"
+           : (h === "proposal-select") ? "select"
+           : (h === "proposal-select-back") ? "select-back"
+           : (h === "proposal-select-leaf") ? "select-leaf"
+           : (h === "proposal-save") ? "save"
+           : (h === "proposal-restore") ? "restore"
+           : (h === "proposal-export") ? "export"
            : (h.indexOf("proposal-demo-") === 0) ? "demo-" + demoTabSpec(h.slice("proposal-demo-".length))
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
@@ -2883,6 +3965,12 @@ function runDemoHook(hash) {
     if (kind === "panel") { panelReport(); return; }
     if (kind === "nest") { nestReport(); return; }
     if (kind === "move") { moveReport(); return; }
+    if (kind === "select") { selectReport(false); return; }
+    if (kind === "select-back") { selectReport(true); return; }
+    if (kind === "select-leaf") { selectLeafReport(); return; }
+    if (kind === "save") { saveReport(); return; }
+    if (kind === "restore") { restoreReport(); return; }
+    if (kind === "export") { exportReport(); return; }
     /* #proposal-demo-<tab>：切到那个子页签并插入它自己的示例面板。
        给无头截图用——人眼要看的就是「切到详情之后，右边是不是详情那套积木」，
        而这件事只有走真实的 switchTab + 真实的示例面板按钮才说得清。

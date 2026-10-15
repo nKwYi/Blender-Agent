@@ -365,3 +365,60 @@ button.chip {
 .pnode .phead { cursor: grab; }
 .pnode input, .pnode textarea { cursor: text; }
 .pnode button { cursor: pointer; }
+
+/* ---- 选中：右栏积木 <-> 左栏预览，双向同步 ----
+   描边色取 --accent = #4772b3，那是 native_api.json 实测的 panel_active，
+   也是这张实测色板（文件头 23 个色值）里**唯一的蓝**——正好是 Blender 里
+   你点东西时看到的那个选中色。换任何一个色值都不是「另一种风格」而是谎报：
+   面板里根本没画过那道边。
+
+   为什么用 outline 而不是 border：outline 不占布局，选中 / 取消选中不会
+   让积木和预览里的其他块跳一下位置——那是描边最讨人嫌的副作用。
+
+   为什么用 data-sel 而不是加 class：.pnode 的 className 被既有断言按
+   `class="note pnode"[^>]*` 的字面量匹配（加一个 class 就整片打瞎），
+   .pv-row / .pv-grid 之类也有一堆按类名查形状的断言。改用属性选择器，
+   既有断言一行都不用动，新状态也不会混进它们的口径里。
+
+   容器选中时整圈描边：预览里的容器节点真的是它的孩子们的祖先节点，
+   一道 outline 就把「这一整块，含里面所有子块」全圈住了——不是只描标题行。 */
+[data-pvuid] { cursor: pointer; }
+[data-pvuid][data-sel="1"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.pnode[data-sel="1"] { border-color: var(--accent); }
+.pnode[data-sel="1"] .phead b { color: var(--text); }
+.pgroup[data-sel="1"] { border-color: var(--accent); }
+
+/* ---- 存不了的时候，把话说在页面最上面 ----
+   不靠红也不靠绿（主题里都没有）：亮边框 + 一句人话，位置在页眉正下方，
+   刷新页面第一个进眼的地方就是它。 */
+#store-warn {
+  background: var(--hover); border: 1px solid var(--mark);
+  border-radius: 4px; margin: 6px 12px; padding: 6px 10px; color: var(--text);
+}
+
+/* ---- 导出面板 ----
+   零依赖：不引任何代码高亮库，也不引图片。ui.py 片段就是一段 <pre>，
+   等宽 + 可选中，用户自己看着改比什么高亮都靠得住。 */
+#export-panel {
+  margin: 10px 12px 20px; padding: 8px 10px 12px;
+  border: 1px solid var(--border); border-radius: 4px;
+}
+#export-panel h3 { font-size: 13px; font-weight: normal; color: var(--text); margin: 0 0 4px; }
+#export-panel .code-cap { color: var(--text-dim); font-size: 11px; margin: 8px 0 4px; }
+#export-panel .code-cap b { font-weight: normal; color: var(--text); }
+#py-out {
+  margin: 0; max-height: 420px; overflow: auto; white-space: pre;
+  background: var(--inner); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px;
+  font: 12px/1.5 Consolas, "Courier New", monospace;
+}
+/* 剪贴板降级用的那口 textarea：必须真的在文档里、真的被选中，
+   execCommand 才抄得到；抄成功了当场摘掉，抄不成就留在页面上让用户自己
+   按 Ctrl+C（data-pick="1" 是给无头测试看的）。 */
+.clipboard-fallback {
+  position: fixed; left: -9999px; top: 0;
+  font: 12px/1.5 Consolas, monospace;
+}

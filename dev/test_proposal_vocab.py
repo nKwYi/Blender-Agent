@@ -260,6 +260,7 @@ def main():
     # dom_checks 查 DOM。缺一侧就会出现「数据里有图示、界面上没画」。
     demo_static_checks(vocab)
     preview_static_checks(vocab)
+    task17_static_checks()
 
     dom_checks()
 
@@ -1041,6 +1042,14 @@ def dom_checks():
         preview_checks(dump(exe, url + "#proposal-preview", profile), vjson)
         nest_checks(dump(exe, url + "#proposal-nest", profile), vjson)
         move_checks(dump(exe, url + "#proposal-move", profile), vjson)
+        # Task 17：选中双向同步 / 自动保存 / 三种导出。
+        # save 与 restore 必须是两次不同的页面加载（同一份浏览器档案），
+        # 否则「刷新不丢」就退化成了「同一个页面里读自己刚写的东西」。
+        select_checks(dump(exe, url + "#proposal-select", profile))
+        select_leaf_checks(dump(exe, url + "#proposal-select-leaf", profile))
+        save_checks(dump(exe, url + "#proposal-save", profile),
+                    dump(exe, url + "#proposal-restore", profile))
+        export_checks(dump(exe, url + "#proposal-export", profile), vjson)
     finally:
         shutil.rmtree(profile, ignore_errors=True)
 
@@ -1913,6 +1922,471 @@ def _fb_for(rkey):
         if r["key"] == rkey:
             return r["fallback"]
     return "<missing>"
+
+
+def strip_js_comments(src):
+    """抹掉 JS 注释：块注释与行注释都抹。
+
+    js_body 只抹 /* */，不抹 //。于是「函数体里有 execCommand」这类断言
+    会被**行注释里的那个词**满足 —— 代码删干净了断言照样绿。
+    这次真栽过：把 copyText 里的 execCommand 那一行删掉，测试仍然绿，
+    因为上面两行注释里写着「execCommand 直接空转」。
+
+    行注释只在 // 之前的引号成对时才算注释，免得把字符串里的
+    "https://…" 之类从中间截断。
+    """
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    out = []
+    for line in src.split("\n"):
+        cut = None
+        pos = line.find("//")
+        while pos >= 0:
+            if line.count('"', 0, pos) % 2 == 0:
+                cut = pos
+                break
+            nxt = line.find("//", pos + 2)
+            if nxt < 0:
+                break
+            pos = nxt
+        out.append(line if cut is None else line[:cut])
+    return "\n".join(out)
+
+
+def task17_static_checks():
+    """Task 17 静态侧：选中描边 + 自动保存 + 三种导出的契约。
+
+    这一层只查「结构上做没做」；真正证明行为的在 select_checks /
+    save_checks / export_checks 三条 DOM 腿里——静态检查看不见浏览器
+    算出来的描边、也看不见 localStorage 到底存没存进去。
+    """
+    app = read(os.path.join(WB, "app.js"))
+    html = read(os.path.join(WB, "index.html"))
+    css = read(os.path.join(WB, "style.css"))
+    css_scan = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    app_scan = strip_js_comments(app)
+    # HTML 注释也要抹掉：导出面板那段注释里提到了被并掉的旧按钮，
+    # 留着注释再扫字面量，这条断言就会永远红——它量的是界面上有没有按钮。
+    html_scan = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+
+    # ---------- 出口：四个挂载点都得在，且都在提案视图里 ----------
+    for eid in ("export-panel", "export-btns", "py-out", "store-warn"):
+        ck("t17_html_has_%s" % eid.replace("-", "_"), 'id="%s"' % eid in html,
+           "index.html 少了 id=\"%s\"" % eid)
+    ck("t17_export_panel_inside_proposal",
+       re.search(r'id="view-proposal".*?id="export-panel"', html, re.S) is not None,
+       "导出面板不在提案视图里")
+    # 旧的那个「导出标注」按钮必须已经并掉：它导的就是方案 JSON 的同一份数据，
+    # 留着两个含义重叠的按钮，用户会把标注存成一个自己认不出的文件名。
+    ck("t17_no_orphan_export_button",
+       'id="export"' not in html_scan and "导出标注" not in html_scan,
+       "页眉还留着旧的「导出标注」按钮，与「下载方案文件（JSON）」含义重叠")
+
+    # ---------- 描边色：只许是实测色板里那一个蓝 ----------
+    used = sorted(set(re.findall(r"#[0-9a-fA-F]{3,6}\b", css_scan)))
+
+    def bluish(h):
+        if len(h) == 4:
+            h = "#" + "".join(c * 2 for c in h[1:])
+        r, g, b = int(h[1:3], 16), int(h[3:5], 16), int(h[5:7], 16)
+        return b > r + 20 and b > g + 20
+
+    blues = [c for c in used if bluish(c)]
+    ck("t17_accent_is_only_blue", blues == ["#4772b3"],
+       "style.css 里蓝色不止 #4772b3 一个：%s（描边只能挑那一个）" % blues)
+    m = re.search(r"--accent:\s*(#[0-9a-fA-F]{3,6})", css_scan)
+    ck("t17_accent_var_value", bool(m) and m.group(1).lower() == "#4772b3",
+       "--accent 应当是 #4772b3，实际 %s" % (m.group(1) if m else "<没找到>"))
+    # 描边本身必须真的用那个变量，而不是在规则里又写一遍十六进制——
+    # 写死的话换主题时描边会留在旧颜色上，而断言还在绿。
+    sel_rule = re.search(r'\[data-pvuid\]\[data-sel="1"\]\s*\{([^}]*)\}', css_scan)
+    ck("t17_outline_rule_uses_var",
+       bool(sel_rule) and "var(--accent)" in sel_rule.group(1),
+       "选中描边规则没有用 var(--accent)：%s" % (sel_rule.group(1) if sel_rule else "<没找到>"))
+    ck("t17_outline_rule_shape",
+       bool(sel_rule) and re.search(r"outline:\s*2px solid", sel_rule.group(1)) is not None,
+       "描边应当是 2px solid 的 outline（不占布局，选中时别的块不会跳位）：%s"
+       % (sel_rule.group(1) if sel_rule else "<没找到>"))
+    ck("t17_css_uses_outline_not_border",
+       bool(sel_rule) and "border" not in sel_rule.group(1),
+       "描边改用 border 会占布局：%s" % (sel_rule.group(1) if sel_rule else ""))
+
+    # ---------- 状态写在属性上，不许动 className ----------
+    # 真正打标记的是 mark()，paintSelection 只负责找到该标的那些元素，
+    # 所以两条一起看：只看 paintSelection 会以为它没写任何东西。
+    paint = js_body(app_scan, "function paintSelection") + \
+        js_body(app_scan, "function mark(e, on)")
+    ck("t17_paint_uses_dataset", bool(paint) and "dataset.sel" in paint,
+       "选中标记必须写 data-sel：%r" % paint[:160])
+    ck("t17_paint_never_touches_class",
+       bool(paint) and "className" not in paint,
+       "动了 className：既有断言按 class=\"note pnode\" 的字面量查形状，"
+       "加 class 会把它们整片打瞎。%r" % paint[:160])
+    ck("t17_paint_clears_sel",
+       bool(paint) and "delete" in paint,
+       "取消选中必须真的摘掉 data-sel：留个残留属性，"
+       "「两侧各剩几个标记」那几条数出来的就是假数。%r" % paint[:160])
+    ck("t17_paint_covers_both_panes",
+       'querySelectorAll(".pnode[data-uid]")' in paint and
+       'querySelectorAll("[data-pvuid]")' in paint and
+       'querySelectorAll(".pgroup[data-owner]")' in paint,
+       "预览节点、右栏积木、容器的分组框三处都得跟上")
+    ck("t17_pv_carries_uid_marker",
+       re.search(r'd\.dataset\.pvuid\s*=\s*n\.uid', app_scan) is not None,
+       "预览节点没挂 data-pvuid，就没法和右栏积木一一对应")
+
+    # ---------- 选中：双向 + 再点一次取消 ----------
+    sel = js_body(app_scan, "function selectBlock")
+    ck("t17_toggle_off", bool(sel) and "null : uid" in sel,
+       "再点一次必须取消选中：%r" % sel[:200])
+    bind = js_body(app_scan, "function bindSelection")
+    ck("t17_binds_both_panes",
+       bool(bind) and bind.count("addEventListener") == 2 and
+       '.closest(".pnode[data-uid]")' in bind and
+       '.closest("[data-pvuid]")' in bind,
+       "两个方向都得绑上：右栏 .pnode 与预览 [data-pvuid] 各一个监听。%r" % bind[:200])
+    ck("t17_blank_click_clears",
+       bool(bind) and "? box.dataset.uid : null" in bind and
+       "? n.dataset.pvuid : null" in bind,
+       "点到空白处要传 null（= 取消），不能什么都不做：%r" % bind[:240])
+    ck("t17_select_ignores_buttons",
+       bool(bind) and 'closest("input, textarea, button")' in bind,
+       "按钮 / 输入框上的点击不该顺手改选中：会把「删这一块」变成「先选中再删」")
+
+    # ---------- 自动保存 ----------
+    ck("t17_plan_key", 'var PLAN_KEY = "uw_plan_v1"' in app_scan, "没有方案存档的键名")
+    save = js_body(app_scan, "function savePlan")
+    ck("t17_saveplan_guards_lsok",
+       bool(save) and "if (!lsOK)" in save and "PLAN_KEY" in save,
+       "savePlan 必须沿用 lsOK 降级，file:// 下不能抛：%r" % save[:200])
+    pay = js_body(app_scan, "function planPayload")
+    ck("t17_saveplan_saves_all_boards", "boards: boards" in pay,
+       "存档必须含三个界面，只存当前界面等于把另外两个丢了")
+    ck("t17_save_hangs_off_rendercanvas",
+       "savePlan()" in js_body(app_scan, "function renderCanvas"),
+       "自动保存没挂在 renderCanvas 上：漏挂一条路径（改元素 ID、改标注）就等于丢数据")
+    # 元素 ID 与标注这两个输入框刻意不重画画布（会把输入框换掉、光标跳走），
+    # 所以它们必须各自显式存一次盘，否则刷新必丢——而标注恰恰是「告诉你」那件事里
+    # 唯一不可替代的部分。
+    ck("t17_id_input_saves",
+       "n.id = idIn.value; savePlan();" in app_scan,
+       "元素 ID 输入框没有存盘")
+    ck("t17_note_input_saves",
+       "n.note = ta.value; savePlan();" in app_scan,
+       "标注输入框没有存盘：用户写完刷新就没了")
+    ck("t17_restore_on_boot",
+       "restorePlan();" in js_body(app_scan, "function init"),
+       "init 里没有恢复存档：不恢复就不是「刷新不丢」")
+    # 存档读回来必须补齐字段：老存档少一个键就整份作废太霸道，用户攒的东西没了。
+    ck("t17_normalize_node", "function normalizeNode" in app_scan,
+       "没有逐块补齐字段的 normalizeNode")
+
+    # ---------- 导出：ui.py / Markdown / JSON ----------
+    ck("t17_py_func_shape",
+       re.search(r'out\.push\("def draw_" \+ activeTab \+ "_content\(layout, state\):"\)',
+                 app_scan) is not None,
+       "ui.py 没有生成 draw_<界面>_content(layout, state) 这层壳")
+    ck("t17_py_declares_unverified",
+       "UNVERIFIED_NOTICE" in app_scan and "未经验证" in app_scan,
+       "ui.py 没有声明「未经验证」")
+    lvl = js_body(app_scan, "function pyLevel")
+    ck("t17_py_comments_every_block",
+       bool(lvl) and "n.id" in lvl and "pyNoteLines" in lvl and
+       re.search(r'out\.push\(head \+ "  —— 工作台自动生成，未经验证"\)', app_scan) is not None,
+       "每一块都要带「元素 ID + 你的标注 + 未经验证」的注释")
+    # row / column 共用一条分支（同一个调用形式，差别只在 wkey），
+    # 所以静态侧认这一条分支，另外几个容器是各自写死的调用名。
+    ck("t17_py_translates_row_column",
+       bool(lvl) and 'host + "." + n.wkey + "(" + kwc + ")"' in lvl and
+       'base = (n.wkey === "row") ? "row" : "col"' in lvl,
+       "row / column 没有翻成 host.row(...) / host.column(...)")
+    for kind, call in (("box", '.box('), ("split", '.split('),
+                       ("grid_flow", '.grid_flow('), ("panel", '.panel(')):
+        ck("t17_py_translates_%s" % kind, ('host + "%s"' % call) in lvl,
+           "容器 %s 没有翻成 %s" % (kind, call.strip(".(")))
+    leaf = js_body(app_scan, "function pyLeaf")
+    for kind, call in (("label", ".label("), ("operator", ".operator("),
+                       ("prop", ".prop("), ("textbox", ".textbox(")):
+        ck("t17_py_translates_%s" % kind, (call in leaf),
+           "叶子 %s 没有翻成 host%s…" % (kind, call))
+    ck("t17_py_translates_separator", 'host + ".separator()"' in lvl,
+       "separator 没翻成代码")
+    ck("t17_py_translates_scale_y", 'host + ".scale_y = "' in lvl,
+       "scale_y 没翻成属性赋值")
+    ck("t17_py_indents_recursion",
+       bool(lvl) and "pyLevel(out, todo, used, n.uid, vn, depth + 1)" in lvl,
+       "容器没有把子积木缩进一层递归下去：嵌套会平铺，树就没了")
+    ck("t17_py_no_fake_codes",
+       "n.downgraded" in app_scan and re.search(
+           r"if \(n\.downgraded\) \{[\s\S]{0,400}?不生成代码", app_scan) is not None,
+       "降级块不许生成代码：谎称它会出现，预览和代码都不诚实")
+    md = js_body(app_scan, "function buildMarkdown")
+    for sec in ("当前搭了什么", "你的标注原文", "降级方案", "这版还没验证过"):
+        ck("t17_md_section_%s" % sec[:6], sec in md, "方案说明缺「%s」这一节" % sec)
+    ck("t17_md_unverified", "还没有在真实 Blender 里验证过" in app_scan,
+       "方案说明必须写明这版没在真实 Blender 里验证过")
+    ck("t17_json_marked_unverified", "verified_in_blender: false" in app_scan,
+       "方案 JSON 必须标 verified_in_blender=false")
+    ck("t17_json_keeps_legacy_keys",
+       "annotations: annotations" in app_scan and "proposal: proposal" in app_scan,
+       "方案 JSON 必须仍带 annotations / proposal（既有断言按这两个字段核对导出）")
+
+    # ---------- 剪贴板降级：三级，一级都不许少 ----------
+    cp = js_body(app_scan, "function copyText")
+    ck("t17_clipboard_api", bool(cp) and "navigator.clipboard" in cp,
+       "没走 navigator.clipboard")
+    ck("t17_clipboard_exec_fallback", bool(cp) and "execCommand" in cp,
+       "file:// 下 clipboard API 多半没有，没有 execCommand 这级就彻底拿不到代码")
+    ck("t17_clipboard_manual_fallback",
+       bool(cp) and "select-only" in cp and re.search(r"ta\.select\(\)", cp) is not None,
+       "没有「选中文本让用户 Ctrl+C」这最后一级")
+    ck("t17_clipboard_swallowed",
+       bool(cp) and cp.count("catch") >= 2 and "done(" in cp,
+       "剪贴板失败不许抛到外面：一次「没复制上」不该让页面崩掉")
+    # 自检：strip_js_comments 必须真把行注释抹掉。留着它的话，上面那条
+    # 「函数体里有 execCommand」会被注释里的同一句话满足——代码删了照样绿。
+    ck("t17_comment_stripper_kills_line_comments",
+       "//" not in strip_js_comments("var a = 1;  // execCommand(x)\n") and
+       "//" in strip_js_comments("var u = \"https://x\";"),
+       "strip_js_comments 没抹掉行注释（静态断言会被注释字面量满足）")
+    ck("t17_download_revokes", "revokeObjectURL" in app_scan,
+       "Blob URL 不 revoke 会一直挂在文档的 URL 表上")
+
+
+def select_checks(page):
+    """Task 17：点积木 -> 左边预览描一圈，反之亦然。
+
+    读数全部来自浏览器算出来的样式与几何：
+      outlineColor/Width/Style —— getComputedStyle，不是我们写的选择器名。
+      covered / inside          —— 被选中的容器区域里装了几块子积木、其中几块
+                                  真的落在那道描边围出的矩形之内（几何判定）。
+      togglePv / togglePnode    —— 再点一次之后两侧各剩几个标记。
+      backPvSel / backPnodeSel  —— 改成从预览点，右栏跟没跟上。
+    """
+    at = report(page, "select-report")
+    ck("select_hook_ran", bool(at) and at.get("sel-uid", "") not in ("", None),
+       "选中钩子没跑起来：%s" % at)
+    ck("select_target_is_container", at.get("target-id") == "chat.options",
+       "应该选中容器 chat.options（它里面还套着子块），实际选中 %r"
+       % at.get("target-id"))
+    ck("select_one_each_side",
+       at.get("pv-sel") == "1" and at.get("pnode-sel") == "1",
+       "点一次之后两侧应各标一块：预览 %s / 画布 %s"
+       % (at.get("pv-sel"), at.get("pnode-sel")))
+    ck("select_group_frame_follows", at.get("pgroup-sel") == "1",
+       "右栏那个容器的分组框也要跟着描：%s" % at.get("pgroup-sel"))
+    # 描边色必须是实测色板里那唯一的蓝 #4772b3 = rgb(71, 114, 179)。
+    ck("select_outline_color", at.get("outline-color") == "rgb(71, 114, 179)",
+       "描边色应当是 #4772b3（实测的选中蓝），实际 %r" % at.get("outline-color"))
+    ck("select_outline_width", at.get("outline-width") == "2px",
+       "描边宽度应当是 2px，实际 %r" % at.get("outline-width"))
+    ck("select_outline_solid", at.get("outline-style") == "solid",
+       "描边应当是实线（虚线在这套界面里读作「可以拖进去」），实际 %r"
+       % at.get("outline-style"))
+    covered = int(at.get("covered", "0") or 0)
+    inside = int(at.get("inside", "0") or 0)
+    ck("select_container_has_children", covered >= 3,
+       "选中的容器里至少装着 3 块子积木（否则「整块描边」无从谈起），实际 %d" % covered)
+    ck("select_outline_covers_children", covered > 0 and inside == covered,
+       "容器描边必须把 %d 块子积木全圈进去，实际只圈住 %d 块——"
+       "只描标题行就是这个症状" % (covered, inside))
+    ck("select_toggle_off",
+       at.get("toggle-pv") == "0" and at.get("toggle-pnode") == "0",
+       "再点一次应当取消选中：预览还剩 %s / 画布还剩 %s"
+       % (at.get("toggle-pv"), at.get("toggle-pnode")))
+    ck("select_blank_clears",
+       at.get("blank-pv") == "0" and at.get("blank-sel-uid") == "",
+       "点空白处应当什么都不选中：预览 %s / selUid %r"
+       % (at.get("blank-pv"), at.get("blank-sel-uid")))
+    ck("select_preview_to_canvas",
+       at.get("back-pv-sel") == "1" and at.get("back-pnode-sel") == "1",
+       "从预览点，右栏对应积木也要被选中：预览 %s / 画布 %s"
+       % (at.get("back-pv-sel"), at.get("back-pnode-sel")))
+    ck("select_says_it", "选中" in (at.get("status") or ""),
+       "选中/取消都要说话：%r" % at.get("status"))
+
+
+def save_checks(save_page, restore_page):
+    """Task 17：自动保存 + 刷新不丢。
+
+    两条腿：save_page 先存盘并把 localStorage 原样读回来逐字核对；
+    restore_page 是**另一次页面加载**（同一份浏览器档案，所以 localStorage
+    是通的），走的就是真实刷新那条路径。
+    """
+    at = report(save_page, "save-report")
+    ck("save_hook_ran", bool(at),
+       "存档钩子没跑起来")
+    # file:// 在 Chrome 下必然存不了（SecurityError）。这种情况下不能安静地
+    # 把这十几条断言蒸发掉——按既有的做法，记失败并说清是通道的问题。
+    ck("save_local_storage_usable", at.get("ls-o-k") == "1",
+       "file:// 下 localStorage 不可用（Chrome 会抛 SecurityError，"
+       "Edge 正常）：自动保存这一整块无法验证")
+    ck("save_wrote", at.get("wrote") == "1",
+       "savePlan 没有真的写进 localStorage")
+    blocks = int(at.get("blocks", "0") or 0)
+    ck("save_roundtrip_all_blocks", int(at.get("stored", "0") or 0) == blocks and blocks > 0,
+       "存了 %s 块，读回来只有 %s 块" % (at.get("blocks"), at.get("stored")))
+    ck("save_keeps_nesting", int(at.get("nested", "0") or 0) > 0,
+       "读回来的块全成了顶层：归属（parent）没存进去")
+    ck("save_keeps_note", at.get("note") == "这句注解必须在刷新之后还在",
+       "标注没存住，读回来是 %r" % at.get("note"))
+    ck("save_keeps_content", at.get("content", "") not in ("", "{}"),
+       "内容（按钮文字 / 占位提示之类）没存住")
+    ck("save_keeps_uid_seq", int(at.get("uid-seq", "-1") or -1) >= blocks,
+       "uid_seq 没跟着涨：恢复之后新积木会撞上老 uid，标注就贴错块了")
+
+    rt = report(restore_page, "restore-report")
+    ck("restore_hook_ran", bool(rt), "恢复钩子没跑起来")
+    # 注意 lsOK 在 DOM 里落成 data-ls-o-k（dataset 把每个大写字母前面加短横），
+    # 写成 ls-ok 会读到 None——一条恒红的假断言比没有断言更糟。
+    ck("restore_ls_ok", rt.get("ls-o-k") == "1",
+       "这一次连 localStorage 都读不了")
+    ck("restore_brings_blocks_back",
+       rt.get("restored") == at.get("blocks") and int(rt.get("restored", "0") or 0) > 0,
+       "刷新之后恢复了 %s 块，存之前是 %s 块" % (rt.get("restored"), at.get("blocks")))
+    ck("restore_keeps_note", rt.get("note") == "这句注解必须在刷新之后还在",
+       "刷新之后标注没了：%r" % rt.get("note"))
+    ck("restore_keeps_nesting",
+       rt.get("nested") == at.get("nested") and int(rt.get("nested", "0") or 0) > 0,
+       "刷新之后层级塌了：%s vs %s" % (rt.get("nested"), at.get("nested")))
+    ck("restore_three_boards_kept",
+       "detail" in rt and "settings" in rt,
+       "恢复报告没报出三个界面各自的块数")
+    ck("restore_says_it", "恢复" in (rt.get("status") or ""),
+       "恢复之后状态条应当说清楚：%r" % rt.get("status"))
+
+
+def export_checks(page, vocab):
+    """Task 17：三种导出。
+
+    报的是生成出来的**字符串**，不是「点没点过按钮」：生成器少一层缩进、
+    把标注吞了，点一百次按钮也是错的。
+    """
+    at = report(page, "export-report")
+    ck("export_hook_ran", bool(at) and int(at.get("py-lines", "0") or 0) > 20,
+       "导出钩子没跑起来：%s" % at)
+    ck("export_py_function",
+       at.get("py-has-func") == "1",
+       "ui.py 没有 def draw_chat_content(layout, state): 这层壳")
+    # 页面上那段 <pre> 里必须真的有那行壳（py-head 只截了前 4 行，量不到它）。
+    ck("export_py_function_visible",
+       "def draw_chat_content(layout, state):" in pre_of(page),
+       "页面上那段 <pre> 里没有 def draw_chat_content(layout, state):")
+    # 缩进是这个生成器最要紧的形状：容器比它的直接孩子浅正好一层。
+    # 查子串 "    " 没用（那对任何文件都成立），量的是两行的真实列差。
+    ck("export_py_indents_one_level",
+       at.get("py-has-indent") == "4" and at.get("py-indent-n", "0") == "3",
+       "容器必须比它的直接孩子深正好一层（4 列）；抽了 %s 处，差值 %s"
+       % (at.get("py-indent-n"), at.get("py-has-indent")))
+    ck("export_py_carries_note", at.get("py-has-note") == "1",
+       "ui.py 里没带上积木的标注")
+    # 每一块都得声明「未经验证」，一块都不能漏。
+    unv = int(at.get("py-has-unverified", "0") or 0)
+    ck("export_py_unverified_every_block", unv >= 5,
+       "ui.py 里只有 %d 处写了「未经验证」：每块都该有一处" % unv)
+    # 数量对着示例面板的真数据算，不写死 9：示例面板一改，写死的数字就会
+    # 变成一条永远红或者永远绿的假断言。
+    panel = (vocab.get("example_panels") or {}).get("chat", {}).get("blocks") or []
+    want_op = len([b for b in panel if b["wkey"] == "operator"])
+    # TODO 一共几处：没填元素 ID 的算子 + 没填元素 ID 的 prop/textbox 属性名。
+    # 文末清单标题里那一次不算进 TODO 计数。
+    want_todo = len([b for b in panel
+                     if b["wkey"] in ("operator", "prop", "textbox")
+                     and not b.get("element_id")])
+    ck("export_py_has_ops", at.get("py-has-op") == str(want_op),
+       "示例面板里 %d 个 operator，ui.py 里翻出 %s 个"
+       % (want_op, at.get("py-has-op")))
+    ck("export_py_has_separator", at.get("py-has-sep") == "1",
+       "真点一个 separator 上来，ui.py 里应当正好有 1 条 layout.separator()，"
+       "实际 %s 条" % at.get("py-has-sep"))
+    ck("export_py_reports_todo", at.get("py-todo") == str(want_todo),
+       "应当报出 %d 处 TODO（示例面板里没填元素 ID 的算子 / 属性名），实际 %s"
+       % (want_todo, at.get("py-todo")))
+    # 文末清单除了「代码里的 TODO 占位」，还会列出「参数没写取值」的那几处，
+    # 所以清单长度 = 占位数 + 取值缺失数。两个数都对着示例面板的真数据算。
+    py_true_flags = {"align", "even_columns", "even_rows", "row_major",
+                     "default_closed", "use_property_split", "translate"}
+    containers = {"row", "column", "box", "split", "grid_flow", "panel"}
+    want_flag = 0
+    for b in panel:
+        if b["wkey"] not in containers:
+            continue
+        for tok in re.split(r"[,，\s]+", (b.get("params") or "").strip()):
+            if tok and "=" not in tok and tok not in py_true_flags:
+                want_flag += 1
+    ck("export_py_checklist_matches",
+       at.get("py-checks") == str(want_todo + want_flag),
+       "文末清单说有 %s 处（应为 %d 处占位 + %d 处取值缺失 = %d），"
+       "代码里实际 %s 处 TODO"
+       % (at.get("py-checks"), want_todo, want_flag, want_todo + want_flag,
+          at.get("py-todo")))
+    ck("export_md_is_a_doc", int(at.get("md-lines", "0") or 0) >= 60,
+       "方案说明只有 %s 行：一份能据此写实施计划的文档不该这么短"
+       % at.get("md-lines"))
+    for k, name in (("md-has-tree", "一、当前搭了什么"), ("md-has-notes", "二、你的标注原文"),
+                    ("md-has-down", "三、降级方案"), ("md-has-unverified", "四、这版还没验证过")):
+        ck("export_md_%s" % k, at.get(k) == "1", "方案说明缺「%s」" % name)
+    ck("export_md_keeps_note_verbatim", at.get("md-has-note-text") == "1",
+       "方案说明里没有某条标注的原文（元素 ID %r 那块）："
+       "「告诉你」靠的就是这一节" % at.get("md-note-id"))
+    keys = (at.get("json-keys") or "").split(",")
+    for want in ("annotations", "boards", "markdown", "proposal", "ui_py",
+                 "verified_in_blender"):
+        ck("export_json_has_%s" % want, want in keys,
+           "方案 JSON 缺字段 %s（实际 %s）" % (want, keys))
+    ck("export_json_three_boards", at.get("json-boards") == "3",
+       "方案 JSON 应当含三个界面，实际 %s" % at.get("json-boards"))
+    ck("export_json_embeds_py", at.get("json-py") == "1",
+       "方案 JSON 里嵌的那份 ui.py 与面板上显示的不一致")
+    ck("export_json_marked_unverified", at.get("json-verified") == "1",
+       "方案 JSON 没有标 verified_in_blender=false")
+    # 页面上那段 <pre> 必须真的装得下代码：用户看得见、选得中，才是最后的兜底。
+    ck("export_pre_shows_code", int(at.get("pre", "0") or 0) > 200,
+       "导出面板里那段 <pre> 是空的（%s 字符）" % at.get("pre"))
+    # 这两条查的是 <pre> 的切片，不是整页：整页上「layout.row(align=True)」
+    # 在控件架卡片里就有，<pre> 空了也照样绿。
+    ck("export_pre_has_code", "layout.row(align=True" in pre_of(page),
+       "页面上那段 <pre> 里没有 layout.row(align=True)：剪贴板全挂时它就是唯一的出口")
+    ck("export_pre_has_warning", "未经验证" in pre_of(page),
+       "页面上那段 <pre> 里没写「未经验证」")
+    # 参数框里只写了个开关名（columns）时，必须保住词汇表给的默认值。
+    # 写成 columns=True / columns=None 会让网格静默塌成一列，而且不报任何错。
+    ck("export_bare_param_keeps_default",
+       "columns=None" not in pre_of(page) and "columns=2" in pre_of(page),
+       "示例面板里 grid_flow 的参数写的是裸 columns，导出时应当保留词汇表"
+       "给的默认 columns=2，而不是 None 或 True")
+
+
+def select_leaf_checks(page):
+    """从预览点一个叶子块：描边只圈它自己那一格，右栏跟着选中。
+
+    与 select_checks 分开是因为叶子没有子块——「整块描边」那条在容器上量，
+    「只圈自己」这条得在叶子上量，两者是不同的故障。
+    """
+    at = report(page, "select-leaf-report")
+    ck("select_leaf_hook_ran", bool(at) and at.get("target-wkey") == "textbox",
+       "叶子选中钩子没跑起来：%s" % at)
+    ck("select_leaf_marks_both_sides",
+       at.get("pv-sel") == "1" and at.get("pnode-sel") == "1",
+       "从预览点一个叶子，两侧应各标一块：预览 %s / 画布 %s"
+       % (at.get("pv-sel"), at.get("pnode-sel")))
+    ck("select_leaf_outline_only_itself", at.get("covered") == "0",
+       "叶子块底下不该还有别的预览节点（那说明点中的不是叶子）：%s" % at.get("covered"))
+    ck("select_leaf_outline_color",
+       at.get("outline-color") == "rgb(71, 114, 179)" and
+       at.get("outline-width") == "2px",
+       "叶子描边色 / 宽度应当与容器一致：%r %r"
+       % (at.get("outline-color"), at.get("outline-width")))
+
+
+def pre_of(p):
+    """取 #py-out 那段代码的内容切片。
+
+    必须切片再查，不能在整份 page 上查子串：控件架的卡片上本来就印着
+    「layout.row(align=True)」，整页查的话，就算 <pre> 是空的、
+    那条断言照样绿 —— 这正是「变异改了断言抓不住」的那一类。
+    """
+    m = re.search(r'<pre id="py-out">(.*?)</pre>', p, re.S)
+    return m.group(1) if m else ""
 
 
 def _fb_for_blocker(rkey):

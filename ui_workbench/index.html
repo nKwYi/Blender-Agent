@@ -14,8 +14,12 @@
     <button data-view="constraints">约束总表</button>
   </nav>
   <span id="status"></span>
-  <button id="export">导出标注</button>
 </header>
+
+<!-- 存不了的显式警告。file:// 下 Chrome 把 localStorage 判成 SecurityError，
+     方案就只存在内存里；不把这件事顶到页面最上面，用户会以为刷新一下白搭，
+     而「保存失败」是静默丢数据里最难受的一种。默认 hidden，脚本确认可用才显示。 -->
+<div id="store-warn" hidden></div>
 
 <div id="filmstrip" class="filmstrip"></div>
 
@@ -47,6 +51,25 @@
     </div>
   </div>
   <div id="prop-notes"></div>
+
+  <!-- 把这一版交出去。用户的原话是「不然我调好了怎么告诉你然后落实呢」：
+       搭界面这件事到此为止只存在于这个页面里，所以「保存 + 三种导出」不是
+       附加功能，是这一层唯一的出口。四样东西各司其职，不合并：
+         ui.py   —— 真正能抄进 blender_deepseek_agent/ui.py 的那份草稿
+         方案说明 —— 人读（含你的标注原文与「没验证过」的声明）
+         方案 JSON —— 以后接着改的完整存档（含三个界面）
+       原来的「导出标注」按钮已经被方案 JSON 取代（它带的就是这份数据，
+       留着两个含义重叠的按钮只会让人存错文件），所以页眉不再挂它。 -->
+  <div id="export-panel">
+    <h3>把这一版交出去</h3>
+    <div class="scope" id="store-note"></div>
+    <div class="rrow" id="export-btns"></div>
+    <div class="code-cap">
+      生成的 ui.py 片段（草稿，<b>还没在真实 Blender 里验证过</b>；剪贴板不可用时，
+      选中这段按 Ctrl+C 一样能拿走）：
+    </div>
+    <pre id="py-out"></pre>
+  </div>
 </section>
 
 <section id="view-constraints" class="view" hidden>
