@@ -2782,6 +2782,11 @@ function moveReport() {
   var optionsNode = proposal.filter(function (n) { return n.id === "chat.options"; })[0];
   var optBox = optionsNode
     ? canvas.querySelector('.pnode[data-uid="' + optionsNode.uid + '"]') : null;
+  /* 落点 uid 与落点前原来的 parent 一起报出去：只报「落完之后的 parent 是
+     个容器」的话，压根没落成（被拒了 / 分支没走）也照样绿——被拖的那块本来
+     就装在 chat.stream 里。这两样报上来，断言才能钉住「真的从 A 挪到了 B」。 */
+  var dragTargetUid = optBox ? (optBox.dataset.uid || "") : "";
+  var dragFrom = victim ? String((nodeByUid(victim.uid) || {}).parent || "") : "";
   if (boxNode && optBox) {
     fireDrag(boxNode, "dragstart", 0, dt);
     dragCands = canvas.querySelectorAll(".pnode.can-drop").length;
@@ -2830,6 +2835,8 @@ function moveReport() {
     dragCands: String(dragCands),
     dragParent: dragParent,
     dragParentWkey: dragParentWkey,
+    dragTargetUid: dragTargetUid,
+    dragFrom: dragFrom,
     denyStatus: denyStatus,
     denyParent: denyParent
   });

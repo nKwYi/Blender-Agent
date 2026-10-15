@@ -105,11 +105,15 @@ EXAMPLE_PANEL = {
         {"wkey": "column", "params": "align", "element_id": "chat.options",
          "note": "规格选项容器：一次有几项要选，就用竖排把每项串起来",
          "content": {"heading": "需要你定一下"}},
-        # 真实面板里每个细节底下是一排「选择：xxx」的勾选按钮。勾选框是
-        # prop(toggle=True) 画出来的，零资源下用 CHECKBOX_DEHLT 这个实测
-        # 图标名示意，位置对得上 options.png 里每个按钮左边那个小方块。
-        {"wkey": "row", "params": "align", "element_id": "",
-         "note": "一组并排的规格选项：三个按钮共用一个横排当分母",
+        # 真实面板里每个细节底下是一列「选择：xxx」的勾选按钮，一个选项占满
+        # 一整行。ui.py 里是 for opt in ...: orow = qbox.row() —— 每选一个就
+        # 新建一个横排，竖着看就是一列；options.png 里也是这样，竖排一行一个。
+        # 这里原来写成横排，三个按钮并排后每条只剩三分之一宽，
+        # 「选择：经典直筒微收口（推荐）」被折成两行，和真实面板对不上。
+        # 勾选框是 prop(toggle=True) 画出来的，零资源下用 CHECKBOX_DEHLT 这个
+        # 实测图标名示意，位置对得上 options.png 里每个按钮左边那个小方块。
+        {"wkey": "column", "params": "align", "element_id": "",
+         "note": "一组规格选项：竖排里一个选项占一行，按钮才够宽，长文案不折行",
          "content": {"heading": "细节 1：1.杯型风格"}},
         {"wkey": "operator", "params": "", "element_id": "",
          "note": "规格选项按钮（带勾选框）",
@@ -122,22 +126,27 @@ EXAMPLE_PANEL = {
          "content": {"text": "选择：手感厚壁窑变", "icon": "CHECKBOX_DEHLT"}},
         # 真实面板在输入框上面是 2x2 的四个并排按钮（修改尺寸 / 更换材质 /
         # 增加倒角 / 平滑着色）。columns=2 让预览真的排成两列两行。
+        # 图标名逐个对着 native_api.json 的 1033 个实测名挑的：尺寸只有
+        # CON_SIZELIKE（尺寸约束那个图标）语义对得上，材质是材质预览球
+        # MATSHADERBALL（MATSPHERE 是「UV 球面」这个图元，不是材质），
+        # 倒角是 MOD_BEVEL，平滑着色落在法线上用 NORMALS_VERTEX。
+        # 挑不到语义对得上的就留空，不硬凑。
         {"wkey": "grid_flow", "params": "row_major, columns, even_columns",
          "element_id": "",
          "note": "两列并排的按钮网格：grid_flow(columns=2) 就是那个样子",
          "content": {}},
         {"wkey": "operator", "params": "", "element_id": "",
          "note": "网格里的第一个按钮",
-         "content": {"text": "修改尺寸", "icon": "BRUSH_DATA"}},
+         "content": {"text": "修改尺寸", "icon": "CON_SIZELIKE"}},
         {"wkey": "operator", "params": "", "element_id": "",
          "note": "网格里的第二个按钮",
-         "content": {"text": "更换材质", "icon": "MATSPHERE"}},
+         "content": {"text": "更换材质", "icon": "MATSHADERBALL"}},
         {"wkey": "operator", "params": "", "element_id": "",
          "note": "网格里的第三个按钮",
-         "content": {"text": "增加倒角", "icon": "MODIFIER"}},
+         "content": {"text": "增加倒角", "icon": "MOD_BEVEL"}},
         {"wkey": "operator", "params": "", "element_id": "",
          "note": "网格里的第四个按钮",
-         "content": {"text": "平滑着色", "icon": "SMOOTHCURVE"}},
+         "content": {"text": "平滑着色", "icon": "NORMALS_VERTEX"}},
         {"wkey": "textbox", "params": "prop, initial_visible_lines",
          "element_id": "chat.composer", "note": "指令输入框，可写多行",
          "content": {"placeholder": "输入建模指令…", "lines": 3}},

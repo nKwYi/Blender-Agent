@@ -279,10 +279,15 @@ button.chip {
 .pv-textbox .pv-tx { font-size: 12px; }
 .pv-sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
 .pv-gap { }
+/* 图标名角标：离线没有图标资源，预览画的是「这块要用哪个图标名」这个事实，
+   所以名字照印，但一律压成角标——再小一号、再压暗一档、行距拉开，让它读起来
+   是标注而不是正文。绝不让一串全大写英文和中文正文平级抢眼。 */
 .pv-ico {
-  color: var(--text-dim); font-family: Consolas, monospace; font-size: 10px;
+  color: var(--text-dim); font-family: Consolas, monospace; font-size: 9px;
+  letter-spacing: .04em; line-height: 1.4; opacity: .7;
   border: 1px solid var(--border); border-radius: 3px; padding: 0 3px;
-  margin-right: 4px; display: inline-block;
+  margin-right: 4px; display: inline-block; vertical-align: middle;
+  white-space: nowrap;
 }
 .pv-down {
   border: 1px dashed var(--text-dim); border-radius: 4px;

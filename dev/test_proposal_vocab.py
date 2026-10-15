@@ -305,7 +305,10 @@ EXPECT_PANEL_KEY_BLOCKS = [
     (5, "消息盒"),
     (6, "状态行"),
     (7, "规格竖排 chat.options"),
-    (8, "细节标题横排"),
+    # 块 8 从横排改成竖排（一个选项占一行，照 ui.py 的 qbox.row() 与 options.png）。
+    # 断言本身一个字没松：下标、块序、参数、DOM 节点数仍旧逐条比数据，
+    # 这里只把说明文字从「横排」改成它现在的真实形状，免得注释骗人。
+    (8, "细节标题竖排（规格选项一行一个）"),
     (9, "勾选选项 · 经典直筒微收口"),
     (10, "勾选选项 · 鼓腹圆润"),
     (11, "勾选选项 · 手感厚壁窑变"),
@@ -1281,6 +1284,26 @@ def panel_checks(page, vjson):
     ck("panel_element_ids", at.get("ids") == ",".join(want_ids),
        "示例面板的元素 ID 应为 %s，实际 %s" % (want_ids, at.get("ids")))
 
+    # --- 规格选项必须竖排一行一个（照 ui.py 的 qbox.row() 与 options.png）---
+    # 之前这块是横排，三个按钮并排后每条只剩三分之一宽，
+    # 「选择：经典直筒微收口（推荐）」被折成两行，跟真实面板对不上。
+    # 这条既钉数据（选项组是竖排、三个选项各归它），也钉渲染出来的 DOM
+    # （预览里真有一个装着这三个按钮的竖排容器）。只钉数据的话，
+    # 谁把渲染改回并排照样绿。
+    opt_group = (vjson["example_panel"]["blocks"] or [])[8]
+    opt_par = {int(k): int(v) for k, v in
+               ((vjson.get("example_panel_parents") or {}).get("chat") or {}).items()}
+    ck("panel_options_group_is_column",
+       opt_group.get("wkey") == "column"
+       and [opt_par.get(i) for i in (9, 10, 11)] == [8, 8, 8],
+       "规格选项组（第 8 块）应是竖排，三个选项各挂在它下面：wkey=%r 归属=%r"
+       % (opt_group.get("wkey"), [opt_par.get(i) for i in (9, 10, 11)]))
+    pv_opt = preview_of(page)
+    n_col_pv = len(re.findall(r'data-pv="column"', pv_opt))
+    ck("panel_options_render_column_in_dom", n_col_pv >= 3,
+       "预览里至少要有 3 个竖排容器（根 / 规格区 / 选项组），实际 %d —— "
+       "选项组没渲染成竖排就是并排回去了" % n_col_pv)
+
     # 插完之后左边预览必须真的拼出了一个界面，而不是一片空壳。
     # 逐条拿示例面板自己声明的内容去预览切片里找——写死一句文案的话，
     # 示例面板换了字这条就会变成在维护第二份副本。
@@ -1495,11 +1518,23 @@ def move_checks(page, vjson):
        at.get("drag-cands", "0").isdigit() and int(at.get("drag-cands", "0")) > 0,
        "拖起来时没有任何容器被标成「能装进去」——用户只能一个个拖过去试：%s"
        % at.get("drag-cands"))
+    # 这条以前只钉「parent 是个容器」，而被拖的那块（box）本来就装在
+    # chat.stream 里——落点分支整个没走掉它照样绿，于是 M3（落点判定反转）
+    # 红 0 条。现在钉死两件事：落点就是这次拖的那个容器 uid，且落之前
+    # parent 不是它。「从 A 真的挪到了 B」，没有空档可钻。
     ck("move_drag_into_container",
-       at.get("drag-parent") not in ("", "?", "None")
+       at.get("drag-target-uid", "") not in ("", "?")
+       and at.get("drag-parent") == at.get("drag-target-uid")
        and at.get("drag-parent-wkey") in CONTAINER_WKEYS + ["row", "column"],
-       "落在 chat.options 上之后，这一块必须成为它的子块（parent 是一个容器），"
-       "实际 parent=%r wkey=%r" % (at.get("drag-parent"), at.get("drag-parent-wkey")))
+       "落在 chat.options 上之后，这一块必须成为它的子块（parent 就是落点那个容器），"
+       "实际 from=%r 落点=%r parent=%r wkey=%r"
+       % (at.get("drag-from"), at.get("drag-target-uid"),
+          at.get("drag-parent"), at.get("drag-parent-wkey")))
+    ck("move_drag_actually_moved",
+       at.get("drag-from", "?") not in ("", "?")
+       and at.get("drag-parent") != at.get("drag-from"),
+       "拖拽必须真的换了父级（落之前 %r ≠ 落之后 %r）——不然这条只是在说"
+       "「它本来就装在某个容器里」" % (at.get("drag-from"), at.get("drag-parent")))
 
     # --- 拒绝时：树不许变，而且必须说话 ---
     # 两条一起钉：只钉「状态条里有个『不能』」的话，把环检测整段删掉也照样绿
