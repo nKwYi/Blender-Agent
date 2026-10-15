@@ -56,6 +56,18 @@ def read(p):
         return fh.read()
 
 
+def demo_item_count(demo):
+    """一个图示里一共该画出几个小方块 = 顶层 items + 每组细节里的 items。
+
+    为什么不是 len(demo["items"])：Task 20 起规格选项组是双层盒，那 9 个
+    选择按钮在 groups 里。只数顶层的话里层根本没画出来也不会红。
+    """
+    n = len((demo or {}).get("items") or [])
+    for g in ((demo or {}).get("groups") or []):
+        n += len(g.get("items") or [])
+    return n
+
+
 def js_body(src, header):
     """截出一个 JS 函数体（含 header 那一行）。"""
     i = src.find(header)
@@ -133,6 +145,108 @@ def data_checks(doc):
        any("还没做：" in v["ui_py"] and "已经做了：" in v["ui_py"]
            for v in status["variants"]),
        "partial 变体应当分「已经做了 / 还没做」两栏")
+
+    # --- 本轮那五条用户意见在数据这一层的对应物 ---
+    ui_lines = read(UI_PY).split("\n")
+    by_key = {b["key"]: b for b in doc["blocks"]}
+
+    # 第 1 条：页签去掉「AI」两个字。查的是**所有**图示的条目，不只是页签条
+    # 那一张卡——只查一张卡的话，别的块里留一个「AI 对话」照样绿。
+    hit_ai = []
+    for b in doc["blocks"]:
+        demos = [b["demo"]] + [v["demo"] for v in b["variants"]]
+        for d in demos:
+            for t in (d.get("items") or []) + \
+                    [(g.get("title") or "") for g in (d.get("groups") or [])]:
+                if "AI 对话" in str(t):
+                    hit_ai.append("%s:%s" % (b["key"], t))
+    ck("blocks_tabbar_label_dropped_ai", not hit_ai,
+       "页签上还有「AI 对话」：%s" % hit_ai[:3])
+    ck("blocks_tabbar_items_are_short",
+       by_key["chat_tabbar"]["demo"]["items"] == ["对话", "详情", "设置"],
+       "页签条的图示应是「对话 / 详情 / 设置」，实际 %s"
+       % by_key["chat_tabbar"]["demo"]["items"])
+
+    # 第 3 条：底部常用操作一行 4 个。数据上是 cols=4 + 四个条目；
+    # 真的排成一行由 DOM 那侧的 pills 读数量（数据写 4 而 CSS 没跟上会红）。
+    pills = by_key["chat_pills"]["demo"]
+    ck("blocks_pills_four_in_one_row",
+       pills.get("cols") == 4 and len(pills.get("items") or []) == 4,
+       "快捷指令应是 cols=4 的四个，实际 cols=%s items=%s"
+       % (pills.get("cols"), len(pills.get("items") or [])))
+
+    # 第 2 + 第 5 条：规格那块双层盒——外层一个盒装引子，里面每个细节
+    # 自己一个盒，标题与那一串选择按钮同盒。判据落在数据形状上，
+    # 「引子与按钮真的在同一个盒里」由 DOM 那侧的 qs 读数量。
+    qs = by_key["chat_questions"]["demo"]
+    groups = qs.get("groups") or []
+    ck("blocks_questions_outer_box_holds_intro",
+       qs.get("kind") == "box" and len(qs.get("items") or []) == 1,
+       "规格选项组的外层应是装着引子那一段的一个盒，实际 kind=%s items=%s"
+       % (qs.get("kind"), qs.get("items")))
+    ck("blocks_questions_double_box",
+       len(groups) == 3 and all(g.get("title") and g.get("items")
+                                and g.get("item_icons") for g in groups),
+       "规格选项组里应有三个各自成盒的细节（标题 + 按钮 + 图标），实际 %s"
+       % [(g.get("title"), len(g.get("items") or [])) for g in groups])
+
+    # 图示里的图标名必须是实测里真有的：ui.py 真写过的 + vocabulary.json
+    # 的图标名册。这里从源文件**重新读一遍**，不复述生成器的自检。
+    real = set(re.findall(r"'([A-Z][A-Z0-9_]{2,})'", "\n".join(ui_lines)))
+    vocab_path = os.path.join(WB, "vocabulary.json")
+    if os.path.exists(vocab_path):
+        real |= set((json.loads(read(vocab_path)) or {}).get("icons") or [])
+    bad_ico = []
+    for b in doc["blocks"]:
+        for d in [b["demo"]] + [v["demo"] for v in b["variants"]]:
+            for ic in (d.get("icons") or []):
+                if ic not in real:
+                    bad_ico.append("%s:%s" % (b["key"], ic))
+            for g in (d.get("groups") or []):
+                for ic in [g.get("icon")] + list(g.get("item_icons") or []):
+                    if ic and ic not in real:
+                        bad_ico.append("%s:%s" % (b["key"], ic))
+    ck("blocks_demo_icons_are_real", not bad_ico,
+       "图示里写了实测中不存在的图标名：%s" % bad_ico[:4])
+    # 图标数不许多过条目数：多一个就是画错位（角标挂到了别人的方块上）。
+    over = []
+    for b in doc["blocks"]:
+        for d in [b["demo"]] + [v["demo"] for v in b["variants"]]:
+            if len(d.get("icons") or []) > len(d.get("items") or []):
+                over.append(b["key"])
+            for g in (d.get("groups") or []):
+                if len(g.get("item_icons") or []) > len(g.get("items") or []):
+                    over.append("%s/组" % b["key"])
+    ck("blocks_demo_icons_not_overflow", not over,
+       "有图示的图标数多过条目数：%s" % sorted(set(over)))
+    ck("blocks_demo_icons_present",
+       sum(1 for b in doc["blocks"] if b["demo"].get("icons")) >= 12,
+       "几乎没块带图标：响应式图标那条就没有东西可显隐（带图标的块 %d/16）"
+       % sum(1 for b in doc["blocks"] if b["demo"].get("icons")))
+
+    # 第 4 条的导出侧：新增的那段代码必须写清三件事——宽度从哪来、
+    # 窄了换成 'NONE'、以及「Blender 没有媒体查询 / 松手才重绘」。
+    pre = doc.get("py_preamble") or {}
+    body = list(pre.get("snippet") or [])
+    ck("blocks_py_preamble_declared",
+       set(pre) == {"key", "why", "snippet"} and len(body) >= 6 and
+       str(pre.get("why", "")).strip(),
+       "响应式图标那段必须带 why 与 snippet（新增代码不能悄悄混进 ui_py）：%s"
+       % sorted(pre))
+    miss_phrase = [w for w in ("context.region.width", "'NONE'", "媒体查询", "松手")
+                   if not any(w in ln for ln in body)]
+    ck("blocks_py_preamble_says_the_truth", not miss_phrase,
+       "响应式图标那段缺这些必须写明的说明：%s" % miss_phrase)
+    # 它是 ui.py 之外的新增代码，所以任何一行都不许与 ui.py 逐字相同——
+    # 逐字相同就说明它是抄来的，那就不该走这张表。
+    ck("blocks_py_preamble_is_new_code",
+       all(ln.startswith("#") or ln.strip() not in set(x.strip() for x in ui_lines)
+           for ln in body),
+       "py_preamble 里混进了 ui.py 逐字已有的行（等于假装新增）")
+    ck("blocks_py_preamble_icons_real",
+       all(ic in real for ic in re.findall(r"'([A-Z][A-Z0-9_]{2,})'",
+                                           "\n".join(body))),
+       "py_preamble 里有实测中不存在的图标名")
 
     # 块级 ui_py 必须与默认变体逐字一致：导出只认块级这一个入口。
     mism = [b["key"] for b in doc["blocks"]
@@ -438,7 +552,7 @@ def dom_checks(doc):
                 continue
             bdemo[k.group(1)] = (re.search(r'data-dkind="([^"]*)"', a).group(1),
                                  m.end())
-        bad_kind, bad_items = [], []
+        bad_kind, bad_items, bad_grp = [], [], []
         for b in doc["blocks"]:
             got = bdemo.get(b["key"])
             if not got:
@@ -455,17 +569,29 @@ def dom_checks(doc):
                 # 控件架上根本没有这张卡：下面那条断言会红，这里不能再抛。
                 # 抛出去会把整个 main() 打断、汇总行打不出来——那正是
                 # 「rc=0 / 红 0 条」那种假绿的来源。
-                bad_items.append((b["key"], -1, len(b["demo"].get("items") or [])))
+                bad_items.append((b["key"], -1, demo_item_count(b["demo"])))
                 continue
             seg = parts[1].split('data-bcard-for="')[0]
             # 最后一张卡后面就是高级区（12 张原语卡，各自也有图示），
             # 不在这里截断的话会把那 18 个小方块一起数进来。
             seg = seg.split('id="adv-primitives"')[0]
+            # 条目数 = 顶层 items + 每组细节里的 items（双层盒里那层也算）。
+            # 这一条从 Task 20 起改了口径：规格选项组多了一层盒子，
+            # 只数顶层会把那 9 个选择按钮全漏掉，于是「里层根本没画出来」
+            # 这种错照样绿。口径变了，判据没松——两边仍逐块比对确切个数。
             n = seg.count('class="d-it"')
-            if n != len(b["demo"].get("items") or []):
-                bad_items.append((b["key"], n, len(b["demo"].get("items") or [])))
+            want = demo_item_count(b["demo"])
+            if n != want:
+                bad_items.append((b["key"], n, want))
+            # 分组数同样逐块比：双层盒里层有几个盒必须是数据说的那个数。
+            g = len(re.findall(r'class="d-group"', seg))
+            ng = len((b["demo"].get("groups") or []))
+            if g != ng:
+                bad_grp.append((b["key"], g, ng))
         ck("dom_biz_demo_items", not bad_items,
            "业务块图示里的小方块数与数据对不上：%s" % bad_items[:4])
+        ck("dom_biz_demo_groups", not bad_grp,
+           "业务块图示里的内层盒子数与数据对不上：%s" % bad_grp[:4])
 
         # --- 插了 6 块之后的画布 ---
         rep_page = dump(exe, url + "#biz-report", profile)
@@ -539,6 +665,80 @@ def dom_checks(doc):
                "导出的代码块没有「自动生成」的块头注释")
             ck("dom_export_todo_section", "落笔前必须人工处理的" in src,
                "导出缺文末的「必须人工处理」汇总")
+            # 第 4 条的导出侧：响应式图标那段必须真的随导出走一段。
+            # 少它一条，Blender 侧就没有「窄了不画图标」的可行写法。
+            ck("dom_export_has_responsive_icons",
+               "bpy.context.region.width" in src and "'NONE'" in src and
+               "媒体查询" in src and "松手" in src and
+               ("_uw_wide = " in src),
+               "导出的 ui.py 里没有那段响应式图标写法"
+               "（应有 region.width / 'NONE' / 媒体查询 / 松手 / _uw_wide）")
+
+        # --- 本轮五条意见在浏览器里的真形状（#biz-icons）---
+        ip = dump(exe, url + "#biz-icons", profile)
+        it = attrs_of(ip, "biz-icons")
+        ck("dom_icons_report_ran", bool(it),
+           "没拿到响应式图标的读数：#biz-icons 没跑起来")
+        if it:
+            # 第 4 条：默认（宽）面板下图标在，压到 280px 之后全部消失。
+            # 两读都取自 getComputedStyle：宽面板下 shown 必须等于总数，
+            # 窄面板下必须一个不剩，且两次量到的元素个数是同一批。
+            ck("dom_icons_wide_default_on",
+               int(it.get("wide-shown", "0")) == int(it.get("wide-total", "0"))
+               and int(it.get("wide-total", "0")) > 0,
+               "默认（宽）面板下图标应全部显示：共 %s 个，显示 %s 个"
+               % (it.get("wide-total"), it.get("wide-shown")))
+            ck("dom_icons_narrow_all_hidden",
+               it.get("narrow-shown") == "0" and
+               it.get("narrow-total") == it.get("wide-total"),
+               "压到 280px 后图标应一个不留：元素 %s 个，仍显示 %s 个"
+               % (it.get("narrow-total"), it.get("narrow-shown")))
+            ck("dom_icons_narrow_really_narrower",
+               int(it.get("narrow-panel", "9999")) <
+               int(it.get("wide-panel", "0")) and
+               int(it.get("narrow-panel", "9999")) < 360,
+               "窄面板那次量到的宽度不是窄的：宽 %s / 窄 %s"
+               % (it.get("wide-panel"), it.get("narrow-panel")))
+            # 「一共有几个图标」这条单独钉死两个具体数：页签条 3 个、快捷
+            # 指令 4 个。只比 shown == total 的话，一处都不画（total=0、
+            # shown=0）也会照样成立——M17 那个变异就是这么钻过去的。
+            pills_ico = (it.get("pills") or "").split(":")
+            ck("dom_icons_rendered_per_card",
+               len(pills_ico) >= 4 and pills_ico[3] == "4",
+               "快捷指令那张卡应有 4 个图标角标，读到 %s"
+               % (pills_ico[3] if len(pills_ico) > 3 else "?",))
+            qs_ico = (it.get("qs") or "").split(":")
+            ck("dom_icons_in_question_groups",
+               len(qs_ico) >= 7 and qs_ico[6] == "12",
+               "规格那张卡应有 3 组 × (1 标题 + 3 按钮) = 12 个图标角标，"
+               "读到 %s" % (qs_ico[6] if len(qs_ico) > 6 else "?",))
+            # 第 1 条：页签上不许再有「AI」。
+            ck("dom_tabs_dropped_ai", it.get("tabs") == "对话|详情|设置",
+               "页签条卡片上读到的页签是：%r" % it.get("tabs"))
+            # 第 3 条：四个方块同一行（distinct top == 1）。
+            pills = (it.get("pills") or "").split(":")
+            ck("dom_pills_single_row",
+               len(pills) >= 2 and pills[0] == "4" and pills[1] == "1",
+               "快捷指令应是四个排在同一行，读到 %s 个方块 / %s 行"
+               % (pills[0] if pills else "?", pills[1] if len(pills) > 1 else "?"))
+            # 第 2 + 第 5 条：外层一个盒（kind=box，引子是这个盒的**直接**
+            # 孩子），里面三个细节各自成盒、每个盒里三个按钮——而且那几个
+            # 按钮真的装在这个盒里（same），不是各画各的。
+            qs = (it.get("qs") or "").split(":")
+            ck("dom_questions_intro_in_same_box",
+               len(qs) >= 6 and qs[0] == "box" and qs[1] == "需要你定一下"
+               and qs[5] == "same",
+               "规格那块外层应是一个 box，引子是它的直接孩子，选择按钮也装在"
+               "同一个盒里，读到 %s" % (it.get("qs"),))
+            ck("dom_questions_double_box",
+               len(qs) >= 4 and qs[2] == "3" and qs[3] == "3/3/3",
+               "规格那块里层应有三个盒、每个盒三个按钮，读到 %s"
+               % (it.get("qs"),))
+            ck("dom_questions_titles_are_details",
+               len(qs) >= 5 and qs[4].startswith("细节 1：") and
+               "细节 3：" in qs[4],
+               "里层三个盒的标题不是「细节 N：…」，读到 %r"
+               % (qs[4] if len(qs) > 4 else "",))
 
         # --- 16 块全点一遍 ---
         allp = dump(exe, url + "#biz-all", profile)

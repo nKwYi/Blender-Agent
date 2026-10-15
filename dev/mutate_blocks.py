@@ -100,6 +100,63 @@ MUTS = [
      "  if (n.bkey) {\n    d = pvBiz(n);",
      "  if (false) {\n    d = pvBiz(n);",
      ("dom_biz_preview_nodes",)),
+
+    # ---- Task 20：五条用户意见各自的实现 ----
+    ("M11_图标永远不显示（容器查询里改成藏）",
+     "ui_workbench/style.css",
+     "@container uwpanel (min-width: 360px) {\n  .demo .d-ic { display: inline-block; }\n}",
+     "@container uwpanel (min-width: 360px) {\n  .demo .d-ic { display: none; }\n}",
+     ("dom_icons_wide_default_on",)),
+
+    ("M12_窄了也不藏（默认值从 none 改成露出）",
+     "ui_workbench/style.css",
+     ".demo .d-ic {\n  display: none;",
+     ".demo .d-ic {\n  display: inline-block;",
+     ("dom_icons_narrow_all_hidden",)),
+
+    ("M13_快捷指令退回 2x2",
+     "dev/build_blocks.py",
+     '                      "NORMALS_VERTEX"], cols=4)',
+     '                      "NORMALS_VERTEX"], cols=2)',
+     ("blocks_pills_four_in_one_row", "dom_pills_single_row")),
+
+    ("M14_双层盒退化成一层（规格那组的内层盒不画）",
+     "ui_workbench/app.js",
+     "  (d.groups || []).forEach(function (g) {",
+     "  /* mutated: 不画内层盒 */\n  if (false) (d.groups || []).forEach(function (g) {",
+     ("dom_biz_demo_groups", "dom_questions_double_box",
+      "dom_questions_intro_in_same_box", "dom_biz_demo_items")),
+
+    ("M15_页签又写回 AI 对话",
+     "dev/build_blocks.py",
+     '        "demo": D("row", ["对话", "详情", "设置"],',
+     '        "demo": D("row", ["AI 对话", "详情", "设置"],',
+     ("blocks_tabbar_label_dropped_ai", "blocks_tabbar_items_are_short",
+      "dom_tabs_dropped_ai")),
+
+    ("M16_导出的响应式图标那段被删掉",
+     "ui_workbench/app.js",
+     "  if (pre && proposal.length) {",
+     "  if (false && pre && proposal.length) {",
+     ("dom_export_has_responsive_icons",)),
+
+    ("M17_预览里压根不画图标角标",
+     "ui_workbench/app.js",
+     "  if (icon) {\n    var ic = document.createElement(\"b\");\n    ic.className = \"d-ic\";",
+     "  if (false && icon) {\n    var ic = document.createElement(\"b\");\n    ic.className = \"d-ic\";",
+     # 故意不指望 dom_icons_wide_default_on：那条只比 shown == total，
+     # 而分组标题的图标角标走的是 renderDemo 里另一条创建路径（不进
+     # demoItem），所以这个变异之后 total 仍是 3，那条照样绿。
+     # 抓住它的是两条逐卡点数的断言。
+     ("dom_icons_rendered_per_card", "dom_icons_in_question_groups")),
+
+    ("M18_编一个实测里没有的图标名",
+     # 改产物而不是生成器：改生成器的话 _selfcheck 会先抛 BlockError、
+     # 拒绝落盘，blocks.json 保持原样——那证明的是生成器拦得住，
+     # 不是测试里的图标核对拦得住。
+     "ui_workbench/blocks.json",
+     '"CHECKBOX_DEHLT"', '"MUTATED_FAKE_ICON"',
+     ("blocks_demo_icons_are_real",)),
 ]
 
 

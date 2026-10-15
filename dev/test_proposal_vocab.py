@@ -301,7 +301,7 @@ DEMO_BARELESS = ["rule", "gap"]
 EXPECT_PANEL_KEY_BLOCKS = [
     # (块在 vocabulary.json 里的下标, 说明) —— 下标即界面上从上到下的次序
     (0, "页签条横排 chat.tabbar"),
-    (1, "页签按钮 AI 对话"),
+    (1, "页签按钮 对话"),
     (2, "页签按钮 详情"),
     (3, "页签按钮 设置"),
     (4, "整根竖排 chat.stream"),
@@ -323,7 +323,10 @@ EXPECT_PANEL_KEY_BLOCKS = [
     (17, "指令输入框 chat.composer"),
     (18, "操作行 chat.action_row"),
 ]
-EXPECT_PANEL_TAB_LABELS = ["AI 对话", "详情", "设置"]
+# Task 20 起页签去掉「AI」两个字：面板所在分类已经叫「AI 对话」，页签再写一遍
+# 是废话，用户也明确要求去掉。这条断言的口径没变——仍然是逐块比 content 里的
+# 三段页签文字，只把标准答案从 "AI 对话" 换成 "对话"。
+EXPECT_PANEL_TAB_LABELS = ["对话", "详情", "设置"]
 EXPECT_PANEL_CHECK_OPTS = ["选择：经典直筒微收口（推荐）", "选择：鼓腹圆润",
                            "选择：手感厚壁窑变"]
 EXPECT_PANEL_GRID_BTNS = ["修改尺寸", "更换材质", "增加倒角", "平滑着色"]

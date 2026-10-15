@@ -53,6 +53,23 @@ def dedent(lines):
     return "\n".join(ln[cut:].rstrip() for ln in lines).strip("\n")
 
 
+def D(kind, items, icons=None, **kw):
+    """一个图示（demo）。kind + items 之外多两样，都是这一轮加的：
+
+    icons  —— 与 items 平行的图标名。逐个对着 ui.py 里真写的 icon='XXX' 取，
+              取不到的那一格就不给（列表可以比 items 短）。
+              为什么要它：Blender 的按钮是「图标 + 文字」并排的，预览里只印
+              文字会让用户以为界面上就该没图标。
+    groups —— 内层分组，一组一个盒子（title + items）。这是「双层盒」的数据
+              形态：外层是 kind 画出来的那个盒，每组细节自己再一个盒。
+    """
+    d = {"kind": kind, "items": list(items)}
+    if icons:
+        d["icons"] = list(icons)
+    d.update(kw)
+    return d
+
+
 def V(key, label, what, lines, demo=None, rewrites=None):
     """一个变体。rewrites 登记这一段里每一处「不与 ui.py 逐字相同」的行。
 
@@ -163,35 +180,48 @@ def build():
         "what": "任务在跑的时候，面板顶部那一整条。四种样子：正在跑、等你批准、做到一半、失败。",
         "variants": [
             V("busy", "忙碌中", "正在跑，显示当前动作 + 终止按钮", b_busy,
-              {"kind": "box", "items": ["正在改你的场景 · 第 2 步", "终止任务"]}),
+              D("box", ["正在改你的场景 · 第 2 步", "终止任务"],
+                icons=["TIME", "CANCEL"])),
             V("approve", "待批准", "它想执行代码，等你点头", b_appr,
-              {"kind": "box", "items": ["它想运行一段脚本，请确认：", "批准执行", "拒绝取消"]}),
+              D("box", ["它想运行一段脚本，请确认：", "批准执行", "拒绝取消"],
+                icons=["QUESTION", "CHECKMARK", "CANCEL"])),
             V("partial", "做到一半", "分已做 / 未做两栏", b_part,
-              {"kind": "box", "items": ["任务做到一半：", "已经做了：", "还没做："]}),
+              D("box", ["任务做到一半：", "已经做了：", "还没做："],
+                icons=["INFO", "CHECKMARK", "ERROR"])),
             V("failed", "失败", "整个界面唯一的报错块", b_fail,
-              {"kind": "box", "items": ["任务执行中断：…", "重新尝试"]}),
+              D("box", ["任务执行中断：…", "重新尝试"],
+                icons=["ERROR", "FILE_REFRESH"])),
         ],
         "default_variant": "busy",
         "editable": ["终止按钮文字", "标题文字", "副标题", "按钮文字"],
         "slots": status_slots,
         "element_id": "chat.statusbar",
-        "demo": {"kind": "box", "items": ["正在改你的场景 · 第 2 步", "终止任务"]},
+        "demo": D("box", ["正在改你的场景 · 第 2 步", "终止任务"],
+                  icons=["TIME", "CANCEL"]),
     })
 
     blocks.append({
         "key": "chat_tabbar",
         "label": "页签条",
         "tab": "chat",
-        "what": "面板最顶上那三个页签（对话 / 详情 / 设置）。插件里是真实面板的一部分。",
+        # 页签上不写「AI」两个字：面板所在的分类已经叫「AI 对话」，页签再写一遍
+        # 是废话，而且用户明确要求去掉。这里写清一句实话：插件那边真正的页签
+        # 文字来自 ui.py 里 active_tab 枚举的第一项（现在还是 "AI 对话"），
+        # 改成「对话」是改那个字符串，本轮不许动 ui.py，所以这一处仍是原样。
+        "what": "面板最顶上那三个页签（对话 / 详情 / 设置）。"
+                "注意：插件里页签上的字来自 ui.py 的 active_tab 枚举，"
+                "现在还写着「AI 对话」——真要改成「对话」是改那个字符串。",
         "variants": [V("only", "三个页签", "对话 / 详情 / 设置，点哪个画哪个",
                        ["trow = layout.row(align=True)",
                         'trow.prop(state, "active_tab", expand=True)'],
-                       {"kind": "row", "items": ["AI 对话", "详情", "设置"]})],
+                       D("row", ["对话", "详情", "设置"],
+                         icons=["COMMUNITY", "CONSOLE", "PREFERENCES"]))],
         "default_variant": "only",
         "editable": [],
         "slots": [],
         "element_id": "chat.tabbar",
-        "demo": {"kind": "row", "items": ["AI 对话", "详情", "设置"]},
+        "demo": D("row", ["对话", "详情", "设置"],
+                  icons=["COMMUNITY", "CONSOLE", "PREFERENCES"]),
     })
 
     user_box = ["ubox = layout.box()",
@@ -220,9 +250,10 @@ def build():
         "what": "对话流里的一条消息。你说的话装在盒子里右对齐，AI 的话不装框，直接排在流里。",
         "variants": [
             V("user", "你说的话", "装在盒子里、文字右对齐", user_box,
-              {"kind": "box", "items": ["帮我做一个马克杯"]}),
+              D("box", ["帮我做一个马克杯"])),
             V("ai", "AI 回答", "不装框，带耗时 / 执行步骤 / 新增对象", ai_box,
-              {"kind": "col", "items": ["耗时 12.4s", "执行的操作：", "新增对象：马克杯"]},
+              D("col", ["耗时 12.4s", "执行的操作：", "新增对象：马克杯"],
+                icons=["COMMUNITY", "FILE_SCRIPT", "MESH_DATA"]),
               rewrites=[
                   {"to": "arow = layout.row(align=True)",
                    "from": "arow = abox.row(align=True)",
@@ -237,7 +268,7 @@ def build():
         "editable": ["小标题文字"],
         "slots": bubble_slots,
         "element_id": "chat.stream",
-        "demo": {"kind": "box", "items": ["帮我做一个马克杯"]},
+        "demo": D("box", ["帮我做一个马克杯"]),
     })
 
     q_lines = ["for q_idx, q in enumerate(questions):",
@@ -273,20 +304,35 @@ def build():
          "from": "text=\"按推荐参数开始建模\",",
          "why": "同一句，只是为了缩进对齐到 rec_btn.operator 的续行而重折"},
     ]
+    # 双层盒：外层是这条 AI 消息的气泡盒（ui.py 里的 abox），引子那句
+    # 「需要你定一下」就写在它里面；每个细节自己再一个盒（qbox），标题和
+    # 那一串「选择：…」按钮都装在它里面。文字与按钮同盒是用户提的第 2 条，
+    # 每组细节各自成盒是第 5 条——两条落在同一段真实代码上，一起画才对。
+    q_demo = D("box", ["需要你定一下"], groups=[
+        {"title": "细节 1：杯型风格", "icon": "QUESTION",
+         "items": ["选择：经典直筒微收口（推荐）", "选择：鼓腹圆润",
+                   "选择：手感厚壁窑变"],
+         "item_icons": ["CHECKBOX_DEHLT"] * 3},
+        {"title": "细节 2：容量", "icon": "QUESTION",
+         "items": ["选择：350ml 便携", "选择：500ml 标准", "选择：750ml 家庭装"],
+         "item_icons": ["CHECKBOX_DEHLT"] * 3},
+        {"title": "细节 3：材质", "icon": "QUESTION",
+         "items": ["选择：陶瓷", "选择：玻璃", "选择：不锈钢"],
+         "item_icons": ["CHECKBOX_DEHLT"] * 3},
+    ])
     blocks.append({
         "key": "chat_questions",
         "label": "规格选项组",
         "tab": "chat",
-        "what": "AI 反问规格时给你的一组选择：一项一个盒，底下每个选项一个按钮，一个选项占满一整行。",
-        "variants": [V("only", "反问一组", "细节 N + N 个选择按钮 + 一个全按推荐",
-                       q_lines,
-                       {"kind": "col", "items": ["细节 1：杯型风格", "细节 2：容量", "细节 3：材质"]},
-                       rewrites=q_rewrites)],
+        "what": "AI 反问规格时给你的一组选择。外面一个大盒（就是这条 AI 消息的气泡盒），"
+                "里面每个细节自己一个盒，标题和那一串选择按钮装在同一个盒里。",
+        "variants": [V("only", "反问一组", "引子一句 + 每个细节一个盒（标题 + N 个选择按钮）",
+                       q_lines, q_demo, rewrites=q_rewrites)],
         "default_variant": "only",
         "editable": ["选项按钮文字", "推荐按钮文字"],
         "slots": q_slots,
         "element_id": "chat.options",
-        "demo": {"kind": "col", "items": ["细节 1：杯型风格", "细节 2：容量", "细节 3：材质"]},
+        "demo": q_demo,
     })
 
     p_lines = ["pills = list(quick_pills(state))",
@@ -298,20 +344,22 @@ def build():
                "    for i, pill in enumerate(pills):",
                "        target_row = p_row1 if i < mid else p_row2",
                '        target_row.operator("deepseek.quick_pill", text=pill).action = pill']
+    p_demo = D("grid", ["修改尺寸", "更换材质", "增加倒角", "平滑着色"],
+               icons=["CON_SIZELIKE", "MATSHADERBALL", "MOD_BEVEL",
+                      "NORMALS_VERTEX"], cols=4)
     blocks.append({
         "key": "chat_pills",
         "label": "快捷指令网格",
         "tab": "chat",
-        "what": "输入框上面那两行快捷按钮，点一下等于替你把这句话打进去。",
-        "variants": [V("only", "两行按钮", "两行并排的快捷指令", p_lines,
-                       {"kind": "grid", "cols": 2,
-                        "items": ["修改尺寸", "更换材质", "增加倒角", "平滑着色"]})],
+        "what": "输入框上面那排快捷按钮，点一下等于替你把这句话打进去。"
+                "图示按「一行 4 个」画；ui.py 里那段代码是两行两列（p_row1 / p_row2），"
+                "按钮一模一样，真要一行 4 个得改 ui.py——本轮不许动它。",
+        "variants": [V("only", "一行四个", "一行并排的四个快捷指令", p_lines, p_demo)],
         "default_variant": "only",
         "editable": [],
         "slots": [],
         "element_id": "",
-        "demo": {"kind": "grid", "cols": 2,
-                 "items": ["修改尺寸", "更换材质", "增加倒角", "平滑着色"]},
+        "demo": p_demo,
     })
 
     c_lines = ["cbox = layout.box()",
@@ -345,8 +393,8 @@ def build():
         "editable": ["标签文字", "占位提示", "按钮文字"],
         "slots": c_slots,
         "element_id": "chat.composer",
-        "demo": {"kind": "prop",
-                 "items": ["输入建模指令:", "高度 3", "用自然语言描述要建模什么，可多行"]},
+        "demo": D("prop", ["输入建模指令:", "高度 3", "用自然语言描述要建模什么，可多行"],
+                  icons=["TEXT"]),
     })
 
     a_lines = ["arow = layout.row(align=True)",
@@ -374,7 +422,7 @@ def build():
         "editable": ["按钮文字"],
         "slots": a_slots,
         "element_id": "chat.action_row",
-        "demo": {"kind": "row", "items": ["新建任务", "清空记录"]},
+        "demo": D("row", ["新建任务", "清空记录"], icons=["ADD", "TRASH"]),
     })
 
     # ---- 详情 tab（4 块）------------------------------------------------
@@ -407,10 +455,13 @@ def build():
         "what": "这一趟任务调了哪些工具，一次一行，点一行看那次调用的详情。",
         "variants": [V("only", "调用列表", "标题 + 每次调用一行",
                        d_calls,
-                       {"kind": "box", "items": ["工具调用（4）", "1. list_scene_objects", "2. create_lathe_profile"]})],
+                       D("box", ["工具调用（4）", "1. list_scene_objects",
+                                 "2. create_lathe_profile"],
+                         icons=["CONSOLE", "CHECKMARK", "CHECKMARK"]))],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "box", "items": ["工具调用（4）", "1. list_scene_objects",
-                                          "2. create_lathe_profile"]},
+        "demo": D("box", ["工具调用（4）", "1. list_scene_objects",
+                          "2. create_lathe_profile"],
+                  icons=["CONSOLE", "CHECKMARK", "CHECKMARK"]),
     })
     blocks.append({
         "key": "detail_transcript", "label": "完整转录", "tab": "detail",
@@ -418,7 +469,7 @@ def build():
         "variants": [V("only", "转录正文", "标题 + 多行正文", d_trans,
                        {"kind": "prop", "items": ["详情 / 转录内容", "（整段原文）"]})],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "prop", "items": ["详情 / 转录内容", "（整段原文）"]},
+        "demo": D("prop", ["详情 / 转录内容", "（整段原文）"], icons=["CONSOLE"]),
     })
     blocks.append({
         "key": "detail_usage", "label": "用量统计", "tab": "detail",
@@ -427,8 +478,9 @@ def build():
                        {"kind": "col", "items": ["本次用量（实测）", "输入 4820 · 缓存命中 3960",
                                                  "输出 612", "轮次：3/12 · 耗时：41.2s"]})],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "col", "items": ["本次用量（实测）", "输入 4820 · 缓存命中 3960",
-                                          "输出 612", "轮次：3/12 · 耗时：41.2s"]},
+        "demo": D("col", ["本次用量（实测）", "输入 4820 · 缓存命中 3960",
+                          "输出 612", "轮次：3/12 · 耗时：41.2s"],
+                  icons=["INFO", "TIME"]),
     })
     blocks.append({
         "key": "detail_export", "label": "导出转录", "tab": "detail",
@@ -436,7 +488,7 @@ def build():
         "variants": [V("only", "导出按钮", "导出完整转录", d_export,
                        {"kind": "btn", "items": ["导出完整转录"]})],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "btn", "items": ["导出完整转录"]},
+        "demo": D("btn", ["导出完整转录"], icons=["EXPORT"]),
     })
 
     # ---- 设置 tab（5 块）------------------------------------------------
@@ -499,7 +551,8 @@ def build():
         "variants": [V("only", "服务商", "服务商下拉 + 官方文档按钮", s_prov,
                        {"kind": "prop", "items": ["服务商", "DeepSeek", "打开 DeepSeek 官方文档"]})],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "prop", "items": ["服务商", "DeepSeek", "打开 DeepSeek 官方文档"]},
+        "demo": D("prop", ["服务商", "DeepSeek", "打开 DeepSeek 官方文档"],
+                  icons=["PREFERENCES", "URL"]),
     })
     blocks.append({
         "key": "settings_key", "label": "API Key 配置", "tab": "settings",
@@ -507,7 +560,8 @@ def build():
         "variants": [V("only", "Key", "Key 输入框 + 生效状态", s_key,
                        {"kind": "prop", "items": ["API Key", "（未填）", "未配置 API Key"]})],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "prop", "items": ["API Key", "（未填）", "未配置 API Key"]},
+        "demo": D("prop", ["API Key", "（未填）", "未配置 API Key"],
+                  icons=["KEYINGSET", "ERROR"]),
     })
     blocks.append({
         "key": "settings_model", "label": "模型配置", "tab": "settings",
@@ -515,7 +569,8 @@ def build():
         "variants": [V("only", "模型", "模型下拉 + 拉取按钮", s_model,
                        {"kind": "prop", "items": ["当前模型", "deepseek-chat", "获取最新模型列表"]})],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "prop", "items": ["当前模型", "deepseek-chat", "获取最新模型列表"]},
+        "demo": D("prop", ["当前模型", "deepseek-chat", "获取最新模型列表"],
+                  icons=["PLUGIN", "FILE_REFRESH"]),
     })
     blocks.append({
         "key": "settings_model_list", "label": "模型快捷网格", "tab": "settings",
@@ -523,7 +578,8 @@ def build():
         "variants": [V("only", "模型网格", "两列并排的模型按钮", s_list,
                        {"kind": "grid", "cols": 2, "items": ["deepseek-chat", "deepseek-reasoner"]})],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "grid", "cols": 2, "items": ["deepseek-chat", "deepseek-reasoner"]},
+        "demo": D("grid", ["deepseek-chat", "deepseek-reasoner"],
+                  icons=["CHECKMARK"], cols=2),
     })
     blocks.append({
         "key": "settings_advanced", "label": "高级运行参数", "tab": "settings",
@@ -532,8 +588,9 @@ def build():
                        {"kind": "prop", "items": ["Base URL", "超时(秒) 120", "最大轮次 12",
                                                  "时间预算(秒) 300", "面板历史条数 8"]})],
         "default_variant": "only", "editable": [], "slots": [], "element_id": "",
-        "demo": {"kind": "prop", "items": ["Base URL", "超时(秒) 120", "最大轮次 12",
-                                           "时间预算(秒) 300", "面板历史条数 8"]},
+        "demo": D("prop", ["Base URL", "超时(秒) 120", "最大轮次 12",
+                           "时间预算(秒) 300", "面板历史条数 8"],
+                  icons=["PREFERENCES"]),
     })
 
     doc = {
@@ -544,9 +601,72 @@ def build():
         "tab_labels": TAB_LABELS,
         "demo_kinds": ["row", "col", "box", "split", "grid", "panel", "label",
                        "btn", "prop", "rule", "gap"],
+        # 响应式图标：面板窄了就只留文字。这段**不在 ui.py 里**——它是这次
+        # 明确要往导出里加的一段，所以单独立一张表登记，附上「为什么不逐字
+        # 来自 ui.py」的理由，而不是混进 blocks_rewrites_declared 那套里
+        # （那套的前提是「每一行都能在 ui.py 里找到原句」）。
+        "py_preamble": {
+            "key": "responsive_icons",
+            "why": "这一段是 ui.py 里没有的新增代码：响应式图标在插件里还没有"
+                   "现成写法可抄，所以它不进任何块的 ui_py（那边只许放 ui.py 里"
+                   "逐字存在的代码），单独立这张表随导出一起带走。",
+            "snippet": [
+                "# ---- 响应式图标：面板窄了就只留文字 ----",
+                "# Blender 没有媒体查询，draw() 里唯一能拿到的宽度就是区域宽度，",
+                "# 所以「宽 / 窄」只能自己判断：够宽给真图标名，不够就 icon='NONE'。",
+                "# ★ 拖动面板边框的过程中 Blender 不会实时重绘 draw()，",
+                "#   松手之后才重画一次——所以这个切换是「松手即生效」，",
+                "#   不是「拖动过程中实时变」。别把它当成 CSS 那种媒体查询。",
+                "_uw_panel_w = bpy.context.region.width",
+                "_uw_wide = _uw_panel_w >= 360",
+                "ICON_PLAY = 'PLAY' if _uw_wide else 'NONE'",
+                "ICON_CHECKBOX = 'CHECKBOX_DEHLT' if _uw_wide else 'NONE'",
+            ],
+        },
         "blocks": blocks,
     }
     return finalize(doc)
+
+
+def real_icon_names(ui_lines):
+    """实测存在的图标名全集：ui.py 里真写过的 + vocabulary.json 的 icons 名册。
+
+    图示里那个图标名角标必须是真名——编一个看着像的名字，比不画图标更糟：
+    用户会照着它去 Blender 里找，找不到就以为工作台在骗他。
+    """
+    names = set(re.findall(r"'([A-Z][A-Z0-9_]{2,})'", "\n".join(ui_lines)))
+    vpath = os.path.join(HERE, "..", "ui_workbench", "vocabulary.json")
+    if os.path.exists(vpath):
+        with open(vpath, encoding="utf-8") as fh:
+            names |= set((json.load(fh) or {}).get("icons") or [])
+    return names
+
+
+def check_demo(demo, where, icons):
+    """图示的数据形状。kind/items 之外多两样（icons / groups），各自都要有硬约束。"""
+    if not isinstance(demo, dict) or not demo.get("kind"):
+        raise BlockError("%s 的图示没有 kind" % where)
+    items = demo.get("items") or []
+    ics = demo.get("icons") or []
+    if len(ics) > len(items):
+        raise BlockError("%s 的图标数 %d 多过条目数 %d（对不上就是画错位）"
+                         % (where, len(ics), len(items)))
+    for ic in ics:
+        if ic not in icons:
+            raise BlockError("%s 用了实测里没有的图标名 %r" % (where, ic))
+    for gi, g in enumerate(demo.get("groups") or []):
+        gw = "%s 第 %d 组" % (where, gi + 1)
+        if set(g) != {"title", "icon", "items", "item_icons"}:
+            raise BlockError("%s 字段集不对：%s" % (gw, sorted(g)))
+        if not str(g["title"]).strip() or not (g["items"] or []):
+            raise BlockError("%s 缺标题或没有内容" % gw)
+        if g["icon"] not in icons:
+            raise BlockError("%s 的标题图标 %r 实测里没有" % (gw, g["icon"]))
+        if len(g["item_icons"]) > len(g["items"]):
+            raise BlockError("%s 的图标数多过条目数" % gw)
+        for ic in g["item_icons"]:
+            if ic not in icons:
+                raise BlockError("%s 用了实测里没有的图标名 %r" % (gw, ic))
 
 
 def _selfcheck(doc, ui_lines=None):
@@ -558,6 +678,32 @@ def _selfcheck(doc, ui_lines=None):
         with open(UI_PY, encoding="utf-8") as fh:
             ui_lines = fh.read().split("\n")
     ui_stripped = set(ln.strip() for ln in ui_lines)
+    icons = real_icon_names(ui_lines)
+    # py_preamble：新增代码，单独立表，所以要单独核对它自己那份承诺。
+    pre = doc.get("py_preamble") or {}
+    if set(pre) != {"key", "why", "snippet"}:
+        raise BlockError("py_preamble 字段集不对：%s" % sorted(pre))
+    if not str(pre.get("why", "")).strip():
+        raise BlockError("py_preamble 没写为什么它是 ui.py 之外的新增代码")
+    body = list(pre.get("snippet") or [])
+    for must in ("context.region.width", "'NONE'", "媒体查询", "松手"):
+        if not any(must in ln for ln in body):
+            raise BlockError("py_preamble 里必须写明「%s」（这条是用户点名的注释）"
+                             % must)
+    for ln in body:
+        if ln.startswith("#"):
+            continue
+        if ln.strip() in ui_stripped:
+            raise BlockError("py_preamble 的代码行 %r 与 ui.py 逐字相同，"
+                             "说明这段不该进这张表" % ln)
+    for ic in re.findall(r"'([A-Z][A-Z0-9_]{2,})'", "\n".join(body)):
+        if ic not in icons:
+            raise BlockError("py_preamble 用了实测里没有的图标名 %r" % ic)
+    try:
+        ast.parse("def _pre():\n" + "\n".join(("    " + ln) if ln.strip() else ""
+                                              for ln in body))
+    except SyntaxError as exc:
+        raise BlockError("py_preamble 解析不过：%s\n%s" % (exc, "\n".join(body)))
     want_block = {"key", "label", "tab", "what", "variants", "default_variant",
                   "editable", "slots", "element_id", "demo", "ui_py"}
     want_var = {"key", "label", "what", "ui_py", "demo", "rewrites"}
@@ -613,6 +759,7 @@ def _selfcheck(doc, ui_lines=None):
                                    joined.count(s["literal"])))
             if not (v["demo"] or {}).get("kind"):
                 raise BlockError("%s/%s 的变体没有图示" % (b["key"], v["key"]))
+            check_demo(v["demo"], "%s/%s 的图示" % (b["key"], v["key"]), icons)
             # --- 出处核对：这一段的每一行都必须来自 ui.py ---
             # 没在 ui.py 里逐字找到的行，只许是 rewrites 里登记过的那几行；
             # 登记项还必须给出它在 ui.py 里的原句（否则等于凭空写了一句再
@@ -644,6 +791,7 @@ def _selfcheck(doc, ui_lines=None):
             raise BlockError("%s 的块级 ui_py 与默认变体不一致" % b["key"])
         if not (b["demo"] or {}).get("kind"):
             raise BlockError("%s 没有图示" % b["key"])
+        check_demo(b["demo"], "%s 的图示" % b["key"], icons)
     if len(set(keys)) != len(keys):
         raise BlockError("block key 重复：%s" % keys)
     return len(keys)

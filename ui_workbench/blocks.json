@@ -3,6 +3,10 @@
   {
    "default_variant": "busy",
    "demo": {
+    "icons": [
+     "TIME",
+     "CANCEL"
+    ],
     "items": [
      "正在改你的场景 · 第 2 步",
      "终止任务"
@@ -73,6 +77,10 @@
    "variants": [
     {
      "demo": {
+      "icons": [
+       "TIME",
+       "CANCEL"
+      ],
       "items": [
        "正在改你的场景 · 第 2 步",
        "终止任务"
@@ -87,6 +95,11 @@
     },
     {
      "demo": {
+      "icons": [
+       "QUESTION",
+       "CHECKMARK",
+       "CANCEL"
+      ],
       "items": [
        "它想运行一段脚本，请确认：",
        "批准执行",
@@ -102,6 +115,11 @@
     },
     {
      "demo": {
+      "icons": [
+       "INFO",
+       "CHECKMARK",
+       "ERROR"
+      ],
       "items": [
        "任务做到一半：",
        "已经做了：",
@@ -117,6 +135,10 @@
     },
     {
      "demo": {
+      "icons": [
+       "ERROR",
+       "FILE_REFRESH"
+      ],
       "items": [
        "任务执行中断：…",
        "重新尝试"
@@ -135,8 +157,13 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "COMMUNITY",
+     "CONSOLE",
+     "PREFERENCES"
+    ],
     "items": [
-     "AI 对话",
+     "对话",
      "详情",
      "设置"
     ],
@@ -152,8 +179,13 @@
    "variants": [
     {
      "demo": {
+      "icons": [
+       "COMMUNITY",
+       "CONSOLE",
+       "PREFERENCES"
+      ],
       "items": [
-       "AI 对话",
+       "对话",
        "详情",
        "设置"
       ],
@@ -166,7 +198,7 @@
      "what": "对话 / 详情 / 设置，点哪个画哪个"
     }
    ],
-   "what": "面板最顶上那三个页签（对话 / 详情 / 设置）。插件里是真实面板的一部分。"
+   "what": "面板最顶上那三个页签（对话 / 详情 / 设置）。注意：插件里页签上的字来自 ui.py 的 active_tab 枚举，现在还写着「AI 对话」——真要改成「对话」是改那个字符串。"
   },
   {
    "default_variant": "user",
@@ -208,6 +240,11 @@
     },
     {
      "demo": {
+      "icons": [
+       "COMMUNITY",
+       "FILE_SCRIPT",
+       "MESH_DATA"
+      ],
       "items": [
        "耗时 12.4s",
        "执行的操作：",
@@ -238,12 +275,54 @@
   {
    "default_variant": "only",
    "demo": {
-    "items": [
-     "细节 1：杯型风格",
-     "细节 2：容量",
-     "细节 3：材质"
+    "groups": [
+     {
+      "icon": "QUESTION",
+      "item_icons": [
+       "CHECKBOX_DEHLT",
+       "CHECKBOX_DEHLT",
+       "CHECKBOX_DEHLT"
+      ],
+      "items": [
+       "选择：经典直筒微收口（推荐）",
+       "选择：鼓腹圆润",
+       "选择：手感厚壁窑变"
+      ],
+      "title": "细节 1：杯型风格"
+     },
+     {
+      "icon": "QUESTION",
+      "item_icons": [
+       "CHECKBOX_DEHLT",
+       "CHECKBOX_DEHLT",
+       "CHECKBOX_DEHLT"
+      ],
+      "items": [
+       "选择：350ml 便携",
+       "选择：500ml 标准",
+       "选择：750ml 家庭装"
+      ],
+      "title": "细节 2：容量"
+     },
+     {
+      "icon": "QUESTION",
+      "item_icons": [
+       "CHECKBOX_DEHLT",
+       "CHECKBOX_DEHLT",
+       "CHECKBOX_DEHLT"
+      ],
+      "items": [
+       "选择：陶瓷",
+       "选择：玻璃",
+       "选择：不锈钢"
+      ],
+      "title": "细节 3：材质"
+     }
     ],
-    "kind": "col"
+    "items": [
+     "需要你定一下"
+    ],
+    "kind": "box"
    },
    "editable": [
     "选项按钮文字",
@@ -271,12 +350,54 @@
    "variants": [
     {
      "demo": {
-      "items": [
-       "细节 1：杯型风格",
-       "细节 2：容量",
-       "细节 3：材质"
+      "groups": [
+       {
+        "icon": "QUESTION",
+        "item_icons": [
+         "CHECKBOX_DEHLT",
+         "CHECKBOX_DEHLT",
+         "CHECKBOX_DEHLT"
+        ],
+        "items": [
+         "选择：经典直筒微收口（推荐）",
+         "选择：鼓腹圆润",
+         "选择：手感厚壁窑变"
+        ],
+        "title": "细节 1：杯型风格"
+       },
+       {
+        "icon": "QUESTION",
+        "item_icons": [
+         "CHECKBOX_DEHLT",
+         "CHECKBOX_DEHLT",
+         "CHECKBOX_DEHLT"
+        ],
+        "items": [
+         "选择：350ml 便携",
+         "选择：500ml 标准",
+         "选择：750ml 家庭装"
+        ],
+        "title": "细节 2：容量"
+       },
+       {
+        "icon": "QUESTION",
+        "item_icons": [
+         "CHECKBOX_DEHLT",
+         "CHECKBOX_DEHLT",
+         "CHECKBOX_DEHLT"
+        ],
+        "items": [
+         "选择：陶瓷",
+         "选择：玻璃",
+         "选择：不锈钢"
+        ],
+        "title": "细节 3：材质"
+       }
       ],
-      "kind": "col"
+      "items": [
+       "需要你定一下"
+      ],
+      "kind": "box"
      },
      "key": "only",
      "label": "反问一组",
@@ -303,15 +424,21 @@
       }
      ],
      "ui_py": "for q_idx, q in enumerate(questions):\n    qbox = layout.box()\n    qbox.label(text=f\"细节 {q_idx + 1}：{q.get('title', '')}\", icon='QUESTION')\n    for opt in q.get(\"options\", []):\n        val = opt.get(\"value\") or opt.get(\"label\", \"\")\n        lbl = opt.get(\"label\", val)\n        orow = qbox.row()\n        btn = orow.operator(\"deepseek.submit_selection\",\n                            text=f\"选择: {lbl}\",\n                            icon='CHECKBOX_DEHLT')\n        btn.custom_prompt = f\"针对「{q.get('title', '')}」，我选择：{val}\"\n\nrec_btn = layout.operator(\"deepseek.submit_selection\",\n                        text=\"按推荐参数开始建模\",\n                        icon='PLAY')\nrec_btn.custom_prompt = info.get(\"all_recommended\", \"全部按推荐参数开始建模！\")",
-     "what": "细节 N + N 个选择按钮 + 一个全按推荐"
+     "what": "引子一句 + 每个细节一个盒（标题 + N 个选择按钮）"
     }
    ],
-   "what": "AI 反问规格时给你的一组选择：一项一个盒，底下每个选项一个按钮，一个选项占满一整行。"
+   "what": "AI 反问规格时给你的一组选择。外面一个大盒（就是这条 AI 消息的气泡盒），里面每个细节自己一个盒，标题和那一串选择按钮装在同一个盒里。"
   },
   {
    "default_variant": "only",
    "demo": {
-    "cols": 2,
+    "cols": 4,
+    "icons": [
+     "CON_SIZELIKE",
+     "MATSHADERBALL",
+     "MOD_BEVEL",
+     "NORMALS_VERTEX"
+    ],
     "items": [
      "修改尺寸",
      "更换材质",
@@ -330,7 +457,13 @@
    "variants": [
     {
      "demo": {
-      "cols": 2,
+      "cols": 4,
+      "icons": [
+       "CON_SIZELIKE",
+       "MATSHADERBALL",
+       "MOD_BEVEL",
+       "NORMALS_VERTEX"
+      ],
       "items": [
        "修改尺寸",
        "更换材质",
@@ -340,17 +473,20 @@
       "kind": "grid"
      },
      "key": "only",
-     "label": "两行按钮",
+     "label": "一行四个",
      "rewrites": [],
      "ui_py": "pills = list(quick_pills(state))\nif pills:\n    pbox = layout.box()\n    p_row1 = pbox.row(align=True)\n    p_row2 = pbox.row(align=True)\n    mid = (len(pills) + 1) // 2\n    for i, pill in enumerate(pills):\n        target_row = p_row1 if i < mid else p_row2\n        target_row.operator(\"deepseek.quick_pill\", text=pill).action = pill",
-     "what": "两行并排的快捷指令"
+     "what": "一行并排的四个快捷指令"
     }
    ],
-   "what": "输入框上面那两行快捷按钮，点一下等于替你把这句话打进去。"
+   "what": "输入框上面那排快捷按钮，点一下等于替你把这句话打进去。图示按「一行 4 个」画；ui.py 里那段代码是两行两列（p_row1 / p_row2），按钮一模一样，真要一行 4 个得改 ui.py——本轮不许动它。"
   },
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "TEXT"
+    ],
     "items": [
      "输入建模指令:",
      "高度 3",
@@ -410,6 +546,10 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "ADD",
+     "TRASH"
+    ],
     "items": [
      "新建任务",
      "清空记录"
@@ -465,6 +605,11 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "CONSOLE",
+     "CHECKMARK",
+     "CHECKMARK"
+    ],
     "items": [
      "工具调用（4）",
      "1. list_scene_objects",
@@ -482,6 +627,11 @@
    "variants": [
     {
      "demo": {
+      "icons": [
+       "CONSOLE",
+       "CHECKMARK",
+       "CHECKMARK"
+      ],
       "items": [
        "工具调用（4）",
        "1. list_scene_objects",
@@ -501,6 +651,9 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "CONSOLE"
+    ],
     "items": [
      "详情 / 转录内容",
      "（整段原文）"
@@ -535,6 +688,10 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "INFO",
+     "TIME"
+    ],
     "items": [
      "本次用量（实测）",
      "输入 4820 · 缓存命中 3960",
@@ -573,6 +730,9 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "EXPORT"
+    ],
     "items": [
      "导出完整转录"
     ],
@@ -605,6 +765,10 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "PREFERENCES",
+     "URL"
+    ],
     "items": [
      "服务商",
      "DeepSeek",
@@ -641,6 +805,10 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "KEYINGSET",
+     "ERROR"
+    ],
     "items": [
      "API Key",
      "（未填）",
@@ -677,6 +845,10 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "PLUGIN",
+     "FILE_REFRESH"
+    ],
     "items": [
      "当前模型",
      "deepseek-chat",
@@ -714,6 +886,9 @@
    "default_variant": "only",
    "demo": {
     "cols": 2,
+    "icons": [
+     "CHECKMARK"
+    ],
     "items": [
      "deepseek-chat",
      "deepseek-reasoner"
@@ -749,6 +924,9 @@
   {
    "default_variant": "only",
    "demo": {
+    "icons": [
+     "PREFERENCES"
+    ],
     "items": [
      "Base URL",
      "超时(秒) 120",
@@ -801,6 +979,22 @@
   "gap"
  ],
  "generated_for": "blender_deepseek_agent/ui.py",
+ "py_preamble": {
+  "key": "responsive_icons",
+  "snippet": [
+   "# ---- 响应式图标：面板窄了就只留文字 ----",
+   "# Blender 没有媒体查询，draw() 里唯一能拿到的宽度就是区域宽度，",
+   "# 所以「宽 / 窄」只能自己判断：够宽给真图标名，不够就 icon='NONE'。",
+   "# ★ 拖动面板边框的过程中 Blender 不会实时重绘 draw()，",
+   "#   松手之后才重画一次——所以这个切换是「松手即生效」，",
+   "#   不是「拖动过程中实时变」。别把它当成 CSS 那种媒体查询。",
+   "_uw_panel_w = bpy.context.region.width",
+   "_uw_wide = _uw_panel_w >= 360",
+   "ICON_PLAY = 'PLAY' if _uw_wide else 'NONE'",
+   "ICON_CHECKBOX = 'CHECKBOX_DEHLT' if _uw_wide else 'NONE'"
+  ],
+  "why": "这一段是 ui.py 里没有的新增代码：响应式图标在插件里还没有现成写法可抄，所以它不进任何块的 ui_py（那边只许放 ui.py 里逐字存在的代码），单独立这张表随导出一起带走。"
+ },
  "tab_labels": {
   "chat": "对话",
   "detail": "详情",

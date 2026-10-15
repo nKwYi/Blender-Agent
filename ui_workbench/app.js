@@ -1245,21 +1245,44 @@ function renderDemo(w) {
     return box;
   }
   var items = d.items || [];
+  var icons = d.icons || [];
   var cols = Number(d.cols) > 0 ? Number(d.cols) : 0;
-  if (cols) { box.dataset.dcols = String(cols); }
+  if (cols) {
+    box.dataset.dcols = String(cols);
+    /* 网格的列数必须真的由数据决定，所以这一种形状改用 CSS grid：
+       flex + 百分比基准量不准（d-it 的 margin 与边框会把最后一个挤到下一行，
+       数据写着 4 列、屏幕上却是 2 行），而 grid 的 repeat(n, minmax(0,1fr))
+       就是「n 列、一行排得下 n 个」，cols 改成 2 它立刻退回两行。 */
+    box.style.display = "grid";
+    box.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+  }
+  if (d.groups) { box.dataset.dgroups = String(d.groups.length); }
   var left = Math.round((Number(d.factor) || 0.5) * 100);
   items.forEach(function (t, i) {
-    var it = document.createElement("i");
-    it.className = "d-it";
-    it.textContent = t;
-    // 分栏与网格靠内联宽度画出来：比例是数据给的，代码只负责把它变成宽度。
-    // 这里不写颜色，色值由 style.css 的变量统一管。
-    if (kind === "split") {
-      it.style.flex = "0 0 " + (i === 0 ? left : (100 - left)) + "%";
-    } else if (kind === "grid") {
-      it.style.flex = "0 0 " + (100 / cols) + "%";
+    box.appendChild(demoItem(t, kind, icons[i], left, cols, i));
+  });
+  /* 双层盒：每组细节自己再一个盒，标题 + 那一串按钮都装在里面。
+     外面那个盒已经由 kind 画出来了（这里是 box），所以这里只补里层。
+     组内的按钮一个占满一整行——真实面板里就是一个选项一行，
+     并排放会把「选择：经典直筒微收口（推荐）」折成两行。 */
+  (d.groups || []).forEach(function (g) {
+    var gb = document.createElement("div");
+    gb.className = "d-group";
+    gb.dataset.dgtitle = g.title || "";
+    var gt = document.createElement("i");
+    gt.className = "d-gtitle";
+    if (g.icon) {
+      var gi = document.createElement("b");
+      gi.className = "d-ic";
+      gi.textContent = g.icon;
+      gt.appendChild(gi);
     }
-    box.appendChild(it);
+    gt.appendChild(document.createTextNode(g.title || ""));
+    gb.appendChild(gt);
+    (g.items || []).forEach(function (t, i) {
+      gb.appendChild(demoItem(t, "btn", (g.item_icons || [])[i], 0, 0, i));
+    });
+    box.appendChild(gb);
   });
   if (kind === "panel") {
     var sub = document.createElement("i");
@@ -1268,6 +1291,32 @@ function renderDemo(w) {
     box.appendChild(sub);
   }
   return box;
+}
+
+/* 一个条目方块。图标名照样照印（离线没有图标资源），但它**默认是藏起来的**：
+   面板窄的时候 Blender 那边是 icon='NONE'，预览跟着藏，两边讲同一个故事。
+   露出与否交给 style.css 的容器查询（见 .d-ic 那段）。 */
+function demoItem(t, kind, icon, left, cols, i) {
+  var it = document.createElement("i");
+  it.className = "d-it";
+  if (icon) {
+    var ic = document.createElement("b");
+    ic.className = "d-ic";
+    ic.textContent = icon;
+    it.appendChild(ic);
+  }
+  it.appendChild(document.createTextNode(t));
+  // 分栏与网格靠内联宽度画出来：比例是数据给的，代码只负责把它变成宽度。
+  // 这里不写颜色，色值由 style.css 的变量统一管。
+  if (kind === "split") {
+    it.style.flex = "0 0 " + (i === 0 ? left : (100 - left)) + "%";
+  } else if (kind === "grid") {
+    /* 网格交给容器（上面那段 grid-template-columns）分列，方块本身不再自带
+       基准宽度：带基准的那套 flex 量出来会差几像素而折行。 */
+    it.style.minWidth = "0";
+    it.dataset.dcell = String(i);
+  }
+  return it;
 }
 
 /* ---------------- 业务块 ----------------
@@ -3867,6 +3916,21 @@ function buildPy() {
   out.push("");
   out.push("def draw_" + activeTab + "_content(layout, state):");
   out.push('    """「' + TAB_LABELS[activeTab] + '」界面。' + UNVERIFIED_NOTICE + '"""');
+  /* 响应式图标那一小段：它是 blocks.json 里 py_preamble 登记的新增代码，
+     ui.py 里没有这一段（所以它不像别的行那样「原样抄来」）。少发这一段，
+     用户在 Blender 里就没有「窄了不画图标」这个可行写法可抄。 */
+  var pre = (blocksDoc && blocksDoc.py_preamble) || null;
+  if (pre && proposal.length) {
+    /* why 按句号断行导出：它是一整段中文，塞成一行会顶穿一屏代码，
+       而「这是 ui.py 之外的新增代码」这句话必须跟着代码走。 */
+    String(pre.why || "").split("。").forEach(function (s) {
+      var t = s.trim();
+      if (t) { out.push("    # " + t + "。"); }
+    });
+    (pre.snippet || []).forEach(function (ln) {
+      out.push(ln.trim() ? ("    " + ln) : "");
+    });
+  }
   if (!proposal.length) {
     out.push("    # 这一份还没有积木：Blender 侧这里也应该是空的。");
   } else {
@@ -4600,19 +4664,62 @@ function runDemoHook(hash) {
 function runBizHook(hash) {
   var h = String(hash || "").replace(/^#/, "");
   var kind = h.indexOf("biz-") === 0 ? h.slice(4) : null;
+  /* 结尾缀 -narrow：把左边那块预览压到 280px。
+     这是「响应式图标」那一条的真实验证入口——不是把 class 换掉就宣布
+     图标没了，而是压窄之后由浏览器自己重新算一遍样式，再把算出来的
+     display 报出来（见 bizIconReport）。 */
+  var narrow = false;
+  if (kind && kind.slice(-7) === "-narrow") {
+    narrow = true;
+    kind = kind.slice(0, -7);
+  }
+  /* all-detail / all-settings：先把画布切到那个界面再点满它那一层的块。
+     控件架上的卡片本来就按界面过滤，留在对话页点按钮只会点中对话那 7 张。 */
+  var tab = null;
+  var tm = /^taball-(chat|detail|settings)$/.exec(kind || "");
+  if (tm) { kind = "taball"; tab = tm[1]; }
+  if (kind === "taball-detail" || kind === "taball-settings") {
+    tab = kind.slice("taball-".length);
+    kind = "taball";
+  }
   if (!kind) { return; }
   switchView("proposal");
   loadVocab().then(function () {
+    if (narrow) { setNarrowPanel(true); }
+    if (tab) { switchTab(tab); }
     if (kind === "empty") {
-      setStatus("BIZ empty 块 0");
+      setStatus("BIZ empty 块 0" + (narrow ? "（面板已压窄）" : ""));
+      return;
+    }
+    if (kind === "taball") {
+      /* 只点**当前界面**那几块：控件架把三个界面的卡片都放在 DOM 里，
+         一把 querySelectorAll 会把 16 块全插进对话这份画布，
+         截图上就是「对话页里混着详情和设置的块」。#biz-all 仍然是
+         三个界面全点一遍（dev/test_proposal_blocks.py 的 dom_all_* 用它）。 */
+      var bs = el("vocab-bar").querySelectorAll("button[data-bkey]");
+      var n = 0;
+      for (var i = 0; i < bs.length; i++) {
+        var cd = bs[i].closest ? bs[i].closest(".bcard") : null;
+        if (cd && cd.dataset.tab && cd.dataset.tab !== activeTab) { continue; }
+        bs[i].click();
+        n++;
+      }
+      /* 截图模式：控件架收掉、页面回到最上面，不然无头 --screenshot 只截
+         视口，截到的是一屏卡片，看不见用户真正要看的那块界面预览。
+         真人打开工作台永远不会带上这个 class（只有 #biz-taball 会加）。 */
+      document.body.classList.add("uw-shot-canvas");
+      if (window.scrollTo) { window.scrollTo(0, 0); }
+      setStatus("BIZ taball " + activeTab + " 块 " + proposal.length +
+                "（点了 " + n + " 张卡）");
       return;
     }
     if (kind === "all") {
-      var bs = el("vocab-bar").querySelectorAll("button[data-bkey]");
-      for (var i = 0; i < bs.length; i++) { bs[i].click(); }
+      var all = el("vocab-bar").querySelectorAll("button[data-bkey]");
+      for (var i2 = 0; i2 < all.length; i2++) { all[i2].click(); }
       setStatus("BIZ all 块 " + proposal.length);
       return;
     }
+    if (kind === "icons") { insertBizDemo(); bizIconReport(narrow); return; }
     if (kind === "demo") { insertBizDemo(); return; }
     if (kind === "report") { insertBizDemo(); bizReport(); return; }
     if (kind === "export") { insertBizDemo(); bizExportReport(); return; }
@@ -4620,6 +4727,109 @@ function runBizHook(hash) {
   }).catch(function (e) {
     setStatus("BIZ 失败：" + e.message);
   });
+}
+
+/* 把预览面板压窄 / 放回默认宽度。压窄这件事只有截图与无头验收用得着，
+   所以走 body 上的一个 class，而不是去改 style.css 的行内宽度。 */
+function setNarrowPanel(on) {
+  document.body.classList.toggle("uw-narrow-panel", !!on);
+  renderCanvas();
+}
+
+/* 响应式图标的无头验收：报两遍——默认（宽）面板下图标角标的 display，
+   以及压窄到 280px 之后浏览器重新算出来的 display。
+   量的是 getComputedStyle，不是「class 有没有设」，所以这条断言坏掉时
+   只可能是真的坏了：要么 CSS 写错了，要么响应式根本没生效。 */
+function bizIconReport(narrow) {
+  if (narrow) { setNarrowPanel(true); }
+  var host = el("preview");
+  function readState() {
+    var ics = host.querySelectorAll(".d-ic");
+    var shown = 0;
+    for (var i = 0; i < ics.length; i++) {
+      var cs = host.ownerDocument.defaultView.getComputedStyle(ics[i]);
+      if (cs.display !== "none" && cs.visibility !== "hidden") { shown++; }
+    }
+    return { total: ics.length, shown: shown,
+             panel: Math.round(host.getBoundingClientRect().width) };
+  }
+  var wide = readState();
+  /* 压窄 → 同一批元素重新算样式 → 再读一遍。两读都必须来自真实布局，
+     所以中间不能只改一个 class 就立刻读：renderCanvas 已经同步重画。 */
+  setNarrowPanel(!narrow);
+  var thin = readState();
+  setNarrowPanel(!!narrow);
+  /* dataset 的键不许带横线：写 "wide-total" 会直接抛 TypeError
+     （DOMStringMap 不是普通对象），整条钩子就哑了。落到 DOM 上是
+     data-wide-total，Python 那边按横线读回来。 */
+  appendReport("biz-icons", {
+    "wideTotal": String(wide.total),
+    "wideShown": String(wide.shown),
+    "widePanel": String(wide.panel),
+    "narrowTotal": String(thin.total),
+    "narrowShown": String(thin.shown),
+    "narrowPanel": String(thin.panel),
+    "tabs": tabsReading(),
+    "pills": pillsReading(),
+    "qs": qsReading()
+  });
+}
+
+/* 页签条那个卡片：三个页签到底写着什么。这条只量文字本身，
+   「有没有 AI 那两个字」是一次改名就会漂的事，写死不如现场读。 */
+function tabsReading() {
+  var card = document.querySelector('.bcard[data-bcard-for="chat_tabbar"] .demo');
+  if (!card) { return ""; }
+  var out = [];
+  card.querySelectorAll(":scope > .d-it").forEach(function (it) {
+    /* 只读文字本身：textContent 会把图标角标那个名字一起读进来，
+       断言就会去比「COMMUNITY对话」这种没人写的串。 */
+    out.push(it.lastChild ? it.lastChild.textContent : "");
+  });
+  return out.join("|");
+}
+
+/* 快捷指令网格那个卡片：四个方块是不是真的排在同一行。
+   量的是浏览器算出来的 top 与宽度，不是数据里的 cols——数据写 4 而 CSS
+   没跟上，这里就会量出两个不同的 top。 */
+function pillsReading() {
+  var card = document.querySelector('.bcard[data-bcard-for="chat_pills"] .demo');
+  if (!card) { return ""; }
+  var its = card.querySelectorAll(".d-it");
+  var tops = {};
+  var ws = [];
+  its.forEach(function (it) {
+    var r = it.getBoundingClientRect();
+    tops[String(Math.round(r.top))] = "1";
+    ws.push(String(Math.round(r.width)));
+  });
+  return its.length + ":" + Object.keys(tops).length + ":" + ws.join(",") +
+    ":" + card.querySelectorAll(".d-ic").length;
+}
+
+/* 规格选项组那个卡片：外层一个盒装下引子 + 三组细节，每组细节自己一个盒。
+   「引子是不是这个盒的直接孩子」这条是第 2 条的全部：文字与按钮同盒，
+   文字就是盒里的第一个直接孩子，按钮在盒里的分组中。 */
+function qsReading() {
+  var card = document.querySelector('.bcard[data-bcard-for="chat_questions"] .demo');
+  if (!card) { return ""; }
+  var intro = card.querySelector(":scope > .d-it");
+  var gs = card.querySelectorAll(".d-group");
+  var per = [];
+  gs.forEach(function (g) {
+    per.push(g.querySelectorAll(".d-it").length);
+  });
+  var titles = [];
+  gs.forEach(function (g) {
+    titles.push((g.dataset.dgtitle || ""));
+  });
+  return [card.dataset.dkind, intro ? intro.textContent : "", gs.length,
+          per.join("/"), titles.join("|"),
+          /* 那个盒里除了引子还装不装按钮：第 2 条的全部就是这一格。
+             只报「外层是 box、引子是它的直接孩子」是不够的——把里层整层
+             删掉，前两句照样成立，于是「文字和按钮同盒」没人验。 */
+          card.querySelector(".d-group") ? "same" : "bare",
+          card.querySelectorAll(".d-ic").length].join(":");
 }
 
 /* 一套 6 块的对话界面。挑法：页签条 / 状态提示条 / 消息气泡 /

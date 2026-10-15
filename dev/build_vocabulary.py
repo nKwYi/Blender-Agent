@@ -82,11 +82,11 @@ EXAMPLE_PANEL = {
         # + prop(expand=True)）。这里用三个 operator 积木当那三个页签按钮——
         # 预览里 operator 画成一块带图标的按钮，正好对上 options.png 顶上那一行。
         {"wkey": "row", "params": "align", "element_id": "chat.tabbar",
-         "note": "三个页签并排：AI 对话 / 详情 / 设置（页签条本身一个字都不写）",
-         "content": {"heading": "AI 对话"}},
+         "note": "三个页签并排：对话 / 详情 / 设置（页签条本身一个字都不写）",
+         "content": {"heading": "对话"}},
         {"wkey": "operator", "params": "", "element_id": "",
-         "note": "页签按钮 · AI 对话（当前页签；块本身不装任何子块）",
-         "content": {"text": "AI 对话", "icon": "USER"}},
+         "note": "页签按钮 · 对话（当前页签；块本身不装任何子块）",
+         "content": {"text": "对话", "icon": "USER"}},
         {"wkey": "operator", "params": "", "element_id": "",
          "note": "页签按钮 · 详情",
          "content": {"text": "详情", "icon": "IMAGE_DATA"}},

@@ -229,6 +229,16 @@ button.chip {
 .canvas-split { display: flex; gap: 12px; padding: 0 12px 8px; align-items: flex-start; }
 .preview-pane { flex: 0 0 420px; position: sticky; top: 8px; }
 .block-pane { flex: 1 1 auto; min-width: 420px; }
+/* 响应式图标的判据是**这一块的宽度**，不是浏览器窗口：Blender 的面板宽度
+   与工作台窗口宽度没有任何关系，用视口媒体查询去判必然判错对象。
+   所以 #preview 自己是容器，.d-ic 按容器的 inline-size 决定露不露。 */
+#preview {
+  container-type: inline-size; container-name: uwpanel;
+}
+/* 压窄模式（只给 #biz-*-narrow 这条无头钩子与截图用）：预览收到 280px，
+   刚好越过 360px 那道线，于是图标全部消失、文字留下。 */
+body.uw-narrow-panel .preview-pane { flex: 0 0 280px; }
+body.uw-narrow-panel .block-pane { min-width: 280px; }
 .pane-cap { color: var(--text-dim); font-size: 11px; margin: 6px 0 4px; }
 #preview {
   background: var(--panel); border: 1px solid var(--border);
@@ -360,6 +370,10 @@ button.chip {
 body.uw-shot-export #vocab-bar,
 body.uw-shot-export .canvas-split,
 body.uw-shot-export #prop-notes { display: none; }
+/* 画布截图模式（只给 #biz-all* 用）：控件架那 16 张卡收掉，视口留给
+   「左边预览 + 右边画布」这一对——那才是用户要看的。
+   同样只由钩子加 class，真人打开工作台不受影响。不含任何新色值。 */
+body.uw-shot-canvas #block-cards { display: none; }
 .demo {
   display: flex; background: var(--panel); border: 1px solid var(--border);
   border-radius: 4px; padding: 4px; height: 56px; align-items: stretch;
@@ -388,6 +402,46 @@ body.uw-shot-export #prop-notes { display: none; }
 .demo.d-btn .d-it { background: var(--fill); }
 .demo.d-prop .d-it:first-child { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
 .demo.d-prop .d-it + .d-it { flex: 0 0 28%; }
+
+/* ---- 图示里的图标名角标 + 响应式 ----
+   图标名照印（离线没有图标资源），但**默认藏起来**：Blender 那边窄面板是
+   icon='NONE'，预览跟着藏，两边讲同一个故事。露出与否由容器查询决定，
+   判据是预览容器自己的宽度（不是浏览器窗口——面板宽度与窗口宽度无关）。
+
+   ★ Blender 没有媒体查询：它只能在 draw() 里读 context.region.width 自己
+   判断，而拖动面板边框的过程中不会实时重绘，松手才重画一次。所以「响应式」
+   在导出代码里的形状是「松手即生效」，不是「拖动时实时变」。 */
+.demo .d-ic {
+  display: none;
+  color: var(--text-dim); font-family: Consolas, monospace; font-size: 8px;
+  font-weight: normal; line-height: 1.4; letter-spacing: .02em;
+  border: 1px solid var(--border); border-radius: 3px; padding: 0 2px;
+  margin-right: 2px; vertical-align: middle; white-space: nowrap;
+}
+@container uwpanel (min-width: 360px) {
+  .demo .d-ic { display: inline-block; }
+}
+/* ---- 双层盒 ----
+   外层是 kind 画出来的那个盒（规格选项组那里是 box），每组细节自己再一个
+   盒：外盒用 --panel、里盒用 --inner，两层底色差一档，边界一眼看得出来。
+   有分组时高度放开：固定 56px 只够放一层，压到 56px 会把里层挤没。 */
+.demo[data-dgroups] {
+  height: auto; min-height: 56px; background: var(--panel);
+  /* 必须转成竖排：.demo 默认是横排的 flex，三组细节会并排挤成一横条，
+     右边两组直接被裁掉——双层盒变成「双层横排」，正是这一条要消掉的错。 */
+  flex-direction: column;
+}
+.demo .d-group {
+  display: flex; flex-direction: column; gap: 2px;
+  flex: 1 1 auto; min-height: 0; margin: 1px;
+  background: var(--inner); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px;
+}
+.demo .d-gtitle {
+  display: flex; align-items: center; color: var(--text); font-size: 11px;
+  line-height: 1.3; padding: 0 2px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
 /* 分隔线与留白没有小方块，画的是一根线 / 一条空隙。
    align-items:center 是必须的：.demo 是 align-items:stretch 的行容器，
    不改的话这两根东西会被拉满 56px 高，线贴在天花板上、根本看不出是「一条线」。 */
