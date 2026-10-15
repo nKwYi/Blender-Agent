@@ -78,9 +78,21 @@ EXAMPLE_PANEL = {
     "title": "AI 对话",
     "caption": "整根竖排把它们从上到下串起来，横排把同一组里的控件并排放。",
     "blocks": [
+        # 页签条：真实面板顶上就是三个并排的页签（ui.py 里 row(align=True)
+        # + prop(expand=True)）。这里用三个 operator 积木当那三个页签按钮——
+        # 预览里 operator 画成一块带图标的按钮，正好对上 options.png 顶上那一行。
         {"wkey": "row", "params": "align", "element_id": "chat.tabbar",
-         "note": "三个页签并排：AI 对话 / 详情 / 设置",
+         "note": "三个页签并排：AI 对话 / 详情 / 设置（页签条本身一个字都不写）",
          "content": {"heading": "AI 对话"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "页签按钮 · AI 对话（当前页签；块本身不装任何子块）",
+         "content": {"text": "AI 对话", "icon": "USER"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "页签按钮 · 详情",
+         "content": {"text": "详情", "icon": "IMAGE_DATA"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "页签按钮 · 设置",
+         "content": {"text": "设置", "icon": "PREFERENCES"}},
         {"wkey": "column", "params": "align", "element_id": "chat.stream",
          "note": "整根竖排：下面每一块都落在它里面，从上到下",
          "content": {"heading": "对话记录"}},
@@ -93,9 +105,39 @@ EXAMPLE_PANEL = {
         {"wkey": "column", "params": "align", "element_id": "chat.options",
          "note": "规格选项容器：一次有几项要选，就用竖排把每项串起来",
          "content": {"heading": "需要你定一下"}},
+        # 真实面板里每个细节底下是一排「选择：xxx」的勾选按钮。勾选框是
+        # prop(toggle=True) 画出来的，零资源下用 CHECKBOX_DEHLT 这个实测
+        # 图标名示意，位置对得上 options.png 里每个按钮左边那个小方块。
         {"wkey": "row", "params": "align", "element_id": "",
-         "note": "三个并排的选项按钮：修改尺寸 / 更换材质 / 平滑着色",
-         "content": {"heading": "修改尺寸 / 更换材质 / 平滑着色"}},
+         "note": "一组并排的规格选项：三个按钮共用一个横排当分母",
+         "content": {"heading": "细节 1：1.杯型风格"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "规格选项按钮（带勾选框）",
+         "content": {"text": "选择：经典直筒微收口（推荐）", "icon": "CHECKBOX_DEHLT"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "规格选项按钮（带勾选框）",
+         "content": {"text": "选择：鼓腹圆润", "icon": "CHECKBOX_DEHLT"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "规格选项按钮（带勾选框）",
+         "content": {"text": "选择：手感厚壁窑变", "icon": "CHECKBOX_DEHLT"}},
+        # 真实面板在输入框上面是 2x2 的四个并排按钮（修改尺寸 / 更换材质 /
+        # 增加倒角 / 平滑着色）。columns=2 让预览真的排成两列两行。
+        {"wkey": "grid_flow", "params": "row_major, columns, even_columns",
+         "element_id": "",
+         "note": "两列并排的按钮网格：grid_flow(columns=2) 就是那个样子",
+         "content": {}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "网格里的第一个按钮",
+         "content": {"text": "修改尺寸", "icon": "BRUSH_DATA"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "网格里的第二个按钮",
+         "content": {"text": "更换材质", "icon": "MATSPHERE"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "网格里的第三个按钮",
+         "content": {"text": "增加倒角", "icon": "MODIFIER"}},
+        {"wkey": "operator", "params": "", "element_id": "",
+         "note": "网格里的第四个按钮",
+         "content": {"text": "平滑着色", "icon": "SMOOTHCURVE"}},
         {"wkey": "textbox", "params": "prop, initial_visible_lines",
          "element_id": "chat.composer", "note": "指令输入框，可写多行",
          "content": {"placeholder": "输入建模指令…", "lines": 3}},
@@ -111,14 +153,25 @@ EXAMPLE_PANEL = {
 # 最后遇到的那个上去——挂错容器在预览里几乎看不出来，只会觉得排版怪怪的。
 # 下标而不是 uid：uid 由 app.js 插入时才发，数据侧拿不到。
 EXAMPLE_PANEL_PARENT_CHAT = {
-    "0": -1,          # chat.tabbar 那一根横排在最上面，不装东西
-    "1": -1,          # chat.stream 整根竖排，自己撑起这个界面
-    "2": 1,           # 消息盒 -> 落在竖排里
-    "3": 1,           # 状态行 -> 落在竖排里
-    "4": 1,           # chat.options 规格竖排 -> 落在竖排里
-    "5": 4,           # 并排选项按钮 -> 落在 chat.options 里面
-    "6": 1,           # 输入框 -> 落在竖排里
-    "7": 1,           # 操作行 -> 落在竖排里
+    "0": -1,          # chat.tabbar 那一根横排在最上面，三个页签按钮装在它里面
+    "1": 0,           # AI 对话 页签
+    "2": 0,           # 详情 页签
+    "3": 0,           # 设置 页签
+    "4": -1,          # chat.stream 整根竖排，自己撑起这个界面
+    "5": 4,           # 消息盒 -> 落在竖排里
+    "6": 4,           # 状态行 -> 落在竖排里
+    "7": 4,           # chat.options 规格竖排 -> 落在竖排里
+    "8": 7,           # 细节 1 那一横排 -> 落在规格竖排里
+    "9": 8,           # 三个规格选项按钮 -> 落在那一横排里
+    "10": 8,
+    "11": 8,
+    "12": 4,          # 两列按钮网格 -> 落在竖排里
+    "13": 12,
+    "14": 12,
+    "15": 12,
+    "16": 12,
+    "17": 4,          # 输入框 -> 落在竖排里
+    "18": 4,          # 操作行 -> 落在竖排里
 }
 
 # 新积木的起手内容。空按钮定不了形、也看不出这是个什么控件，所以每个有内容

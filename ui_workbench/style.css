@@ -119,17 +119,48 @@ nav button.on { background: var(--accent); border-color: var(--accent); }
   border-radius: 4px; padding: 4px 14px; cursor: pointer; font: inherit;
 }
 .subtabs button.on { background: var(--accent); border-color: var(--accent); }
-/* ---- 积木嵌套 ----
-   容器积木的孩子缩进在一个分组框里：左竖线（--border）+ 左内缩进。
-   缩进本身不足以说明「边界在哪、能拖到哪」，所以配一条竖线。
-   不靠颜色语义：竖线用的是与普通边框同一支色值。 */
+/* ---- 积木嵌套：树要一眼看得出来 ----
+   三件东西一起承担「这是一棵树」：
+     .pgroup  容器积木外面那圈边框（分组框）——边界在哪
+     .pkids   孩子区：左边一条竖线，每个孩子一条短横线接回竖线（树线）
+     缩进     每层往里推得够多，一眼数得出层级
+   不靠颜色语义：边框、竖线、短横线全用 --border 这一支色值，
+   「能装进去」靠虚线边框 + 底色明度差，主题里没有红也没有绿。 */
 .pgroup {
-  border-left: 2px solid var(--border);
-  margin: 6px 0 6px 4px; padding-left: 10px;
+  border: 1px solid var(--border); border-left: 2px solid var(--border);
+  border-radius: 4px; background: var(--hover);
+  margin: 8px 0; padding: 6px 6px 6px 8px;
 }
-/* 分组框本身是「这一层有哪些孩子」的可视边界。缩进要够，一眼能数出层级；
-   竖线用与普通边框同一支色值——不靠颜色语义，靠位置与明度差。 */
 .pgroup > .pnode:first-child { margin-top: 0; }
+.pgroup > .pnode:last-child { margin-bottom: 0; }
+/* 孩子区：竖线在这里起笔，而不是在分组框最顶上。
+   竖线从容器标题行下方才开始，才读得出「线以下是它的孩子」。 */
+.pkids {
+  margin: 6px 0 2px 10px; padding-left: 18px;
+  border-left: 2px solid var(--border);
+}
+.pkids:empty { margin: 0; padding: 0; border-left: none; }
+/* 短横线：每个孩子一条，从竖线接到自己左边。
+   纯 border + 绝对定位，不引图片也不引图标。 */
+.pkids > .pnode { position: relative; margin: 6px 0; }
+.pkids > .pnode::before {
+  content: ""; position: absolute; left: -12px; top: 13px;
+  width: 12px; border-top: 1px solid var(--border);
+}
+/* 容器标题上的子块数。0 也显示：空容器不是「没渲染出来」，
+   少了这个数字，两者看上去一模一样。 */
+.pnode .pcount {
+  color: var(--text-dim); font-family: Consolas, monospace; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 5px;
+}
+/* 换父级的两个快捷按钮：标题行上一点就生效，不用展开积木翻下拉。 */
+.pnode button.chip.pmove { font-size: 11px; padding: 1px 6px; }
+/* 没得可移时置灰，不消失：会忽然不见的按钮看起来像界面坏了。 */
+.pnode button.chip.pmove:disabled { opacity: .45; cursor: default; }
+/* 拖起来时能装进去的容器：虚线边框 + 亮一点的底。
+   主题里没有红也没有绿，所以「可以放进去」不靠颜色讲，靠边框与明度差。 */
+.pnode.can-drop { border-style: dashed; border-color: var(--text-dim); background: var(--field); }
+.pnode.drop-target { border-style: solid; border-width: 2px; border-color: var(--text-dim); }
 .pnode .psel {
   width: auto; flex: 1 1 auto; margin: 0; background: var(--field);
   color: var(--text); border: 1px solid var(--border);

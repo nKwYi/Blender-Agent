@@ -282,7 +282,54 @@ DEMO_KINDS = ["row", "col", "box", "split", "grid", "panel", "label", "btn",
               "prop", "rule", "gap"]
 # rule / gap 不画小方块，画的是一根线 / 一条空隙，所以它们不该有 items。
 DEMO_BARELESS = ["rule", "gap"]
-EXPECT_PANEL_BLOCKS = 8          # 示例面板从上到下的块数（brief 的第 1..8 步）
+# Task 15 起，这条不再是「恰好 8 块」。
+#
+# 原来钉死块数，本意是防示例面板无声变形（悄悄少一块 / 多一块都算变形），
+# 但它挡住的是明显正确的改进：页签条补上三个页签按钮、规格区补上带勾选的
+# 选项按钮、输入框上面补上 2x2 的按钮网格（都要照着 data/shots/options.png）。
+# 所以改成钉「关键块都在」：下面这份清单是对着真实面板 options.png 逐条点出来
+# 的——顶上三个页签、细节标题、三个勾选选项、两列网格里的四个按钮、
+# 输入框、操作行。少任何一块都红，多出来的块不红（示例面板允许再加东西）。
+#
+# 仍然硬的约束一条没丢：块序与参数由 panel_blocks_as_specified 逐条比
+# vocabulary.json，块数由 panel_dom_count 与 panel_preview_node_per_block
+# 拿「浏览器真渲染出来的块数」与「数据里的块数」对齐（下面用 len(blocks) 现算，
+# 不再拿一个写死的整数当标准答案）。
+EXPECT_PANEL_KEY_BLOCKS = [
+    # (块在 vocabulary.json 里的下标, 说明) —— 下标即界面上从上到下的次序
+    (0, "页签条横排 chat.tabbar"),
+    (1, "页签按钮 AI 对话"),
+    (2, "页签按钮 详情"),
+    (3, "页签按钮 设置"),
+    (4, "整根竖排 chat.stream"),
+    (5, "消息盒"),
+    (6, "状态行"),
+    (7, "规格竖排 chat.options"),
+    (8, "细节标题横排"),
+    (9, "勾选选项 · 经典直筒微收口"),
+    (10, "勾选选项 · 鼓腹圆润"),
+    (11, "勾选选项 · 手感厚壁窑变"),
+    (12, "两列按钮网格"),
+    (13, "网格按钮 · 修改尺寸"),
+    (14, "网格按钮 · 更换材质"),
+    (15, "网格按钮 · 增加倒角"),
+    (16, "网格按钮 · 平滑着色"),
+    (17, "指令输入框 chat.composer"),
+    (18, "操作行 chat.action_row"),
+]
+EXPECT_PANEL_TAB_LABELS = ["AI 对话", "详情", "设置"]
+EXPECT_PANEL_CHECK_OPTS = ["选择：经典直筒微收口（推荐）", "选择：鼓腹圆润",
+                           "选择：手感厚壁窑变"]
+EXPECT_PANEL_GRID_BTNS = ["修改尺寸", "更换材质", "增加倒角", "平滑着色"]
+
+
+def panel_expect_blocks(vjson):
+    """示例面板「应该有几块」的唯一真身：vocabulary.json 自己。
+
+    不写死整数：写死的整数既会被正当的改进挡住，又会在数据真变形时
+    变成在维护第二份副本。
+    """
+    return len((vjson.get("example_panel") or {}).get("blocks") or [])
 
 
 def collect_element_ids():
@@ -481,8 +528,26 @@ def demo_static_checks(vocab):
        and all(set(b) == {"wkey", "params", "element_id", "note", "content"} for b in blocks),
        "example_panel 字段集不对：%s / %s"
        % (sorted(panel), sorted(blocks[0]) if blocks else "<no blocks>"))
-    ck("example_panel_block_count", len(blocks) == EXPECT_PANEL_BLOCKS,
-       "示例面板应有 %d 块，实际 %d" % (EXPECT_PANEL_BLOCKS, len(blocks)))
+    # 原来这里是 example_panel_block_count（块数恰好 = 8）。Task 15 起改成
+    # 钉「关键块都在」——理由与 EXPECT_PANEL_KEY_BLOCKS 上方那段一致：
+    # 块数写死会挡住照着 options.png 做的正当补齐，而缺块 / 错序 / 非法
+    # 参数 / 假元素 ID 这四类变形由下面各条断言继续盯着，一条没放松。
+    ck("example_panel_block_count_at_least_key_blocks",
+       len(blocks) >= len(EXPECT_PANEL_KEY_BLOCKS),
+       "示例面板至少要有 %d 块（关键块清单），实际 %d"
+       % (len(EXPECT_PANEL_KEY_BLOCKS), len(blocks)))
+    missing_key = [(i, why) for i, why in EXPECT_PANEL_KEY_BLOCKS
+                   if i >= len(blocks)]
+    ck("example_panel_key_blocks_present", not missing_key,
+       "示例面板缺这些关键块：%s" % missing_key)
+    panel_texts = [str(v) for b in blocks
+                   for v in ((b.get("content") or {}).values())]
+    for want in EXPECT_PANEL_TAB_LABELS + EXPECT_PANEL_CHECK_OPTS + EXPECT_PANEL_GRID_BTNS:
+        ck("example_panel_has_text_%s" % want.split("：")[-1][:8], want in panel_texts,
+           "示例面板里找不到这段字：%r" % want)
+    tab_ids = [b["element_id"] for b in blocks if b["wkey"] == "row"][:1]
+    ck("example_panel_tabbar_first", tab_ids == ["chat.tabbar"],
+       "示例面板第一块应是页签条横排 chat.tabbar，实际 %s" % tab_ids)
     reg = {w["key"]: w for w in ws}
     bad_w = [b["wkey"] for b in blocks if b["wkey"] not in reg]
     ck("example_panel_wkeys_resolve", not bad_w,
@@ -972,6 +1037,7 @@ def dom_checks():
         panel_checks(dump(exe, url + "#proposal-panel", profile), vjson)
         preview_checks(dump(exe, url + "#proposal-preview", profile), vjson)
         nest_checks(dump(exe, url + "#proposal-nest", profile), vjson)
+        move_checks(dump(exe, url + "#proposal-move", profile), vjson)
     finally:
         shutil.rmtree(profile, ignore_errors=True)
 
@@ -1176,23 +1242,30 @@ def examples_checks(page, vjson):
 
 
 def panel_checks(page, vjson):
-    """D：点一下「插入示例面板」，画布里出现一整套能抄的积木。"""
+    """D：点一下「插入示例面板」，画布里出现一整套能抄的积木。
+
+    块数的标准答案一律取 vocabulary.json 里的 blocks（panel_expect_blocks），
+    不再拿一个写死的整数：写死的整数既会挡住正当的补齐（Task 15 就被它挡过），
+    又等于在测试里养了第二份副本。
+    """
     at = report(page, "panel-report")
-    ck("panel_hook_ran", at.get("after") == str(EXPECT_PANEL_BLOCKS)
+    want_n = panel_expect_blocks(vjson)
+    ck("panel_hook_ran", at.get("after") == str(want_n)
        and at.get("before") == "0",
-       "示例面板没插进去：before=%s after=%s" % (at.get("before"), at.get("after")))
-    if at.get("after") != str(EXPECT_PANEL_BLOCKS):
+       "示例面板没插进去：before=%s after=%s（应为 0 -> %d）"
+       % (at.get("before"), at.get("after"), want_n))
+    if at.get("after") != str(want_n):
         return
-    ck("panel_dom_count", at.get("dom-count") == str(EXPECT_PANEL_BLOCKS),
-       "画布上应渲染出 %d 块，实际 %s" % (EXPECT_PANEL_BLOCKS, at.get("dom-count")))
+    ck("panel_dom_count", at.get("dom-count") == str(want_n),
+       "画布上应渲染出 %d 块，实际 %s" % (want_n, at.get("dom-count")))
     uids = _uids(at, "dom-uids")
-    ck("panel_uids_unique", len(uids) == EXPECT_PANEL_BLOCKS
+    ck("panel_uids_unique", len(uids) == want_n
        and all(uids) and len(set(uids)) == len(uids),
        "示例面板各块的 uid 必须互不相同：%s" % uids)
     rows = [r for r in at.get("rows", "").split("|") if r]
-    ck("panel_rows_count", len(rows) == EXPECT_PANEL_BLOCKS,
+    ck("panel_rows_count", len(rows) == want_n,
        "应逐块报出 %d 条读数，实际 %d：%s"
-       % (EXPECT_PANEL_BLOCKS, len(rows), at.get("rows")))
+       % (want_n, len(rows), at.get("rows")))
     bad = [r for r in rows
            if not re.search(r":0:", r) or re.search(r":[1-9]\d*:", r)]
     ck("panel_params_legal", not bad,
@@ -1221,14 +1294,55 @@ def panel_checks(page, vjson):
     ck("panel_preview_has_content", bool(want_text) and not missing_text,
        "插完示例面板后预览里缺这些内容：%s" % missing_text)
     ck("panel_preview_node_per_block",
-       len(re.findall(r'data-pvuid="', pv)) == EXPECT_PANEL_BLOCKS,
+       len(re.findall(r'data-pvuid="', pv)) == want_n,
        "示例面板 %d 块应各占预览一个节点，实际 %d"
-       % (EXPECT_PANEL_BLOCKS, len(re.findall(r'data-pvuid="', pv))))
+       % (want_n, len(re.findall(r'data-pvuid="', pv))))
     ck("panel_preview_multiline_composer",
        'data-pv="textbox"' in pv and re.search(r'data-pv="textbox"[^>]*height:\s*56px', pv)
        is not None,
        "示例面板的输入框在预览里应是 3 行高（3*16+8），实际 %r"
        % re.findall(r'<div[^>]*data-pv="textbox"[^>]*>', pv))
+
+
+def panel_subtree(vjson, index, tab="chat"):
+    """按 example_panel_parents 数出第 index 块的子树块数（自己 + 所有后代）。
+
+    为什么从数据现算而不是写死整数：示例面板这一轮补了页签按钮、勾选选项
+    与按钮网格，子树大小跟着变。写死的整数既会误报（数据合法地变大），
+    又会在数据真变形时给出错误的「期望值」。从同一份数据现算，
+    期望值与数据同源、但仍非空洞：浏览器那边量的是真删/真复制出来的块数。
+    """
+    pm = {int(k): int(v)
+          for k, v in ((vjson.get("example_panel_parents") or {})
+                       .get(tab) or {}).items()}
+    kids = {}
+    for k, p in pm.items():
+        kids.setdefault(p, []).append(k)
+    seen, stack = set(), [index]
+    while stack:
+        i = stack.pop()
+        if i in seen:
+            continue
+        seen.add(i)
+        stack.extend(kids.get(i, []))
+    return len(seen)
+
+
+def panel_child_count(vjson, index, tab="chat"):
+    """第 index 块有几个直接孩子（孙块不算）。"""
+    pm = {int(k): int(v)
+          for k, v in ((vjson.get("example_panel_parents") or {})
+                       .get(tab) or {}).items()}
+    return sum(1 for p in pm.values() if p == index)
+
+
+def panel_index_of(vjson, element_id, tab="chat"):
+    """按元素 ID 找到块下标；找不到给 -1（调用方据此判红，不会蒙过去）。"""
+    blocks = (vjson.get("example_panels") or {}).get(tab, {}).get("blocks") or []
+    for i, b in enumerate(blocks):
+        if b.get("element_id") == element_id:
+            return i
+    return -1
 
 
 def nest_checks(page, vjson):
@@ -1239,6 +1353,8 @@ def nest_checks(page, vjson):
       groups       —— 画布上渲染出的分组框数
       dup-count    —— 复制一个容器之后净增几块（子树复制则 > 1）
       dup-tree     —— 副本 uid:它的直接孩子数（孩子必须改指副本，不能还挂在原件下）
+      del-count    —— 删掉一个容器之后掉几块（连子树一起）
+      del-orphans  —— 删完之后还指着已删容器的块数（必须为 0）
       tabs         —— 三个子页签各自的块数
       sel-*        —— 归属下拉的选项数与选项文本
     """
@@ -1265,19 +1381,30 @@ def nest_checks(page, vjson):
        "画布上没渲染出任何分组框（容器积木没把孩子装进去）：%s" % at.get("groups"))
 
     # --- 复制容器 = 连子树一起复制，且子孙改指副本 ---
-    # chat.stream 的子树是 7 块（自己 + 5 个直接孩子 + 规格竖排里那个横排）；
-    # 副本的直接孩子是 5 个（规格竖排那条算孙块）。写死，不写 >= 1。
-    ck("nest_dup_copies_subtree", at.get("dup-count") == "7",
-       "复制 chat.stream（整棵子树 7 块）应净增 7 块，实际 %s" % at.get("dup-count"))
+    # 期望值从 example_panel_parents 现算（chat.stream 那棵子树有多少块），
+    # 浏览器那边量的是真点过复制按钮之后的净增块数。
+    s_ix = panel_index_of(vjson, "chat.stream")
+    want_dup = panel_subtree(vjson, s_ix)
+    want_kids = panel_child_count(vjson, s_ix)
+    ck("nest_dup_copies_subtree", want_dup > 1 and at.get("dup-count") == str(want_dup),
+       "复制 chat.stream（整棵子树 %d 块）应净增 %d 块，实际 %s"
+       % (want_dup, want_dup, at.get("dup-count")))
     mt = re.match(r"^(\w+):(\d+)$", at.get("dup-tree", ""))
-    ck("nest_dup_children_reparented", bool(mt) and mt.group(2) == "5",
-       "副本应带 5 个直接孩子（规格竖排那条是孙块），且它们的 parent 必须改指副本的"
-       "新 uid，否则改一块会动两处：dup-tree=%r" % at.get("dup-tree"))
+    ck("nest_dup_children_reparented", bool(mt) and mt.group(2) == str(want_kids),
+       "副本应带 %d 个直接孩子，且它们的 parent 必须改指副本的"
+       "新 uid，否则改一块会动两处：dup-tree=%r" % (want_kids, at.get("dup-tree")))
 
-    # --- 删除容器 = 整棵子树一起删 ---
-    # chat.tabbar 是个空容器（没装孩子），删它只该掉 1 块。
-    ck("nest_del_single_leaf_container", at.get("del-count") == "1",
-       "删一个空容器应只掉 1 块，实际 %s" % at.get("del-count"))
+    # --- 删除容器 = 整棵子树一起删，且不留孤儿 ---
+    # 删的是规格竖排 chat.options：它底下套着「细节横排 -> 三个勾选选项」，
+    # 一次能验掉三层——孙块也得跟着走。
+    o_ix = panel_index_of(vjson, "chat.options")
+    want_del = panel_subtree(vjson, o_ix)
+    ck("nest_del_takes_subtree", want_del > 1 and at.get("del-count") == str(want_del),
+       "删掉 chat.options（连子树共 %d 块）应掉 %d 块，实际 %s"
+       % (want_del, want_del, at.get("del-count")))
+    ck("nest_del_no_orphans", at.get("del-orphans") == "0",
+       "删完之后不许剩指着已删容器的孤儿块（它们既不显示也删不掉），实际 %s 个"
+       % at.get("del-orphans"))
 
     # --- 三个界面各自独立 ---
     ck("nest_tabs_independent",
@@ -1295,6 +1422,96 @@ def nest_checks(page, vjson):
        bool(texts) and at.get("sel-options") == str(len(texts)),
        "归属下拉的选项数与读到的文本数对不上：%s vs %d"
        % (at.get("sel-options"), len(texts)))
+
+
+def move_checks(page, vjson):
+    """Task 15：树线 / 分组框 / 两个换父级的快捷按钮 / 拖进容器。
+
+    读数全部来自浏览器真画出来的 DOM 与真点过的按钮、真派发过的 DragEvent：
+      kidzones / zoneKids —— 孩子区（树线那一截）有几个、里面装着几块
+      counts / countBad  —— 容器标题上的「· N」逐个与真孩子数对账
+      in-* / out-*        —— 两个按钮每块都有，没得移的被置灰（不是消失）
+      out-parent / in-parent —— 依次点过之后 parent 变成什么
+      drag-cands / drag-parent —— 拖起来时标了几个能装的容器、落上去之后 parent 变成什么
+      deny-status        —— 落点不能装时，状态条说了什么
+    """
+    at = report(page, "move-report")
+    n = panel_expect_blocks(vjson)
+    ck("move_hook_ran", at.get("blocks") == str(n),
+       "快捷按钮钩子没跑起来或块数不对：blocks=%s（应 %d）" % (at.get("blocks"), n))
+    if at.get("blocks") != str(n):
+        return
+
+    # --- 树：孩子区必须真存在，而且里面真的装着积木 ---
+    zones = at.get("kidzones", "0")
+    ck("move_tree_kidzones", zones.isdigit() and int(zones) > 0,
+       "画布上没有孩子区（树线画不出来）：%s" % zones)
+    ck("move_tree_kidzone_has_kids",
+       at.get("zone-kids", "0").isdigit() and int(at.get("zone-kids", "0")) > 0,
+       "孩子区里一块子积木都没有——分组框和树线只是画了个空壳：%s" % at.get("zone-kids"))
+
+    # --- 容器标题上的子块数：标签上的 N 必须等于真孩子数 ---
+    ck("move_count_badge_matches_kids", at.get("count-bad") == "0",
+       "容器标题上的「· N」与真孩子数对不上，有 %s 个对不上：%s"
+       % (at.get("count-bad"), at.get("counts")))
+    ck("move_empty_container_marked", at.get("empty-marked", "0").isdigit()
+       and int(at.get("empty-marked", "0")) > 0,
+       "一个空容器都没有标「· 0」——空容器必须看得见是空的：%s" % at.get("counts"))
+
+    # --- 两个快捷按钮：每块都有，且「没得移」要置灰 ---
+    ck("move_buttons_on_every_block",
+       at.get("in-all") == str(n) and at.get("out-all") == str(n),
+       "每块积木都该有「移入上一个容器」「移出上一层」两个按钮，实际 in=%s out=%s（应各 %d）"
+       % (at.get("in-all"), at.get("out-all"), n))
+    ck("move_out_button_greys_top_level",
+       at.get("out-off", "0").isdigit() and 0 < int(at.get("out-off", "0")) < n,
+       "顶层积木的「移出上一层」必须置灰（不是消失），实际置灰 %s 个 / 共 %d 块"
+       % (at.get("out-off"), n))
+    ck("move_in_button_greys_when_no_container",
+       at.get("in-off", "0").isdigit() and 0 < int(at.get("in-off", "0")) < n,
+       "上面没有可装容器时「移入上一个容器」必须置灰，实际置灰 %s 个 / 共 %d 块"
+       % (at.get("in-off"), n))
+
+    # --- 点这两个按钮真的换了父级，块数不变 ---
+    ck("move_out_then_in_round_trip",
+       at.get("blocks-before") == at.get("blocks")
+       and at.get("out-parent") == ""
+       and at.get("in-parent") not in ("", "?", "None"),
+       "「移出上一层」应把这块放到顶层（parent 空），「移入上一个容器」再把它装回"
+       "一个容器里：blocks %s->%s out=%r in=%r"
+       % (at.get("blocks-before"), at.get("blocks"), at.get("out-parent"),
+          at.get("in-parent")))
+    ck("move_in_target_is_container",
+       at.get("in-parent-wkey") in CONTAINER_WKEYS + ["row", "column"],
+       "「移入上一个容器」必须装进一个真容器里（Blender 只让容器收子控件），"
+       "实际落点 wkey=%r" % at.get("in-parent-wkey"))
+    ck("move_in_button_enabled_when_target_exists",
+       at.get("in-disabled") == "false",
+       "上面明明有可装的容器，按钮却还是置灰的（按钮不能只标不灵）：%r"
+       % at.get("in-status"))
+
+    # --- 拖到容器上 = 成为它的子块 ---
+    ck("move_drag_marks_drop_targets",
+       at.get("drag-cands", "0").isdigit() and int(at.get("drag-cands", "0")) > 0,
+       "拖起来时没有任何容器被标成「能装进去」——用户只能一个个拖过去试：%s"
+       % at.get("drag-cands"))
+    ck("move_drag_into_container",
+       at.get("drag-parent") not in ("", "?", "None")
+       and at.get("drag-parent-wkey") in CONTAINER_WKEYS + ["row", "column"],
+       "落在 chat.options 上之后，这一块必须成为它的子块（parent 是一个容器），"
+       "实际 parent=%r wkey=%r" % (at.get("drag-parent"), at.get("drag-parent-wkey")))
+
+    # --- 拒绝时：树不许变，而且必须说话 ---
+    # 两条一起钉：只钉「状态条里有个『不能』」的话，把环检测整段删掉也照样绿
+    # （reparent 自己还有一道，消息里同样有「不能」）——所以还要钉住
+    # 「被拒之后 parent 原样不动」。
+    ck("move_deny_explains", "不能" in (at.get("deny-status") or ""),
+       "把容器拖进它自己的子孙里必须给出拒绝说明（静默弹回像坏了），实际状态条 %r"
+       % at.get("deny-status"))
+    ck("move_deny_keeps_tree",
+       at.get("deny-parent") == "" and at.get("blocks") == str(n),
+       "拖拽被拒之后树不许变（容器仍停在顶层、块数不变），实际 parent=%r blocks=%s"
+       % (at.get("deny-parent"), at.get("blocks")))
 
 
 def vocab_bar_of(p):

@@ -468,6 +468,8 @@ function moveDropLine(idx, parentUid) {
     line.className = "drop-line";
     line.setAttribute("aria-hidden", "true");
   }
+  // 指回兄弟之间时要把线放回来：它在「落在容器上」那半程里被收起来了。
+  line.hidden = false;
   if (line.parentNode !== host) { host.appendChild(line); }
   var pid = parentUid || "";
   var ref = null;
@@ -478,7 +480,10 @@ function moveDropLine(idx, parentUid) {
     // 落在最后一块之后：插到这一组兄弟的末尾（容器里就插在它最后一个孩子之后）
     ref = sibs[sibs.length - 1].nextSibling;
   } else if (pid) {
-    ref = el("canvas").querySelector('.pgroup[data-parent="' + pid + '"]');
+    // 空容器：线要落在那个孩子的框里（.pkids），不是落在容器外面——
+    // 落在外面的话，用户看到的是「插在这个容器上面」，与实际落点相反。
+    ref = el("canvas").querySelector('.pkids[data-owner="' + pid + '"]')
+       || el("canvas").querySelector('.pgroup[data-parent="' + pid + '"]');
   }
   if (ref) { host.insertBefore(line, ref); } else { host.appendChild(line); }
 }
@@ -491,6 +496,14 @@ function clearDrag() {
   var host = el("canvas");
   var dragging = host.querySelectorAll(".pnode.dragging");
   for (var i = 0; i < dragging.length; i++) { dragging[i].classList.remove("dragging"); }
+  /* 「能装进去」的标记与落点高亮也必须一起撤：漏掉任何一处，
+     下一次拖起来时画布上会留着一堆上一次的候选框，
+     用户会以为那些容器随时在等他拖。 */
+  var marks = host.querySelectorAll(".pnode.can-drop, .pnode.drop-target");
+  for (var k = 0; k < marks.length; k++) {
+    marks[k].classList.remove("can-drop");
+    marks[k].classList.remove("drop-target");
+  }
   var lines = host.querySelectorAll(".drop-line");
   for (var j = 0; j < lines.length; j++) {
     if (lines[j].parentNode) { lines[j].parentNode.removeChild(lines[j]); }
@@ -519,6 +532,7 @@ function bindCanvasDnd() {
     dragState = { uid: box.dataset.uid, parent: box.dataset.parent || null,
                   fromIdx: siblingIndexOf(box.dataset.uid) };
     box.classList.add("dragging");
+    markDropTargets(box.dataset.uid);
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
       try { e.dataTransfer.setData("text/plain", box.dataset.uid); }
@@ -529,6 +543,16 @@ function bindCanvasDnd() {
     if (!dragState) { return; }
     e.preventDefault();                 // 不 preventDefault 的话 drop 根本不触发
     if (e.dataTransfer) { e.dataTransfer.dropEffect = "move"; }
+    /* 指针落在某个容器上：这一轮是「装进去」，不是「换位」。
+       指示线在这里必须收掉——线说的是「插在这一格之前」，
+       而用户此刻要的是「成为这个容器的子块」，两句话同时出现只会让人犹豫。 */
+    var over = containerUnder(e.target);
+    if (over) {
+      markDropLineHidden(true);
+      if (over.ok) { markDropTarget(over.uid, true); }
+      return;
+    }
+    markDropTarget(null, false);
     moveDropLine(dropIndexAt(e.clientY, dragState.parent), dragState.parent);
   });
   canvas.addEventListener("drop", function (e) {
@@ -536,6 +560,22 @@ function bindCanvasDnd() {
     e.preventDefault();
     var uid = dragState.uid;
     var parent = dragState.parent;
+
+    /* 落在容器上 = 变成它的子块。跨父级拖动在这一轮做掉了：
+       「能装进去的容器」在拖起来时就高亮出来了，用户看得见、点得准，
+       不再需要展开积木去翻「归属」下拉。
+       同父级内的排序语义一个字没动——那是 dropIndexAt / reorderSibling
+       那条既有链路，下面照旧走。 */
+    var over = containerUnder(e.target);
+    if (over) {
+      clearDrag();
+      if (over.ok) { reparent(uid, over.uid); return; }
+      // 落点是个容器但不能装：必须说话。静默弹回等于「拖拽坏了」。
+      setStatus("不能把「" + labelOfUid(uid) + "」放进「" + over.label + "」里："
+        + (over.why || "这一块装不了别的积木"));
+      return;
+    }
+
     var idx = dropIndexAt(e.clientY, parent);
     var sibs = siblingBoxes(parent);
     // 指示线说的是「插在第 idx 块之前」。把那个块当成锚点，
@@ -558,6 +598,69 @@ function bindCanvasDnd() {
     reorderSibling(uid, targetUid, before);
   });
   document.addEventListener("dragend", clearDrag);
+}
+
+/* 指针底下是不是一个容器积木。返回 {uid, label, ok, why}，不是容器给 null。
+
+   ok = 能把手里这块装进去。判据与 renderNode 里那两个按钮同一套：
+     · 自己不行（装进自己会绕成圈）
+     · 自己的子孙不行（同上）
+     · 已经在它里面了不行（那不叫「装进去」，等于原地不动）
+     · 叶子控件一律不行（Blender 那边写不出来）
+   why 带着原因文案：拒绝时必须说清楚为什么，不能只说「不行」。 */
+function containerUnder(t) {
+  var b = t && t.closest ? t.closest(".pnode") : null;
+  if (!b || !b.dataset || !b.dataset.uid) { return null; }
+  var n = nodeByUid(b.dataset.uid);
+  if (!n || !isContainer(n)) { return null; }
+  var ok = b.classList.contains("can-drop");
+  var why = "这一块装不了别的积木";
+  if (!ok) {
+    if (!dragState) { why = "现在没有在拖任何积木"; }
+    else if (n.uid === dragState.uid) { why = "不能把自己装进自己"; }
+    else if (subtreeUids(dragState.uid).indexOf(n.uid) >= 0) {
+      why = "它是自己的子孙，装进去会绕成圈";
+    } else if ((dragState.parent || "") === n.uid) {
+      why = "它已经在这个容器里了";
+    }
+  }
+  return { uid: n.uid, label: n.label, ok: ok, why: why };
+}
+
+/* 拖起来的时候把「能装进去的容器」标出来。
+   不标的话用户只能一个个拖过去试：拖不进去的那次没有提示，
+   整块积木啪地弹回来，看上去就是坏了。
+   主题里没有红也没有绿，所以「能装」靠边框 + 明度差表达，不靠颜色语义。 */
+function markDropTargets(uid) {
+  var host = el("canvas");
+  var boxes = host.querySelectorAll(".pnode[data-uid]");
+  var me = nodeByUid(uid);
+  var mine = subtreeUids(uid);
+  for (var i = 0; i < boxes.length; i++) {
+    var n = nodeByUid(boxes[i].dataset.uid);
+    if (!n) { continue; }
+    var ok = isContainer(n) && n.uid !== uid
+      && mine.indexOf(n.uid) < 0
+      && (me ? (me.parent || "") !== n.uid : true);
+    if (ok) { boxes[i].classList.add("can-drop"); }
+  }
+}
+
+/* 高亮「就落在这一格」的那一个容器（拖动过程中跟着指针换）。 */
+function markDropTarget(uid, on) {
+  var host = el("canvas");
+  var prev = host.querySelectorAll(".pnode.drop-target");
+  for (var i = 0; i < prev.length; i++) { prev[i].classList.remove("drop-target"); }
+  if (!uid) { return; }
+  var b = host.querySelector('.pnode[data-uid="' + uid + '"]');
+  if (b) { b.classList.add("drop-target"); }
+}
+
+/* 落在容器上时把落位指示线暂时收掉，拖回兄弟之间再放回来。
+   与其删了重建，不如用 hidden 属性留着它——clearDrag 会一并清掉。 */
+function markDropLineHidden(hidden) {
+  var line = el("canvas").querySelector(".drop-line");
+  if (line) { line.hidden = !!hidden; }
 }
 
 /* 这块在同父级兄弟里排第几（-1 = 不在画布上）。拖拽起点用它记位置，
@@ -606,6 +709,40 @@ function childrenOf(uid) {
   return proposal.filter(function (n) { return n.parent === uid; });
 }
 
+/* 按 uid 找块，找不到给 null。工具栏文案与按钮 title 都靠它拿名字，
+   拿不到就退化成空串——文案里少个名字远好过整段 JS 报错。 */
+function nodeByUid(uid) {
+  for (var i = 0; i < proposal.length; i++) {
+    if (proposal[i].uid === uid) { return proposal[i]; }
+  }
+  return null;
+}
+
+function labelOfUid(uid) {
+  var n = nodeByUid(uid);
+  return n ? n.label : "";
+}
+
+/* 「上一个容器」= 同一层里、在它前面、最近的那个容器积木（叶子不算）。
+   从紧挨着它的那块往前找，而不是只看前一块：前一块是文字时按钮就得
+   一直灰着，用户会以为这个功能坏了。
+
+   找不到给 null，调用方据此把按钮置灰。自己的子孙一律排除：
+   装进自己的子孙会绕成圈（reparent 还会挡一道，但按钮就不该亮）。 */
+function prevContainerUid(uid) {
+  var me = nodeByUid(uid);
+  if (!me) { return null; }
+  var sibs = nodesAtDepth(me.parent);
+  var mine = subtreeUids(uid);
+  for (var i = sibs.length - 1; i >= 0; i--) {
+    var c = sibs[i];
+    if (c.uid === uid) { continue; }
+    if (!isContainer(c) || mine.indexOf(c.uid) >= 0) { continue; }
+    return c.uid;
+  }
+  return null;
+}
+
 /* 整棵子树的 uid 顺序（自己 + 所有后代），按数组顺序。
    删除要拿它、复制要拿它，两处都必须把子孙算进去，否则删掉容器会留下一堆
    指向已不存在 uid 的孤儿（它们 parent 着一个没人认领的 uid，既不显示也删不掉）。 */
@@ -639,9 +776,17 @@ function reparent(uid, newParent) {
     setStatus("不能把一块积木放进它自己的里面（会绕成圈）");
     return false;
   }
-  if (!newParent && !isContainer(proposal[i])) {
-    setStatus("「" + proposal[i].label + "」不是容器，装不了别的积木");
-    return false;
+  if (newParent) {
+    /* 要检查的是「目的地」，不是「被搬的那块」。
+       原先这里查的是 proposal[i]（被搬的块），于是两条路都不通：
+       装进别人的时候，因为被搬的多半是文字 / 按钮，被误判成
+       「不是容器，装不了别的积木」；移出上一层的时候（newParent 为空）
+       又把合法的「放回顶层」一起挡了。 */
+    var dest = nodeByUid(newParent);
+    if (!dest || !isContainer(dest)) {
+      setStatus("「" + ((dest && dest.label) || "那个容器") + "」不是容器，装不了别的积木");
+      return false;
+    }
   }
   proposal[i].parent = newParent || null;
   /* 挂到别人底下之后，兄弟顺序只由数组顺序决定，所以要把它挪到父容器
@@ -1295,7 +1440,17 @@ function renderCanvas() {
   restoreFocus(host, keep);
 }
 
-/* 渲染一整层：parent 为 null 就是顶层，否则是那个容器里的孩子。 */
+/* 渲染一整层：parent 为 null 就是顶层，否则是那个容器里的孩子。
+
+   容器这一层分两截，是为了让「树」这件事在界面上成立：
+     .pgroup —— 整个分组框（带边框），装着容器自己的标题行 + 下面的 .pkids
+     .pkids —— 只装孩子，左边一条竖线，每个孩子一条短横线接回竖线
+   竖线从容器标题行下方开始，而不是从分组框最顶上：一根线从上贯到底，
+   会被读成「这个容器自己也是别人的孩子」。
+
+   为什么把 children 多包一层 div：树线要有个只属于「孩子区」的元素，
+   才能把竖线画在标题行下面。写在 .pgroup 自己身上做不到——
+   它的上边缘就是容器顶边。 */
 function renderLevel(host, parentUid) {
   nodesAtDepth(parentUid).forEach(function (n) {
     var pair = renderNode(n);
@@ -1305,8 +1460,13 @@ function renderLevel(host, parentUid) {
       grp.dataset.parent = parentUid || "";
       // 数据属性写在 className 之后、其余属性之前：既有断言按
       // class -> draggable -> data-idx -> data-uid -> data-wkey 的顺序做正则匹配。
+      grp.dataset.owner = n.uid;
       grp.appendChild(pair);
-      renderLevel(grp, n.uid);
+      var kids = document.createElement("div");
+      kids.className = "pkids";
+      kids.dataset.owner = n.uid;
+      renderLevel(kids, n.uid);
+      grp.appendChild(kids);
       host.appendChild(grp);
       return;
     }
@@ -1357,9 +1517,55 @@ function renderNode(n) {
     var nm = document.createElement("b");
     nm.textContent = n.label;
     head.appendChild(nm);
+    /* 容器标题上标子块数。0 也照样标：空容器和「没渲染出来」长得一模一样，
+       只标非 0 的话，空容器在画布上看起来就像一个装不下东西的死块。
+       数字直接取 childrenOf（按 parent 过滤真数组），不是拿 DOM 数一遍。 */
+    if (isContainer(n)) {
+      var kidsN = childrenOf(n.uid).length;
+      var cnt = document.createElement("span");
+      cnt.className = "pcount";
+      cnt.dataset.kids = String(kidsN);
+      cnt.textContent = "· " + kidsN;
+      cnt.title = kidsN
+        ? ("这个容器里装着 " + kidsN + " 块：画在下面那个框里")
+        : "空容器：还没有子块。拖一块进来，或点「移入上一个容器」把它挂进去";
+      head.appendChild(cnt);
+    }
     var code = document.createElement("code");
     code.textContent = n.uiloayout;
     head.appendChild(code);
+
+    /* 移入上一个容器 / 移出上一层。
+       原来只有展开态里的「归属」下拉能换父级，而那要先把积木展开、
+       再找到那一行、点开下拉——三下。改父级是搭界面的高频动作，
+       埋在下面等于没有，所以直接摆到标题行上，一点就生效。
+
+       没有可移入 / 可移出时是 disabled（压暗），不是消失：
+       一个会忽然不见的按钮看起来像界面坏了，而「此刻没东西可移」是常态。 */
+    var upUid = prevContainerUid(n.uid);
+    var inB = document.createElement("button");
+    inB.className = "chip pmove";
+    inB.dataset.act = "in";
+    inB.dataset.uid = n.uid;
+    inB.textContent = "移入上一个容器";
+    inB.disabled = !upUid;
+    inB.title = upUid
+      ? ("把这一块装进上面最近的容器「" + labelOfUid(upUid) + "」里")
+      : "上面没有能装它的容器（叶子控件装不了东西，容器才装得了）";
+    inB.onclick = function () { reparent(n.uid, upUid); };
+    head.appendChild(inB);
+
+    var outB = document.createElement("button");
+    outB.className = "chip pmove";
+    outB.dataset.act = "out";
+    outB.dataset.uid = n.uid;
+    outB.textContent = "移出上一层";
+    outB.disabled = !n.parent;
+    outB.title = n.parent
+      ? ("把这一块从「" + labelOfUid(n.parent) + "」里拿出来，放回顶层")
+      : "这一块已经在顶层了，没有上一层可退";
+    outB.onclick = function () { reparent(n.uid, null); };
+    head.appendChild(outB);
 
     /* 展开 / 收起。折叠时那三个输入框根本不进 DOM，画布才从「一张大表单」
        变回「一列积木」；细节点开才展开。
@@ -2410,7 +2616,10 @@ function nestReport() {
   if (btn) { btn.click(); }
 
   var stream = proposal.filter(function (n) { return n.id === "chat.stream"; })[0];
-  var opts = proposal.filter(function (n) { return n.id === "chat.tabbar"; })[0];
+  /* 删容器：整棵子树一起走，单独留下一个块数。
+     挑规格竖排（chat.options）而不是页签条：它里面套着「细节横排 -> 三个
+     勾选选项」，删它一次能连着验掉三层（孙块也得跟着走，孤儿不许剩）。 */
+  var opts = proposal.filter(function (n) { return n.id === "chat.options"; })[0];
 
   var tree = proposal.map(function (n) {
     return (n.parent ? n.parent : "-") + ">" + n.uid;
@@ -2429,10 +2638,17 @@ function nestReport() {
 
   /* 删容器：整棵子树一起走，单独留下一个块数。 */
   var delCount = -1;
+  /* 删完之后不许剩孤儿：还挂在已删容器底下的块既不显示也删不掉，
+     用户会以为「删了没用」。这里数的是真数组，不是渲染结果。 */
+  var orphans = -1;
   if (opts) {
     var b2 = proposal.length;
+    var gone = subtreeUids(opts.uid);
     delNode(idxByUid(opts.uid));
     delCount = b2 - proposal.length;
+    orphans = proposal.filter(function (n) {
+      return n.parent && gone.indexOf(n.parent) >= 0;
+    }).length;
   }
 
   /* 三个界面各自的块数：切过去记个数，切回来再记一次。
@@ -2475,6 +2691,7 @@ function nestReport() {
     dupTree: dupTree,
     dupCount: String(dupCount),
     delCount: String(delCount),
+    delOrphans: String(orphans),
     tabs: tabs.join(","),
     selOptions: String(sel ? sel.options.length : 0),
     selTexts: optTexts.join("|"),
@@ -2485,6 +2702,147 @@ function nestReport() {
   });
   setStatus("DEMO nest 树 " + proposal.length + " 块 / 分组 " +
     el("canvas").querySelectorAll(".pgroup").length);
+}
+
+/* #proposal-move：换父级的三条路径各走一遍，外加「树到底画出来没有」。
+   报的每一条都来自浏览器里真点过的按钮 / 真派发过的 DragEvent：
+     kidzones    —— .pkids 孩子区（树线那一截）有几个
+     kidzone-kids—— 孩子区里装着的积木数
+     counts      —— 容器标题上标的「· N」，N = 该容器真有几个子块
+     in-* / out-*—— 两个快捷按钮的个数与其中被置灰的个数
+     out-parent  —— 点「移出上一层」之后这一块的 parent 变成什么
+     in-parent   —— 再点「移入上一个容器」之后变成什么
+     drag-cands  —— 拖起来时被标成「能装进去」的容器数
+     drag-parent —— 落在那个容器上之后 parent 变成什么
+     deny-status —— 把容器拖进它自己的子孙里，状态条说了什么 */
+function moveReport() {
+  var btn = el("demo-panel-btn");
+  if (btn) { btn.click(); }
+  var canvas = el("canvas");
+  var dt = new DataTransfer();
+
+  /* --- 树画出来没有：孩子区 + 子块数 --- */
+  var zones = canvas.querySelectorAll(".pkids");
+  var zoneKids = 0;
+  for (var z = 0; z < zones.length; z++) {
+    zoneKids += zones[z].querySelectorAll(".pnode[data-uid]").length;
+  }
+  /* 容器标题上的「· N」逐个对账：标签上的 N 与真孩子数必须一致，
+     且至少有一个空容器标着「· 0」（空容器要看得见是空的）。 */
+  var counts = [];
+  var countBad = 0;
+  var emptyMarked = 0;
+  var badges = canvas.querySelectorAll(".pnode .pcount");
+  for (var b = 0; b < badges.length; b++) {
+    var box = badges[b].closest(".pnode");
+    counts.push(badges[b].textContent);
+    var real = childrenOf(box.dataset.uid).length;
+    if (badges[b].dataset.kids !== String(real)) { countBad++; }
+    if (real === 0) { emptyMarked++; }
+  }
+
+  /* --- 两个快捷按钮：每块都有，没得移的必须置灰（不是消失） --- */
+  var inAll = canvas.querySelectorAll('.pnode [data-act="in"]');
+  var outAll = canvas.querySelectorAll('.pnode [data-act="out"]');
+  var inOff = 0, outOff = 0;
+  for (var i1 = 0; i1 < inAll.length; i1++) { if (inAll[i1].disabled) { inOff++; } }
+  for (var o1 = 0; o1 < outAll.length; o1++) { if (outAll[o1].disabled) { outOff++; } }
+
+  /* --- 点「移出上一层」再点「移入上一个容器」 --- */
+  var target = proposal.filter(function (n) { return n.wkey === "label"; })[0];
+  var blocksBefore = proposal.length;
+  var outParent = "?";
+  var inParent = "?";
+  var inParentWkey = "?";
+  var inDisabled = "?";
+  var inStatus = "";
+  if (target) {
+    target.expanded = false;
+    renderCanvas();
+    var tbox = canvas.querySelector('.pnode[data-uid="' + target.uid + '"]');
+    tbox.querySelector('[data-act="out"]').click();
+    outParent = String(nodeByUid(target.uid).parent || "");
+    var tbox2 = canvas.querySelector('.pnode[data-uid="' + target.uid + '"]');
+    var inBtn2 = tbox2.querySelector('[data-act="in"]');
+    inDisabled = String(inBtn2.disabled);
+    inBtn2.click();
+    inStatus = el("status").textContent || "";
+    var pnode = nodeByUid(target.uid);
+    inParent = String((pnode && pnode.parent) || "");
+    inParentWkey = pnode && pnode.parent && nodeByUid(pnode.parent)
+      ? nodeByUid(pnode.parent).wkey : (inParent ? "?" : "");
+  }
+
+  /* --- 拖进容器：拖起来先数「能装进去的容器」，再落到其中一个身上 --- */
+  var dragCands = -1;
+  var dragParent = "?";
+  var dragParentWkey = "?";
+  var victim = proposal.filter(function (n) { return n.wkey === "box"; })[0];
+  var boxNode = victim ? canvas.querySelector('.pnode[data-uid="' + victim.uid + '"]') : null;
+  var optionsNode = proposal.filter(function (n) { return n.id === "chat.options"; })[0];
+  var optBox = optionsNode
+    ? canvas.querySelector('.pnode[data-uid="' + optionsNode.uid + '"]') : null;
+  if (boxNode && optBox) {
+    fireDrag(boxNode, "dragstart", 0, dt);
+    dragCands = canvas.querySelectorAll(".pnode.can-drop").length;
+    fireDrag(optBox, "dragover", 0, dt);
+    fireDrag(optBox, "drop", 0, dt);
+    var vp = nodeByUid(victim.uid);
+    dragParent = String((vp && vp.parent) || "");
+    dragParentWkey = vp && vp.parent && nodeByUid(vp.parent)
+      ? nodeByUid(vp.parent).wkey : "";
+  }
+  clearDrag();
+
+  /* --- 拒绝时必须说话：把容器拖进它自己的子孙里 --- */
+  var denyStatus = "";
+  var denyParent = "?";
+  var stream = proposal.filter(function (n) { return n.id === "chat.stream"; })[0];
+  var deep = proposal.filter(function (n) { return n.wkey === "row" && n.id !== "chat.tabbar"; })[0];
+  var deepBox = deep ? canvas.querySelector('.pnode[data-uid="' + deep.uid + '"]') : null;
+  var streamBox = stream ? canvas.querySelector('.pnode[data-uid="' + stream.uid + '"]') : null;
+  if (streamBox && deepBox) {
+    fireDrag(streamBox, "dragstart", 0, dt);
+    fireDrag(deepBox, "dragover", 0, dt);
+    fireDrag(deepBox, "drop", 0, dt);
+    denyStatus = el("status").textContent || "";
+    denyParent = String((nodeByUid(stream.uid) && nodeByUid(stream.uid).parent) || "");
+  }
+  clearDrag();
+
+  appendReport("move-report", {
+    blocks: String(proposal.length),
+    blocksBefore: String(blocksBefore),
+    kidzones: String(zones.length),
+    zoneKids: String(zoneKids),
+    counts: counts.join("|"),
+    countBad: String(countBad),
+    emptyMarked: String(emptyMarked),
+    inAll: String(inAll.length),
+    inOff: String(inOff),
+    outAll: String(outAll.length),
+    outOff: String(outOff),
+    outParent: outParent,
+    inParent: inParent,
+    inParentWkey: inParentWkey,
+    inDisabled: inDisabled,
+    inStatus: inStatus,
+    dragCands: String(dragCands),
+    dragParent: dragParent,
+    dragParentWkey: dragParentWkey,
+    denyStatus: denyStatus,
+    denyParent: denyParent
+  });
+  setStatus("DEMO move 树线 " + zones.length + " 组 / 候选 " + dragCands +
+    " / 拖进容器 -> " + dragParent);
+}
+
+/* #proposal-demo-<tab> 里的 <tab>：子页签名，结尾可以缀一个 "-open"
+   （全部展开，给「要看清树线」的那张截图用）。这里只做切分，
+   switchTab 仍然只接受 boards 里真有的名字——写错页签名照样什么都不做。 */
+function demoTabSpec(rest) {
+  var s = String(rest || "");
+  return s.slice(-5) === "-open" ? s.slice(0, -5) + "|open" : s;
 }
 
 function runDemoHook(hash) {
@@ -2501,7 +2859,8 @@ function runDemoHook(hash) {
            : (h === "proposal-panel") ? "panel"
            : (h === "proposal-preview") ? "preview"
            : (h === "proposal-nest") ? "nest"
-           : (h.indexOf("proposal-demo-") === 0) ? "demo-" + h.slice("proposal-demo-".length)
+           : (h === "proposal-move") ? "move"
+           : (h.indexOf("proposal-demo-") === 0) ? "demo-" + demoTabSpec(h.slice("proposal-demo-".length))
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
   switchView("proposal");
@@ -2516,15 +2875,22 @@ function runDemoHook(hash) {
     if (kind === "examples") { examplesReport(); return; }
     if (kind === "panel") { panelReport(); return; }
     if (kind === "nest") { nestReport(); return; }
+    if (kind === "move") { moveReport(); return; }
     /* #proposal-demo-<tab>：切到那个子页签并插入它自己的示例面板。
        给无头截图用——人眼要看的就是「切到详情之后，右边是不是详情那套积木」，
        而这件事只有走真实的 switchTab + 真实的示例面板按钮才说得清。
-       截图是给人看的，所以这里只把画布摆好，不往 DOM 里塞验收报告。 */
+       截图是给人看的，所以这里只把画布摆好，不往 DOM 里塞验收报告。
+       结尾再缀一个 "-open" 就把每块都展开：折叠态看不出树线与分组框，
+       展开态才看得出「哪几块装在谁里面」。 */
     if (kind.indexOf("demo-") === 0) {
-      var tab = kind.slice(5);
-      switchTab(tab);
+      var parts = kind.slice(5).split("|");
+      switchTab(parts[0]);
       var btn = el("demo-panel-btn");
       if (btn) { btn.click(); }
+      if (parts[1] === "open") {
+        proposal.forEach(function (n) { n.expanded = true; });
+        renderCanvas();
+      }
       return;
     }
     var bs = el("vocab-bar").querySelectorAll("button[data-wkey]");
