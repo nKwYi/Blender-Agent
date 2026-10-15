@@ -160,6 +160,62 @@ button.chip {
   width: 100%; margin: 4px 0; background: var(--field); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 4px; font: inherit;
 }
+/* ---- 迷你图示（用户原话：横排竖排「不太能理解怎么使用」）----
+   每张卡片先用小方块把控件的形状画出来，再放按钮。图示的形状由
+   vocabulary.json 的 demo 字段描述，app.js 只负责把它画成 CSS 方块——
+   所以这里一条 HTML 结构都没有，全部是 flex 排布与边框。
+   色值一律取文件头 :root 里已声明的变量（那些变量各自都注明了
+   native_api.json 里的出处），不在本段新造任何色值。
+   主题里没有红也没有绿：图示靠「边框 / 填充 / 明度差」区分，不靠颜色语义。 */
+.wcards { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.wcard {
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--hover); padding: 6px; width: 128px;
+}
+.wcard > button {
+  display: block; width: 100%; margin: 6px 0 0; text-align: left;
+  background: var(--fill); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit;
+}
+.wnote { color: var(--text-dim); font-size: 11px; line-height: 1.5; margin-top: 4px; }
+.demo {
+  display: flex; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px; height: 56px; align-items: stretch;
+  font-style: normal; overflow: hidden;   /* 网格换行时不允许溢出压到按钮上 */
+}
+.demo .d-it {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--fill); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; font-size: 11px; line-height: 1.2; padding: 0 2px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin: 1px;
+}
+/* 横排：并排。竖排：堆叠。两者一眼能分开——这正是要教给用户的第一件事。 */
+.demo.d-row { flex-direction: row; align-items: stretch; }
+.demo.d-col { flex-direction: column; }
+.demo.d-grid { flex-direction: row; flex-wrap: wrap; align-content: stretch; }
+/* 内盒 / 多行输入：内容压在一层边框里 */
+.demo.d-box .d-it { flex: 1 1 auto; }
+.demo.d-box { background: var(--inner); }
+/* 分栏：两块的宽度比例就是 factor */
+.demo.d-split { flex-direction: row; gap: 3px; }
+/* 可折叠子面板：标题条 + 折叠箭头 */
+.demo.d-panel { flex-direction: column; }
+.demo.d-panel .d-it { background: var(--panel); }
+.demo.d-sub { align-self: flex-end; color: var(--text-dim); font-size: 11px; }
+.demo.d-label .d-it { background: var(--hover); border-color: var(--mark); }
+.demo.d-btn .d-it { background: var(--fill); }
+.demo.d-prop .d-it:first-child { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
+.demo.d-prop .d-it + .d-it { flex: 0 0 28%; }
+/* 分隔线与留白没有小方块，画的是一根线 / 一条空隙。
+   align-items:center 是必须的：.demo 是 align-items:stretch 的行容器，
+   不改的话这两根东西会被拉满 56px 高，线贴在天花板上、根本看不出是「一条线」。 */
+.demo.d-rule { background: var(--hover); align-items: center; }
+.demo .d-rule { display: block; flex: 1 1 auto; border-top: 1px solid var(--text-dim); }
+.demo.d-gap { background: var(--hover); align-items: center; }
+.demo .d-gap { display: block; height: 14px; border-left: 2px solid var(--text-dim); }
+#element-id-help { margin: 6px 0 12px; }
+.idline { color: var(--text); font-size: 12px; margin: 2px 0; }
+
 /* ---- 折叠 / 拖拽的手感 ----
    整块可拖，不必精确瞄准 ⋮⋮：标题行的空白处一按就能拖。
    手柄符号保留，它是「这一整块都能拖」的视觉承诺——⋮⋮ 只有 12px，

@@ -12,8 +12,17 @@
         "heading_ctxt"
       ],
       "blocked_props": [],
-      "note": "当前代码用量 0，成本最低的层次工具",
-      "constraint_key": null
+      "note": "一行里并排放多个控件。横排是「并排」，竖排是「从上到下」——整个面板本身就是一根竖排。同一组控件要并排放，就用横排包住它们。",
+      "constraint_key": null,
+      "demo": {
+        "kind": "row",
+        "items": [
+          "发送指令",
+          "停止"
+        ]
+      },
+      "props_example": "align, heading",
+      "props_hint": "layout.row(align=True, heading=\"对话\")"
     },
     {
       "key": "column",
@@ -25,8 +34,18 @@
         "heading_ctxt"
       ],
       "blocked_props": [],
-      "note": "",
-      "constraint_key": null
+      "note": "从上到下依次堆叠多个控件。面板从上到下的顺序，就是竖排里从上到下的顺序；整根竖排负责把页面串起来。",
+      "constraint_key": null,
+      "demo": {
+        "kind": "col",
+        "items": [
+          "消息1",
+          "消息2",
+          "消息3"
+        ]
+      },
+      "props_example": "align, heading",
+      "props_hint": "layout.column(align=True)"
     },
     {
       "key": "box",
@@ -36,8 +55,16 @@
         "alert"
       ],
       "blocked_props": [],
-      "note": "alert 是全 UI 唯一的红，只留给 FAILED",
-      "constraint_key": null
+      "note": "带边框的一块内容，把一条消息或一个提示圈起来。alert 是全 UI 唯一的红，只留给 FAILED。",
+      "constraint_key": null,
+      "demo": {
+        "kind": "box",
+        "items": [
+          "一个带边框的块"
+        ]
+      },
+      "props_example": "alert",
+      "props_hint": "box.alert = True"
     },
     {
       "key": "split",
@@ -48,8 +75,18 @@
         "align"
       ],
       "blocked_props": [],
-      "note": "返回单个 layout，不是二元组",
-      "constraint_key": "two_col_split"
+      "note": "左右分成两栏。factor 是左栏宽度占比，0.3 就是左三右七。返回单个 layout，不是二元组。",
+      "constraint_key": "two_col_split",
+      "demo": {
+        "kind": "split",
+        "factor": 0.3,
+        "items": [
+          "窄",
+          "宽"
+        ]
+      },
+      "props_example": "factor",
+      "props_hint": "layout.split(factor=0.3)"
     },
     {
       "key": "grid_flow",
@@ -62,8 +99,20 @@
         "row_major"
       ],
       "blocked_props": [],
-      "note": "当前已在设置页用于模型切换",
-      "constraint_key": "grid_flow"
+      "note": "按钮排成网格：columns 定几列，even_columns 让每列等宽。比横排省高度，一堆同类按钮时用它。",
+      "constraint_key": "grid_flow",
+      "demo": {
+        "kind": "grid",
+        "cols": 2,
+        "items": [
+          "改尺寸",
+          "换材质",
+          "加倒角",
+          "平滑"
+        ]
+      },
+      "props_example": "columns, even_columns",
+      "props_hint": "layout.grid_flow(columns=2, even_columns=True)"
     },
     {
       "key": "panel",
@@ -76,8 +125,16 @@
         "layout_body"
       ],
       "blocked_props": [],
-      "note": "消化长度的唯一手段，侧栏滚不了",
-      "constraint_key": "collapsible_panel"
+      "note": "一组能收起来的控件，带原生折叠箭头。侧栏滚不了，长度只能靠它消化。",
+      "constraint_key": "collapsible_panel",
+      "demo": {
+        "kind": "panel",
+        "items": [
+          "可折叠的一组"
+        ]
+      },
+      "props_example": "idname, default_closed",
+      "props_hint": "layout.panel(idname=\"chat.specs\", default_closed=True)"
     },
     {
       "key": "label",
@@ -92,8 +149,16 @@
         "font",
         "color"
       ],
-      "note": "没有 size/color/font 参数；层次靠 icon 和 scale_y",
-      "constraint_key": null
+      "note": "一行说明文字。字号不可调，层次只能靠 icon 和撑高做出来。",
+      "constraint_key": null,
+      "demo": {
+        "kind": "label",
+        "items": [
+          "一行文字"
+        ]
+      },
+      "props_example": "text, icon",
+      "props_hint": "layout.label(text=\"已处理完 3 项\", icon='CHECKMARK')"
     },
     {
       "key": "operator",
@@ -109,8 +174,16 @@
       "blocked_props": [
         "color"
       ],
-      "note": "emboss='NONE' 可去掉高光渐变",
-      "constraint_key": "flat_button"
+      "note": "点一下执行一条指令的按钮。id 填算子名；emboss='NONE' 可去掉高光渐变。",
+      "constraint_key": "flat_button",
+      "demo": {
+        "kind": "btn",
+        "items": [
+          "发送指令"
+        ]
+      },
+      "props_example": "id, text, icon",
+      "props_hint": "layout.operator(\"deepseek.run_prompt\", text=\"发送指令\", icon='PLAY')"
     },
     {
       "key": "prop",
@@ -127,8 +200,17 @@
       "blocked_props": [
         "color"
       ],
-      "note": "配 use_property_split 得到原生两列",
-      "constraint_key": "property_split"
+      "note": "绑到插件设置项上的一行：左边文字，右边输入框。配 use_property_split 得到原生两列。",
+      "constraint_key": "property_split",
+      "demo": {
+        "kind": "prop",
+        "items": [
+          "API Key",
+          "▾"
+        ]
+      },
+      "props_example": "prop, text",
+      "props_hint": "layout.prop(p, \"api_key\", text=\"API Key\")"
     },
     {
       "key": "textbox",
@@ -141,8 +223,16 @@
         "initial_visible_lines"
       ],
       "blocked_props": [],
-      "note": "中文 IME 只能靠原生 textbox，自绘拿不到拼音组合态",
-      "constraint_key": null
+      "note": "可以写多行的输入区。中文输入法只能靠原生 textbox，自绘拿不到拼音组合态。",
+      "constraint_key": null,
+      "demo": {
+        "kind": "box",
+        "items": [
+          "多行输入区"
+        ]
+      },
+      "props_example": "prop, initial_visible_lines",
+      "props_hint": "layout.textbox(state, \"prompt\", initial_visible_lines=3)"
     },
     {
       "key": "separator",
@@ -150,8 +240,13 @@
       "uiloayout": "layout.separator()",
       "allowed_props": [],
       "blocked_props": [],
-      "note": "",
-      "constraint_key": null
+      "note": "一条横线，把上下两组控件分开。不带任何参数。",
+      "constraint_key": null,
+      "demo": {
+        "kind": "rule"
+      },
+      "props_example": "",
+      "props_hint": "layout.separator()"
     },
     {
       "key": "scale_y",
@@ -161,8 +256,13 @@
         "scale_y"
       ],
       "blocked_props": [],
-      "note": "字号不可调，层次只能靠撑高和缩进",
-      "constraint_key": null
+      "note": "空出一条竖向空隙，把内容上下分开。字号不可调，层次只能靠撑高和缩进。",
+      "constraint_key": null,
+      "demo": {
+        "kind": "gap"
+      },
+      "props_example": "scale_y",
+      "props_hint": "row.scale_y = 1.3"
     }
   ],
   "rejected": [
@@ -228,5 +328,69 @@
       "uiloayout": "layout.progress()",
       "evidence": "ui.functions.progress=True"
     }
-  ]
+  ],
+  "element_id_help": {
+    "title": "「对应插件元素 ID」是什么",
+    "what": "它是这块积木在 blender_deepseek_agent/ui.py 里的稳定标记，用来把你的标注挂回代码里的那一行。",
+    "naming": "命名规则：chat.<区块> 或 chat.<区块>.<控件>，全小写、下划线分隔。",
+    "optional": "可以留空——留空只是没法单独标注这一块，不影响拼装。",
+    "examples": [
+      "chat.composer",
+      "chat.send_btn"
+    ]
+  },
+  "example_panel": {
+    "title": "AI 对话",
+    "caption": "整根竖排把它们从上到下串起来，横排把同一组里的控件并排放。",
+    "blocks": [
+      {
+        "wkey": "row",
+        "params": "align",
+        "element_id": "chat.tabbar",
+        "note": "三个页签并排：AI 对话 / 详情 / 设置"
+      },
+      {
+        "wkey": "column",
+        "params": "align",
+        "element_id": "chat.stream",
+        "note": "整根竖排：下面每一块都落在它里面，从上到下"
+      },
+      {
+        "wkey": "box",
+        "params": "",
+        "element_id": "",
+        "note": "消息流里的一条消息（元素 ID 可以留空）"
+      },
+      {
+        "wkey": "label",
+        "params": "text, icon",
+        "element_id": "",
+        "note": "状态行：正在改你的场景 · 第 2 步"
+      },
+      {
+        "wkey": "column",
+        "params": "align",
+        "element_id": "chat.options",
+        "note": "规格选项容器：一次有几项要选，就用竖排把每项串起来"
+      },
+      {
+        "wkey": "row",
+        "params": "align",
+        "element_id": "",
+        "note": "三个并排的选项按钮：修改尺寸 / 更换材质 / 平滑着色"
+      },
+      {
+        "wkey": "textbox",
+        "params": "prop, initial_visible_lines",
+        "element_id": "chat.composer",
+        "note": "指令输入框，可写多行"
+      },
+      {
+        "wkey": "row",
+        "params": "align",
+        "element_id": "chat.action_row",
+        "note": "三个并排的操作按钮：发送指令 / 新建任务 / 清空记录"
+      }
+    ]
+  }
 }

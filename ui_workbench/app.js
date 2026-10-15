@@ -464,6 +464,7 @@ function loadVocab() {
     vocab = v;
     renderVocabBar();
     renderRejected();
+    renderElementIdHelp();
     renderUnmapped();
     renderCanvas();
     return v;
@@ -476,18 +477,27 @@ function renderVocabBar() {
   var h = document.createElement("b");
   h.textContent = "可用控件（点一下落到画布最下面，搭好后可拖动换位）：";
   host.appendChild(h);
+  // 每个控件一张卡：上面是迷你图示（看得见长什么样），下面是按钮。
+  // 用户原话「横排竖排我还是不太能理解怎么使用」——光看名字看不出区别，
+  // 必须先把形状画出来。
+  var cards = document.createElement("div");
+  cards.className = "wcards";
   vocab.widgets.forEach(function (w) {
-    var b = document.createElement("button");
-    b.dataset.wkey = w.key;
-    b.textContent = w.label;
-    b.title = "点一下加到画布最下面；搭好后按住积木上的空白处可拖动换位\n" +
-      w.uiloayout +
-      (w.allowed_props.length ? "\n可用参数：" + w.allowed_props.join(", ") : "\n无参数") +
-      (w.blocked_props.length ? "\n被拦参数：" + w.blocked_props.join(", ") : "") +
-      (w.note ? "\n" + w.note : "");
-    b.onclick = function () { addWidget(w); };
-    host.appendChild(b);
+    cards.appendChild(widgetCard(w));
   });
+  host.appendChild(cards);
+  var prow = document.createElement("div");
+  prow.className = "rrow";
+  var demoB = document.createElement("button");
+  demoB.id = "demo-panel-btn";
+  demoB.dataset.act = "demo-panel";
+  demoB.textContent = "插入示例面板";
+  demoB.title = "一套能直接抄进 ui.py 的 AI 对话面板骨架：从上到下 8 块，"
+    + "每块都已填好可用的参数示例和真实元素 ID。想先看「一个界面是怎么拼出来的」，"
+    + "点这个；看完不满意再一块块删。";
+  demoB.onclick = function () { insertExamplePanel(); };
+  prow.appendChild(demoB);
+  host.appendChild(prow);
   if (vocab.props_scope) {
     var sc = document.createElement("div");
     sc.className = "scope";
@@ -496,6 +506,129 @@ function renderVocabBar() {
   }
   renderUndoBar();
 }
+
+/* 迷你图示。数据（vocabulary.json 的 demo 字段）只描述形状，这里负责画。
+   之所以不把 HTML 字符串写死进数据：重跑 dev/build_vocabulary.py 时图示
+   不会和控件定义脱节，而图示恰恰是最容易随控件改动而失真的那部分。
+   色值一律走 style.css 的变量——那里已经钉死了「只许用 native_api.json 实测色板」。
+   kind 决定形状：row/col/box/split/grid/panel/label/btn/prop/rule/gap。 */
+function renderDemo(w) {
+  var d = w.demo || {};
+  var kind = d.kind || "gap";
+  var box = document.createElement("div");
+  box.className = "demo d-" + kind;
+  box.dataset.dwkey = w.key;
+  box.dataset.dkind = kind;
+  if (kind === "rule" || kind === "gap") {
+    var bar = document.createElement("i");
+    bar.className = (kind === "rule") ? "d-rule" : "d-gap";
+    box.appendChild(bar);
+    return box;
+  }
+  var items = d.items || [];
+  var cols = Number(d.cols) > 0 ? Number(d.cols) : 0;
+  if (cols) { box.dataset.dcols = String(cols); }
+  var left = Math.round((Number(d.factor) || 0.5) * 100);
+  items.forEach(function (t, i) {
+    var it = document.createElement("i");
+    it.className = "d-it";
+    it.textContent = t;
+    // 分栏与网格靠内联宽度画出来：比例是数据给的，代码只负责把它变成宽度。
+    // 这里不写颜色，色值由 style.css 的变量统一管。
+    if (kind === "split") {
+      it.style.flex = "0 0 " + (i === 0 ? left : (100 - left)) + "%";
+    } else if (kind === "grid") {
+      it.style.flex = "0 0 " + (100 / cols) + "%";
+    }
+    box.appendChild(it);
+  });
+  if (kind === "panel") {
+    var sub = document.createElement("i");
+    sub.className = "d-sub";
+    sub.textContent = "▾";
+    box.appendChild(sub);
+  }
+  return box;
+}
+
+function widgetCard(w) {
+  var card = document.createElement("div");
+  card.className = "wcard";
+  card.dataset.cardFor = w.key;
+  card.appendChild(renderDemo(w));
+  var b = document.createElement("button");
+  // data-wkey 必须是第一个属性：既有断言按 `<button data-wkey="..." title="...">`
+  // 的形状匹配按钮标题，插在前面就会把它们全打瞎。
+  b.dataset.wkey = w.key;
+  b.title = "点一下加到画布最下面；搭好后按住积木上的空白处可拖动换位\n" +
+    w.uiloayout +
+    (w.allowed_props.length ? "\n可用参数：" + w.allowed_props.join(", ") : "\n无参数") +
+    (w.props_example ? "\n参数示例（可原样粘进参数框）：" + w.props_example : "") +
+    (w.props_hint ? "\n照着写：" + w.props_hint : "") +
+    (w.blocked_props.length ? "\n被拦参数：" + w.blocked_props.join(", ") : "") +
+    (w.note ? "\n" + w.note : "");
+  b.textContent = w.label;
+  b.onclick = function () { addWidget(w); };
+  card.appendChild(b);
+  if (w.note) {
+    var nt = document.createElement("div");
+    nt.className = "wnote";
+    nt.textContent = w.note;
+    card.appendChild(nt);
+  }
+  return card;
+}
+
+function widgetByKey(k) {
+  var ws = (vocab && vocab.widgets) || [];
+  for (var i = 0; i < ws.length; i++) {
+    if (ws[i].key === k) { return ws[i]; }
+  }
+  return null;
+}
+
+/* 一键插入一套能直接抄的面板。数据在 vocabulary.json 的 example_panel 里，
+   每块都带真实的参数示例与元素 ID——用户点开任一块，看到的就是成品，
+   而不是一堆空输入框。 */
+function insertExamplePanel() {
+  var p = vocab && vocab.example_panel;
+  if (!p || !p.blocks || !p.blocks.length) {
+    setStatus("vocabulary.json 里没有示例面板，先重跑 dev/build_vocabulary.py");
+    return;
+  }
+  var n = 0;
+  p.blocks.forEach(function (b) {
+    if (addExampleBlock(b)) { n++; }
+  });
+  renderCanvas();
+  setStatus("已插入示例面板「" + (p.title || "") + "」" + n + " 块：" +
+    (p.caption || "") + "（第 2 块是整根竖排，其余块都落在它里面）");
+}
+
+function addExampleBlock(b) {
+  var w = widgetByKey(b.wkey);
+  if (!w) { return null; }   // 词汇表里没有这个控件：不插，也不让整批示例崩掉
+  var n = {
+    uid: nextUid(),
+    wkey: w.key,
+    label: w.label,
+    uiloayout: w.uiloayout,
+    allowed_props: w.allowed_props,
+    blocked_props: w.blocked_props,
+    params: b.params || "",
+    id: b.element_id || "",
+    note: b.note || "",
+    errors: [],
+    expanded: false,
+    downgraded: false
+  };
+  // 走一次真判定：示例参数要是自己违规了，画布上立刻会标「违规」，
+  // 而不是让人以为「示例都能用」是工作台在骗人。
+  n.errors = validateWidget(w, splitParams(n.params));
+  proposal.push(n);
+  return n;
+}
+
 
 /* 单步撤销的按钮。没删过东西时必须 disabled——一个点下去静默无事发生的
    按钮比没有更糟，它会让用户以为撤销坏了。单独抽出来是因为删完一块
@@ -541,6 +674,45 @@ function renderUnmapped() {
     row.appendChild(s);
   });
   host.appendChild(row);
+}
+
+/* 「对应插件元素 ID」到底填什么。这个字段以前只有一个 (可选) 占位符，
+   用户完全无从下手——它是提案里唯一需要用户自己发明名字的地方。
+   一次说清三件事：它是什么、怎么命名、能不能留空。 */
+function renderElementIdHelp() {
+  var hlp = vocab && vocab.element_id_help;
+  if (!hlp) { return; }
+  var host = el("prop-notes");
+  var wrap = document.createElement("div");
+  wrap.id = "element-id-help";
+  wrap.className = "note";
+  var t = document.createElement("div");
+  t.className = "pfb";
+  t.textContent = hlp.title;
+  wrap.appendChild(t);
+  [hlp.what, hlp.naming, hlp.optional].forEach(function (line) {
+    if (!line) { return; }
+    var d = document.createElement("div");
+    // 刻意不用 .perr：那是对着用户喊「✗ 拦截」的样式，而且既有断言按
+    // class="perr" 的出现次数核对拦截条数——说明文字蹭这个类会把
+    // 「有几条拦截」数错，让不相干的断言替说明文案背锅。
+    d.className = "idline";
+    d.textContent = line;
+    wrap.appendChild(d);
+  });
+  if (hlp.examples && hlp.examples.length) {
+    var ex = document.createElement("div");
+    ex.className = "chips";
+    ex.dataset.examples = hlp.examples.join(",");
+    hlp.examples.forEach(function (e) {
+      var c = document.createElement("span");
+      c.className = "chip";
+      c.textContent = e;
+      ex.appendChild(c);
+    });
+    wrap.appendChild(ex);
+  }
+  host.appendChild(wrap);
 }
 
 function renderRejected() {
@@ -601,6 +773,8 @@ function addWidget(w) {
     uiloayout: w.uiloayout,
     allowed_props: w.allowed_props,
     blocked_props: w.blocked_props,
+    props_example: w.props_example || "",
+    props_hint: w.props_hint || "",
     params: "",
     id: "",
     note: "",
@@ -868,8 +1042,18 @@ function renderCanvas() {
       pin.className = "pin pinp";
       pin.dataset.field = "params";
       pin.dataset.uid = n.uid;
-      pin.placeholder = "参数，逗号分隔（只认 " +
-        ((n.allowed_props || []).join(", ") || "无") + "）";
+      /* placeholder 里直接给可粘的示例。用户只看到一串允许的参数名时，
+         无从判断「该写成什么样」；示例给错了比不给更糟，所以这一串是逐个
+         在 native_api.json 与白名单上核过的（测试 dom_examples_no_intercept
+         会把它真的敲进参数框验一遍）。 */
+      pin.placeholder = "示例（可原样粘）：" +
+        (n.props_example || "无参数") +
+        "　｜只认 " + ((n.allowed_props || []).join(", ") || "无") +
+        (n.props_hint ? "　｜照着写：" + n.props_hint : "");
+      pin.title = n.props_hint
+        ? "照着写成：" + n.props_hint + "\n只认：" +
+          ((n.allowed_props || []).join(", ") || "无")
+        : "本控件没有可用参数";
       pin.value = n.params;
       pin.oninput = function () { setParams(n, pin.value); };
       box.appendChild(pin);
@@ -886,7 +1070,10 @@ function renderCanvas() {
     idIn.className = "pin";
     idIn.dataset.field = "id";
     idIn.dataset.uid = n.uid;
-    idIn.placeholder = "对应插件元素 ID（可空）";
+    var eh = (vocab && vocab.element_id_help) || {};
+    idIn.placeholder = "对应插件元素 ID，可空" +
+      (eh.examples && eh.examples.length ? "（例：" + eh.examples.join(" / ") + "）" : "");
+    idIn.title = (eh.what || "") + "\n" + (eh.naming || "") + "\n" + (eh.optional || "");
     idIn.value = n.id;
     idIn.oninput = function () { n.id = idIn.value; };
     box.appendChild(idIn);
@@ -915,7 +1102,9 @@ function renderCanvas() {
    #proposal-typing 走逐字符 input 事件，专治「重建画布把焦点弄丢」那类 bug。
    #proposal-del / #proposal-dup 点真实的删除 / 复制按钮，核对块数与 uid 身份。
    #proposal-fold 点真实的展开按钮，走一遍「默认折叠 -> 展开 -> 收起 ->
-   拦截自动展开 -> 还能再收起」，专治「一有错就永久弹开」。 */
+   拦截自动展开 -> 还能再收起」，专治「一有错就永久弹开」。
+   #proposal-examples 把 12 个控件的参数示例逐个敲进参数框，一条拦截都不许有。
+   #proposal-panel 点真实的「插入示例面板」按钮，核对块数、uid 与参数合法性。 */
 /* 按 wkey 找到数组下标，再拿这块的 uid 去 DOM 里捞输入框——
    两头都靠 uid，数组重排或中间被删掉都不会捞错块。 */
 function paramsInputOf(wkey) {
@@ -1255,6 +1444,83 @@ function foldReport() {
   setStatus("DEMO fold 剩 " + proposal.length + " 块");
 }
 
+/* #proposal-examples：把每个控件的参数示例真的敲进参数框，核对一条拦截都不产生。
+   走的是和用户一样的路径——点控件按钮 → 点「展开」→ 派发真的 input 事件，
+   唯一没走的是逐字符（逐字符那条由 #proposal-typing 单独盯）。
+   「示例给错了比不给更糟」：示例一旦违规，用户一粘贴就被拦，工作台等于在骗人。 */
+function examplesReport() {
+  var rows = [];
+  var values = [];
+  var covered = [];
+  var bs = el("vocab-bar").querySelectorAll("button[data-wkey]");
+  for (var i = 0; i < bs.length; i++) {
+    var wkey = bs[i].dataset.wkey;
+    var w = widgetByKey(wkey);
+    if (!w) { rows.push(wkey + ":nowidget"); continue; }
+    bs[i].click();
+    var blk = null;
+    for (var k = 0; k < proposal.length; k++) {
+      if (proposal[k].wkey === wkey) { blk = proposal[k]; }
+    }
+    if (!blk) { rows.push(wkey + ":noblock"); continue; }
+    if (!paramsInputOf(wkey)) { foldButtonOf(wkey).click(); }
+    var inp = paramsInputOf(wkey);
+    if (!inp) { rows.push(wkey + ":noinput"); continue; }
+    var ex = w.props_example || "";
+    inp.value = ex;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    /* 重渲染之后必须重新从文档里捞这块。
+       inp 这时已经被 renderCanvas 摘下来了，读它身上的 dataset 只会拿到
+       「改参数之前」的旧值——错误数永远是 0，示例给错了也照样全绿。
+       那个被摘下来的节点上连 dataset.errors 都停留在上一次渲染。 */
+    var live = el("canvas").querySelector('.pnode[data-uid="' + blk.uid + '"]');
+    var liveInp = live ? live.querySelector('[data-field="params"]') : null;
+    rows.push(wkey + ":" + (live ? live.dataset.errors : "?") + ":" +
+      (live ? live.dataset.status : "?"));
+    values.push(wkey + "=" + (liveInp ? liveInp.value : "?"));
+    covered.push(wkey);
+  }
+  var boxes = el("canvas").querySelectorAll(".pnode[data-uid]");
+  var uids = [];
+  for (var j = 0; j < boxes.length; j++) { uids.push(boxes[j].dataset.uid); }
+  appendReport("examples-report", {
+    rows: rows.join("|"),
+    values: values.join("|"),
+    covered: covered.join(","),
+    total: String(proposal.length),
+    uids: uids.join(",")
+  });
+  var bad = rows.filter(function (r) { return !/:0:ok$/.test(r); });
+  setStatus("DEMO examples " + rows.length + " 个示例，" + bad.length + " 个被拦");
+}
+
+/* #proposal-panel：点真实的「插入示例面板」按钮，核对块数、uid 身份、
+   每块参数是否合法，以及有多少块带真实元素 ID。 */
+function panelReport() {
+  var btn = el("demo-panel-btn");
+  var before = proposal.length;
+  if (btn) { btn.click(); }
+  var boxes = el("canvas").querySelectorAll(".pnode[data-uid]");
+  var rows = [];
+  var ids = [];
+  proposal.forEach(function (n) {
+    rows.push(n.wkey + ":" + n.errors.length + ":" + (n.params || "-"));
+    if (n.id) { ids.push(n.id); }
+  });
+  var domUids = [];
+  for (var i = 0; i < boxes.length; i++) { domUids.push(boxes[i].dataset.uid); }
+  appendReport("panel-report", {
+    before: String(before),
+    after: String(proposal.length),
+    domCount: String(boxes.length),
+    domUids: domUids.join(","),
+    rows: rows.join("|"),
+    ids: ids.join(","),
+    blockedNodes: String(el("canvas").querySelectorAll(".pnode.blocked").length)
+  });
+  setStatus("DEMO panel 插入 " + proposal.length + " 块");
+}
+
 function runDemoHook(hash) {
   var h = String(hash || "").replace(/^#/, "");
   var kind = (h === "proposal-all") ? "all"
@@ -1265,6 +1531,8 @@ function runDemoHook(hash) {
            : (h === "proposal-drag") ? "drag"
            : (h === "proposal-undo") ? "undo"
            : (h === "proposal-fold") ? "fold"
+           : (h === "proposal-examples") ? "examples"
+           : (h === "proposal-panel") ? "panel"
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
   switchView("proposal");
@@ -1273,8 +1541,11 @@ function runDemoHook(hash) {
     el("prop-notes").innerHTML = "";
     renderVocabBar();
     renderRejected();
+    renderElementIdHelp();
     renderUnmapped();
     if (kind === "empty") { setStatus("DEMO empty 控件 0 降级 0"); return; }
+    if (kind === "examples") { examplesReport(); return; }
+    if (kind === "panel") { panelReport(); return; }
     var bs = el("vocab-bar").querySelectorAll("button[data-wkey]");
     for (var i = 0; i < bs.length; i++) { bs[i].click(); }
     if (kind === "typing") { typeReport("scale_y", "scale_ys"); return; }

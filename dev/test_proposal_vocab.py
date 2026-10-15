@@ -66,9 +66,11 @@ def main():
        "rejected 应为 %d，实际 %d" % (EXPECT_REJECTED, len(vocab["rejected"])))
     keys = [w["key"] for w in vocab["widgets"]]
     ck("gen_widget_keys_unique", len(set(keys)) == len(keys), "widget key 重复：%s" % keys)
+    # 字段集仍是精确相等：新增 demo / props_example / props_hint 之后，
+    # 任何「多出来的字段」照样要红。这不是放宽断言，是把它跟着数据一起长。
     ck("gen_widget_schema", all(
         set(w) == {"key", "label", "uiloayout", "allowed_props", "blocked_props",
-                   "note", "constraint_key"}
+                   "note", "constraint_key", "demo", "props_example", "props_hint"}
         for w in vocab["widgets"]), "widget 字段集不对")
     # docstring 承诺「只有 native_ok=true 的能力才能进词汇表」，这条断言把它钉死：
     # 声称依赖某条判定的控件，那条判定必须真的是 native_ok=true
@@ -253,6 +255,11 @@ def main():
        "胶片条归 switchView 管：提案视图下那 7 个状态按钮毫无意义，"
        "却会让人以为得先选状态才能提案")
 
+    # ---------- Task 12：图示 / 参数示例 / 元素 ID 说明 / 示例面板 ----------
+    # 「数据描述形状、代码负责画」的分工，两侧都要查：静态侧查数据，
+    # dom_checks 查 DOM。缺一侧就会出现「数据里有图示、界面上没画」。
+    demo_static_checks(vocab)
+
     dom_checks()
 
     print("PASS %d  FAIL %d" % (TOTAL[0] - len(FAILS), len(FAILS)))
@@ -266,6 +273,248 @@ BROWSERS = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
 ]
+
+# ---------- Task 12 的常量 ----------
+# app.js 的 renderDemo 只画这 11 种形状；多一种数据里的 kind 而这里没有，
+# 界面就会渲染出一个没有样式的空盒子。清单不是文档，是契约。
+DEMO_KINDS = ["row", "col", "box", "split", "grid", "panel", "label", "btn",
+              "prop", "rule", "gap"]
+# rule / gap 不画小方块，画的是一根线 / 一条空隙，所以它们不该有 items。
+DEMO_BARELESS = ["rule", "gap"]
+EXPECT_PANEL_BLOCKS = 8          # 示例面板从上到下的块数（brief 的第 1..8 步）
+
+
+def collect_element_ids():
+    """收全部已提交布局树里出现过的 element_id。"""
+    seen = set()
+    d = os.path.join(WB, "data", "layout")
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".json"):
+            continue
+        with open(os.path.join(d, fn), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        stack = [doc]
+        while stack:
+            cur = stack.pop()
+            if isinstance(cur, dict):
+                if isinstance(cur.get("element_id"), str) and cur["element_id"]:
+                    seen.add(cur["element_id"])
+                stack.extend(cur.values())
+            elif isinstance(cur, list):
+                stack.extend(cur)
+    return seen
+
+
+def known_icons():
+    """实测用过的图标名：布局树里捕获到的，加上 ui.py 里真实写过的。
+
+    native_api.json 的 icon 枚举没抓下来（bpy_struct 不支持 IDProperties，
+    notes 里那条 present=false 就是它），所以证据只能取自真正跑过的产物。
+    """
+    out = set()
+    d = os.path.join(WB, "data", "layout")
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".json"):
+            continue
+        with open(os.path.join(d, fn), encoding="utf-8") as fh:
+            src_txt = fh.read()
+        out.update(re.findall(r'"icon"\s*:\s*"([A-Z0-9_]+)"', src_txt))
+    ui_py = os.path.join(ROOT, "blender_deepseek_agent", "ui.py")
+    if os.path.exists(ui_py):
+        with open(ui_py, encoding="utf-8") as fh:
+            out.update(re.findall(r"icon=['\"]([A-Z0-9_]+)['\"]", fh.read()))
+    return out
+
+
+def hint_target(hint):
+    """从 props_hint 里认出它演示的是哪个 UILayout 函数或哪个 layout 属性。
+
+    返回 ("fn", "grid_flow") / ("prop", "scale_y")；认不出来返回 ("?", "")。
+    只认这两种形态，因为允许清单之外的参数本来就该被拦下。
+    """
+    m = re.search(r"layout\.([A-Za-z_][A-Za-z0-9_]*)\s*\(", hint)
+    if m:
+        return "fn", m.group(1)
+    m = re.search(r"^\s*[A-Za-z_][A-Za-z0-9_]*\.([A-Za-z_][A-Za-z0-9_]*)\s*=", hint)
+    if m:
+        return "prop", m.group(1)
+    return "?", ""
+
+
+def hint_kwargs(hint):
+    """抽出 hint 里带了取值的那些参数名。
+
+    只抓 `name=` / `name =` 这种真关键字传参。位置参数（layout / data /
+    第一个字符串）不在这里核对——它们是「这段代码长什么样」的一部分，
+    核对它们要的是调用形态而不是参数名。
+    """
+    body = re.sub(r"['\"][^'\"]*['\"]", "''", hint)     # 先掐掉字符串字面量
+    return set(re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*=[^=]", body))
+
+
+def demo_static_checks(vocab):
+    """Task 12 的静态侧：数据齐不齐、示例值合不合法、元素 ID 真不真实。"""
+    app = read(os.path.join(WB, "app.js"))
+    css_scan = re.sub(r"/\*.*?\*/", "", read(os.path.join(WB, "style.css")), flags=re.S)
+    ws = vocab["widgets"]
+
+    # --- A：12 个控件都有 demo，且 kind 是渲染器认识的形状 ---
+    no_demo = [w["key"] for w in ws if not isinstance(w.get("demo"), dict)
+               or not w["demo"].get("kind")]
+    ck("demo_every_widget", len(ws) == EXPECT_WIDGETS and not no_demo,
+       "%d 个控件里这 %d 个没有可用的 demo：%s" % (len(ws), len(no_demo), no_demo))
+    kinds = [w["demo"].get("kind") for w in ws if isinstance(w.get("demo"), dict)]
+    unknown = sorted(set(kinds) - set(DEMO_KINDS))
+    ck("demo_kinds_known", len(kinds) == EXPECT_WIDGETS and not unknown,
+       "有 demo kind 不在渲染器的清单里：%s（清单 %s）" % (unknown, DEMO_KINDS))
+    missing_items = [w["key"] for w in ws
+                     if w["demo"].get("kind") not in DEMO_BARELESS
+                     and not w["demo"].get("items")]
+    ck("demo_items_declared", not missing_items,
+       "这些控件的 demo 没给 items，界面画不出内容：%s" % missing_items)
+    over_items = [w["key"] for w in ws
+                  if w["demo"].get("kind") in DEMO_BARELESS and w["demo"].get("items")]
+    ck("demo_bareless_has_no_items", not over_items,
+       "rule / gap 不画小方块，不该带 items：%s" % over_items)
+    # 形状靠 CSS 画出来：每种 kind 都得有对应的一条规则，否则是个没样式的空盒子。
+    nostyle = [k for k in DEMO_KINDS if ".d-%s" % k not in css_scan]
+    ck("demo_kinds_have_css", not nostyle,
+       "style.css 里没有这些图示样式：%s（缺 %s）" % (nostyle, ".d-<kind>"))
+    # 分栏比例与网格列数必须来自数据，不是写死在 CSS 里的一刀切。
+    ck("demo_data_driven_dims",
+       "d.factor" in app and "d.cols" in app and "d.items" in app,
+       "renderDemo 没读数据里的 factor / cols / items——"
+       "那样分栏和网格就退化成固定形状，等于图示没跟着数据走")
+
+    # --- B：参数示例必须能原样粘进参数框 ---
+    # 这层是便宜的前置检查；真正证明「粘进去不报错」的是浏览器里那条
+    # dom_examples_no_intercept（走真的 input 事件）。
+    def toks(s):
+        return [t for t in re.split(r"[,，\s]+", s or "") if t]
+
+    illegal = []
+    for w in ws:
+        for t in toks(w.get("props_example")):
+            if t in w["blocked_props"] or t not in w["allowed_props"]:
+                illegal.append("%s:%s" % (w["key"], t))
+    ck("props_example_tokens_allowed", not illegal,
+       "参数示例里有词粘进去就会被拦：%s" % illegal)
+    nonempty = [w["key"] for w in ws if toks(w.get("props_example"))]
+    empty = [w["key"] for w in ws if not toks(w.get("props_example"))]
+    ck("props_example_covers_widgets", len(nonempty) == EXPECT_WIDGETS - len(empty)
+       and set(empty) == {"separator"},
+       "只有没有任何参数的控件该留空示例，实际留空的是 %s" % empty)
+    # 示例覆盖了多少个参数：写死 20 是逐个数出来的
+    # （2+2+1+1+2+2+2+3+2+2+0+1，separator 合法地一个参数都没有）。
+    ck("props_example_tokens_total",
+       sum(len(toks(w.get("props_example"))) for w in ws) == 20,
+       "参数示例总共应给出 20 个可粘的参数名，实际 %d"
+       % sum(len(toks(w.get("props_example"))) for w in ws))
+
+    # 带取值的真实写法，逐条对着 native_api.json 的实测签名核
+    with open(os.path.join(WB, "native_api.json"), encoding="utf-8") as fh:
+        api = json.load(fh)
+    funcs = api["ui"]["functions"]
+    props_of_ui = api["ui"]["properties"]
+    checked_fn, checked_prop, bad_hint, bad_icon = [], [], [], []
+    icons = known_icons()
+    for w in ws:
+        hint = w.get("props_hint") or ""
+        kind, name = hint_target(hint)
+        kws = hint_kwargs(hint)
+        if kind == "fn":
+            if name not in funcs:
+                bad_hint.append("%s: 未知函数 %s" % (w["key"], name))
+            else:
+                allowed = set(p.get("name") for p in funcs[name])
+                checked_fn.append(w["key"])
+                extra = sorted(kws - allowed)
+                if extra:
+                    bad_hint.append("%s: %s 没有参数 %s" % (w["key"], name, extra))
+        elif kind == "prop":
+            if name not in props_of_ui:
+                bad_hint.append("%s: 不是 UILayout 属性 %s" % (w["key"], name))
+            else:
+                checked_prop.append(w["key"])
+        else:
+            bad_hint.append("%s: 认不出演示的是函数还是属性：%r" % (w["key"], hint))
+        for ic in re.findall(r"icon=['\"]([A-Z0-9_]+)['\"]", hint):
+            if ic not in icons:
+                bad_icon.append("%s: %s" % (w["key"], ic))
+    ck("props_hint_native", not bad_hint, "参数示例的写法与实测签名对不上：%s" % bad_hint)
+    # 非空洞：11 个控件里至少 10 个真的被核到了函数签名，其余是 layout 属性
+    ck("props_hint_native_coverage",
+       len(checked_fn) >= 9 and len(checked_fn) + len(checked_prop) == EXPECT_WIDGETS,
+       "只核到 %d 个函数 / %d 个属性（共 %d 个控件）——覆盖率不够，这条断言不可证伪"
+       % (len(checked_fn), len(checked_prop), EXPECT_WIDGETS))
+    ck("props_hint_icons_real", not bad_icon and len(icons) >= 8,
+       "参数示例里用了没实测过的图标：%s（可用集合 %d 个）"
+       % (bad_icon, len(icons)))
+
+    # --- C：元素 ID 说明 ---
+    help_doc = vocab.get("element_id_help") or {}
+    ck("element_id_help_schema",
+       set(help_doc) == {"title", "what", "naming", "optional", "examples"},
+       "element_id_help 字段集不对：%s" % sorted(help_doc))
+    ck("element_id_help_says_naming",
+       bool(help_doc.get("naming")) and "chat." in help_doc["naming"],
+       "元素 ID 说明没讲命名规则：%r" % help_doc.get("naming"))
+    ck("element_id_help_says_optional",
+       bool(help_doc.get("optional")) and ("留空" in help_doc["optional"]
+                                           or "可空" in help_doc["optional"]),
+       "元素 ID 说明没讲「可以留空」：%r" % help_doc.get("optional"))
+    ck("element_id_help_says_what",
+       bool(help_doc.get("what")) and "ui.py" in help_doc["what"],
+       "元素 ID 说明没讲它是什么、挂在代码哪里：%r" % help_doc.get("what"))
+    ids = collect_element_ids()
+    ex = help_doc.get("examples") or []
+    ck("element_id_help_examples_real",
+       len(ex) >= 2 and all(e in ids for e in ex),
+       "说明里的例子 %s 不是已提交布局树里的真实 ID（真实的有 %s）" % (ex, sorted(ids)))
+
+    # --- D：示例面板 ---
+    panel = vocab.get("example_panel") or {}
+    blocks = panel.get("blocks") or []
+    ck("example_panel_schema",
+       set(panel) == {"title", "caption", "blocks"}
+       and all(set(b) == {"wkey", "params", "element_id", "note"} for b in blocks),
+       "example_panel 字段集不对：%s / %s"
+       % (sorted(panel), sorted(blocks[0]) if blocks else "<no blocks>"))
+    ck("example_panel_block_count", len(blocks) == EXPECT_PANEL_BLOCKS,
+       "示例面板应有 %d 块，实际 %d" % (EXPECT_PANEL_BLOCKS, len(blocks)))
+    reg = {w["key"]: w for w in ws}
+    bad_w = [b["wkey"] for b in blocks if b["wkey"] not in reg]
+    ck("example_panel_wkeys_resolve", not bad_w,
+       "示例面板里有词汇表不存在的控件：%s" % bad_w)
+    bad_p = []
+    for b in blocks:
+        w = reg.get(b["wkey"])
+        if not w:
+            continue
+        for t in toks(b["params"]):
+            if t in w["blocked_props"] or t not in w["allowed_props"]:
+                bad_p.append("%s:%s" % (b["wkey"], t))
+    ck("example_panel_params_allowed", not bad_p,
+       "示例面板里有粘进去就被拦的参数：%s" % bad_p)
+    # 元素 ID 用真实存在的；留空是允许的，但不允许填一个不存在的。
+    panel_ids = [b["element_id"] for b in blocks if b["element_id"]]
+    ck("example_panel_ids_real", panel_ids and all(i in ids for i in panel_ids),
+       "示例面板里有不存在的元素 ID：%s（真实的有 %s）"
+       % ([i for i in panel_ids if i not in ids], sorted(ids)))
+    ck("example_panel_has_empty_id",
+       any(not b["element_id"] for b in blocks) and len(panel_ids) >= 4,
+       "示例面板应当既演示了真实 ID，也演示了「元素 ID 可以留空」，"
+       "实际非空 %d 条 / 留空 %d 条" % (len(panel_ids), len(blocks) - len(panel_ids)))
+    # 面板得真的用上竖排与横排：这是用户问的「横排竖排怎么用」的核心。
+    n_row = sum(1 for b in blocks if b["wkey"] == "row")
+    n_col = sum(1 for b in blocks if b["wkey"] == "column")
+    ck("example_panel_uses_row_and_column", n_row >= 2 and n_col >= 2,
+       "示例面板里横排 %d 块 / 竖排 %d 块——这套示例本来就要示范两者怎么配合"
+       % (n_row, n_col))
+    ck("app_example_panel_button",
+       'id = "demo-panel-btn"' in app and "insertExamplePanel" in app,
+       "app.js 没有「插入示例面板」按钮 / 没有对应的插入函数")
+
 
 
 def find_browser():
@@ -513,8 +762,154 @@ def dom_checks():
         drag_checks(dump(exe, url + "#proposal-drag", profile))
         undo_checks(dump(exe, url + "#proposal-undo", profile), empty)
         fold_checks(dump(exe, url + "#proposal-fold", profile))
+
+        # --- Task 12：图示 / 参数示例 / 元素 ID 说明 / 示例面板 ---
+        demo_checks(empty, vjson)
+        help_checks(empty, vjson)
+        examples_checks(dump(exe, url + "#proposal-examples", profile), vjson)
+        panel_checks(dump(exe, url + "#proposal-panel", profile), vjson)
     finally:
         shutil.rmtree(profile, ignore_errors=True)
+
+
+def demo_nodes(bar):
+    """把 #vocab-bar 切片里的迷你图示逐个拆出来。
+
+    必须切到 #vocab-bar 里看：#canvas 与 #prop-notes 也可能有 .demo（现在没有，
+    但那是巧合不是约定）。每块的 body 截到「下一个 .demo 的起始标签」为止，
+    否则最后一个小方块会被算进上一块里，两块的计数一起错。
+    """
+    out = []
+    for m in re.finditer(r'<div class="demo([^"]*)"([^>]*)>', bar):
+        attrs = m.group(2)
+        wk = re.search(r'data-dwkey="([^"]*)"', attrs)
+        dk = re.search(r'data-dkind="([^"]*)"', attrs)
+        out.append({
+            "cls": m.group(1),
+            "wkey": wk.group(1) if wk else "",
+            "kind": dk.group(1) if dk else "",
+            "tag": m.start(),
+            "end": m.end(),
+        })
+    for i, n in enumerate(out):
+        stop = out[i + 1]["tag"] if i + 1 < len(out) else len(bar)
+        body = bar[n["end"]:stop]
+        n["items"] = body.count('class="d-it"')
+    return out
+
+
+def demo_checks(page, vjson):
+    """A：12 个控件各自画出一张小图示，图示里的小方块数量与数据一致。"""
+    bar = vocab_bar_of(page)
+    nodes = demo_nodes(bar)
+    ck("dom_demo_one_per_widget", len(nodes) == EXPECT_WIDGETS,
+       "控件架里应有 %d 张图示，实际 %d" % (EXPECT_WIDGETS, len(nodes)))
+    want = {w["key"]: w["demo"] for w in vjson["widgets"]}
+    ck("dom_demo_keys_match",
+       sorted(n["wkey"] for n in nodes) == sorted(want),
+       "图示的 data-dwkey 与词汇表对不上：%s"
+       % sorted(set(n["wkey"] for n in nodes) ^ set(want)))
+    wrong_kind = [n["wkey"] for n in nodes
+                  if n["kind"] != (want.get(n["wkey"], {}).get("kind"))]
+    ck("dom_demo_kind_matches", not wrong_kind,
+       "这些图示画的形状与 demo.kind 不符：%s" % wrong_kind)
+    # 逐块比小方块数量：这一条专治「图示框画出来了，里面是空的」。
+    bad_items = [(n["wkey"], n["items"], len((want.get(n["wkey"], {}).get("items") or [])))
+                 for n in nodes
+                 if n["items"] != len(want.get(n["wkey"], {}).get("items") or [])]
+    ck("dom_demo_items_match", not bad_items,
+       "图示里的小方块数量与数据对不上（wkey, 画了几个, 应该有）：%s" % bad_items)
+    total_items = sum(n["items"] for n in nodes)
+    ck("dom_demo_items_total", total_items == 18,
+       "12 张图示里应一共画出 18 个小方块（rule / gap 不画方块），实际 %d"
+       % total_items)
+
+
+def help_checks(page, vjson):
+    """C：元素 ID 说明要真的渲染出来，而不是只躺在 vocabulary.json 里。"""
+    hlp = vjson["element_id_help"]
+    if '<div id="prop-notes"' not in page or "</body>" not in page:
+        ck("dom_element_id_help", False, "定位不到 #prop-notes")
+        return
+    notes = page.split('<div id="prop-notes"')[1]
+    m = re.search(r'<div id="element-id-help"[^>]*>(.*?)</div>\s*(?:<h3|</section|<div id="annot)',
+                  notes, re.S)
+    ck("dom_element_id_help", m is not None,
+       "元素 ID 的说明没有渲染出来——数据里有、界面上没有，用户还是不知道填什么")
+    if m is None:
+        return
+    body = unescape_html(m.group(1))
+    ck("dom_element_id_help_naming", hlp["naming"] in body,
+       "说明里缺命名规则这一句：%r" % body[:200])
+    ck("dom_element_id_help_optional", hlp["optional"] in body,
+       "说明里缺「可以留空」这一句：%r" % body[:200])
+    ck("dom_element_id_help_what", hlp["what"] in body,
+       "说明里缺「它是什么、挂在代码哪」的这句话：%r" % body[:200])
+    dm = re.search(r'<div class="chips" data-examples="([^"]*)"', body)
+    ck("dom_element_id_help_examples",
+       dm is not None and dm.group(1) == ",".join(hlp["examples"]),
+       "说明里给的例子应为 %s，实际 %r"
+       % (hlp["examples"], dm.group(1) if dm else None))
+
+
+def examples_checks(page, vjson):
+    """B（重头）：把 12 个控件的参数示例真的敲进参数框，一条拦截都不许有。"""
+    at = report(page, "examples-report")
+    rows = [r for r in at.get("rows", "").split("|") if r]
+    ck("examples_hook_ran", len(rows) == EXPECT_WIDGETS,
+       "参数示例钩子没跑起来（抓到 %d 条，应为 %d）：%s"
+       % (len(rows), EXPECT_WIDGETS, at.get("rows")))
+    if len(rows) != EXPECT_WIDGETS:
+        return
+    blocked = [r for r in rows if not re.search(r":0:ok$", r)]
+    ck("dom_examples_no_intercept", not blocked,
+       "这些参数示例粘进去就被拦了（示例给错了比不给更糟）：%s" % blocked)
+    ck("examples_all_widgets_covered",
+       at.get("covered") == ",".join(w["key"] for w in vjson["widgets"]),
+       "示例没有覆盖全部 12 个控件：%s" % at.get("covered"))
+    # 值要真的落进输入框：只报 errors=0 的话，「示例压根没写进去」照样全绿。
+    got = dict(kv.split("=", 1) for kv in at.get("values", "").split("|") if kv)
+    want = {w["key"]: w["props_example"] for w in vjson["widgets"]}
+    ck("examples_value_landed", got == want,
+       "示例值没有原样落进参数框：实际 %r" % got)
+    ck("examples_one_block_per_widget", at.get("total") == str(EXPECT_WIDGETS)
+       and len(set(_uids(at, "uids"))) == EXPECT_WIDGETS,
+       "示例跑完画布上应有 %d 块、uid 互不相同，实际 %s / %r"
+       % (EXPECT_WIDGETS, at.get("total"), at.get("uids")))
+
+
+def panel_checks(page, vjson):
+    """D：点一下「插入示例面板」，画布里出现一整套能抄的积木。"""
+    at = report(page, "panel-report")
+    ck("panel_hook_ran", at.get("after") == str(EXPECT_PANEL_BLOCKS)
+       and at.get("before") == "0",
+       "示例面板没插进去：before=%s after=%s" % (at.get("before"), at.get("after")))
+    if at.get("after") != str(EXPECT_PANEL_BLOCKS):
+        return
+    ck("panel_dom_count", at.get("dom-count") == str(EXPECT_PANEL_BLOCKS),
+       "画布上应渲染出 %d 块，实际 %s" % (EXPECT_PANEL_BLOCKS, at.get("dom-count")))
+    uids = _uids(at, "dom-uids")
+    ck("panel_uids_unique", len(uids) == EXPECT_PANEL_BLOCKS
+       and all(uids) and len(set(uids)) == len(uids),
+       "示例面板各块的 uid 必须互不相同：%s" % uids)
+    rows = [r for r in at.get("rows", "").split("|") if r]
+    ck("panel_rows_count", len(rows) == EXPECT_PANEL_BLOCKS,
+       "应逐块报出 %d 条读数，实际 %d：%s"
+       % (EXPECT_PANEL_BLOCKS, len(rows), at.get("rows")))
+    bad = [r for r in rows
+           if not re.search(r":0:", r) or re.search(r":[1-9]\d*:", r)]
+    ck("panel_params_legal", not bad,
+       "示例面板里有块自带违规参数（用户点开就看到「违规」）：%s" % bad)
+    ck("panel_no_blocked_node", at.get("blocked-nodes") == "0",
+       "示例面板不该出现任何违规块，实际 %s 块" % at.get("blocked-nodes"))
+    want_rows = ["%s:0:%s" % (b["wkey"], b["params"] or "-")
+                 for b in vjson["example_panel"]["blocks"]]
+    ck("panel_blocks_as_specified", at.get("rows") == "|".join(want_rows),
+       "示例面板的块序 / 参数与 vocabulary.json 不一致：\n实际 %s\n应为 %s"
+       % (at.get("rows"), "|".join(want_rows)))
+    want_ids = [b["element_id"] for b in vjson["example_panel"]["blocks"] if b["element_id"]]
+    ck("panel_element_ids", at.get("ids") == ",".join(want_ids),
+       "示例面板的元素 ID 应为 %s，实际 %s" % (want_ids, at.get("ids")))
 
 
 def vocab_bar_of(p):
@@ -544,6 +939,18 @@ def empty_hint_of(p):
                  ("&gt;", ">"), ("&amp;", "&")):
         txt = txt.replace(a, b)
     return txt
+
+
+def unescape_html(s):
+    """把 dump 里被转义过的实体还原回去。
+
+    必须还原：元素 ID 的命名规则里带 <区块> 这种尖括号占位符，
+    dump 出来是 &lt;区块&gt;，直接拿原文去比永远比不中。
+    """
+    for a, b in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'),
+                 ("&#39;", "'"), ("&amp;", "&")):
+        s = s.replace(a, b)
+    return s
 
 
 def tag_of(p, eid):
