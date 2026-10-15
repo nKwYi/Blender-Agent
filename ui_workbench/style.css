@@ -160,6 +160,78 @@ button.chip {
   width: 100%; margin: 4px 0; background: var(--field); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 4px; font: inherit;
 }
+/* ---- 两栏 + 界面预览 ----
+   左边那块必须是「Blender 侧看到的样子」，不是示意图：所以这里只用实测色板
+   （文件头那张清单），形状一律用 flex / grid / 边框画，不引任何图片或图标库。
+   主题里没有红也没有绿，所以压暗、非法、做不到一律靠明度差 + 边框 + 删除线
+   表达——预览里出现一个主题画不出来的颜色，它就成了会骗人的东西。 */
+.canvas-split { display: flex; gap: 12px; padding: 0 12px 8px; align-items: flex-start; }
+.preview-pane { flex: 0 0 420px; position: sticky; top: 8px; }
+.block-pane { flex: 1 1 auto; min-width: 420px; }
+.pane-cap { color: var(--text-dim); font-size: 11px; margin: 6px 0 4px; }
+#preview {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px; min-height: 180px;
+}
+.bpv { display: flex; flex-direction: column; gap: 4px; }
+.pv-hint { color: var(--text-dim); padding: 6px 4px; margin: 0; }
+/* 内容为空时不许留白：压暗的虚线格子，一眼看出「这里有块地，但还没填」。 */
+.pv-empty { color: var(--text-dim); }
+.pv-slot {
+  border: 1px dashed var(--text-dim); border-radius: 4px;
+  min-height: 18px; padding: 1px 4px; font-size: 11px;
+}
+.pv-row { display: flex; flex-direction: row; gap: 4px; align-items: stretch; }
+.pv-col { display: flex; flex-direction: column; gap: 4px; }
+.pv-head { color: var(--text); padding: 1px 2px; font-size: 12px; }
+.pv-box {
+  background: var(--inner); border: 1px solid var(--panel);
+  border-radius: 4px; padding: 4px;
+}
+/* alert：主题里没有警示色，只能靠边线亮度把它从普通 box 里挑出来。 */
+.pv-box.alert { border-color: var(--mark); }
+.pv-split { display: flex; flex-direction: row; gap: 4px; }
+.pv-half { display: flex; flex-direction: column; gap: 2px; }
+.pv-grid { display: grid; gap: 4px; }
+.pv-panel { border: 1px solid var(--panel); border-radius: 4px; }
+.pv-panel .pv-head {
+  background: var(--inner); border-radius: 4px 4px 0 0; padding: 2px 4px;
+}
+.pv-panel .pv-body { padding: 4px; }
+.pv-label { color: var(--text); padding: 1px 2px; }
+.pv-btn {
+  background: var(--fill); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 8px; display: inline-block;
+}
+.pv-prop { display: flex; flex-direction: row; gap: 4px; align-items: center; }
+/* use_property_split：属性名和值各占一列，而不是名字贴着值挤。 */
+.pv-prop.split .pv-k { flex: 0 0 40%; }
+.pv-k { color: var(--text-dim); }
+.pv-v {
+  flex: 1 1 auto; background: var(--field); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 4px; color: var(--text);
+}
+.pv-textbox {
+  background: var(--field); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px; color: var(--text-dim); overflow: hidden;
+}
+.pv-textbox .pv-tx { font-size: 12px; }
+.pv-sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+.pv-gap { }
+.pv-ico {
+  color: var(--text-dim); font-family: Consolas, monospace; font-size: 10px;
+  border: 1px solid var(--border); border-radius: 3px; padding: 0 3px;
+  margin-right: 4px; display: inline-block;
+}
+.pv-down {
+  border: 1px dashed var(--text-dim); border-radius: 4px;
+  padding: 2px 6px; font-size: 12px; text-decoration: line-through;
+}
+/* 内容输入框：一行一个字段（字段名 + 框），比 params 那个整宽框更像清单 */
+.pcontent { margin: 6px 0 2px; }
+.crow { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
+.crow .clab { color: var(--text-dim); flex: 0 0 64px; font-size: 12px; }
+.crow .pin { margin: 0; }
 /* ---- 迷你图示（用户原话：横排竖排「不太能理解怎么使用」）----
    每张卡片先用小方块把控件的形状画出来，再放按钮。图示的形状由
    vocabulary.json 的 demo 字段描述，app.js 只负责把它画成 CSS 方块——

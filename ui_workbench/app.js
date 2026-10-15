@@ -462,6 +462,7 @@ function loadVocab() {
       throw new Error("vocabulary.json 结构不对（缺 widgets / rejected）");
     }
     vocab = v;
+    buildIconList();
     renderVocabBar();
     renderRejected();
     renderElementIdHelp();
@@ -579,6 +580,24 @@ function widgetCard(w) {
   return card;
 }
 
+/* 图标候选表：一个 <datalist>，喂给内容输入框里的图标框。
+   名册来自 vocabulary.json 的 icons（dev/build_vocabulary.py 从
+   native_api.json 的实测枚举里抄下来的 1033 个），不是图标库、不是图片——
+   离线双击直开，什么外部资源都不许引。建一次就够，后面复用同一个节点。 */
+function buildIconList() {
+  var old = document.getElementById("pv-icon-list");
+  if (old && old.parentNode) { old.parentNode.removeChild(old); }
+  var dl = document.createElement("datalist");
+  dl.id = "pv-icon-list";
+  dl.dataset.iconcount = String(((vocab && vocab.icons) || []).length);
+  (vocab.icons || []).forEach(function (name) {
+    var o = document.createElement("option");
+    o.value = name;
+    dl.appendChild(o);
+  });
+  document.body.appendChild(dl);
+}
+
 function widgetByKey(k) {
   var ws = (vocab && vocab.widgets) || [];
   for (var i = 0; i < ws.length; i++) {
@@ -618,6 +637,9 @@ function addExampleBlock(b) {
     params: b.params || "",
     id: b.element_id || "",
     note: b.note || "",
+    // 示例面板自带内容（否则插进来是一片空壳，预览看不出这是个界面）；
+    // 万一数据里漏了，回落到起手内容，不留空。
+    content: b.content || starterContent(w.key),
     errors: [],
     expanded: false,
     downgraded: false
@@ -778,6 +800,8 @@ function addWidget(w) {
     params: "",
     id: "",
     note: "",
+    // 起手内容：空按钮定不了形，第一块就写上能看懂的话（发送指令 / 输入建模指令…）。
+    content: starterContent(w.key),
     errors: [],
     expanded: false,   // 默认折叠：三块输入框不在 DOM 里，积木只占一行
     downgraded: false
@@ -920,6 +944,7 @@ function renderCanvas() {
   var host = el("canvas");
   var keep = captureFocus(host);
   host.innerHTML = "";
+  renderPreview();
   if (!proposal.length) {
     host.appendChild(renderEmptyHint());
     return;
@@ -1057,6 +1082,22 @@ function renderCanvas() {
       pin.value = n.params;
       pin.oninput = function () { setParams(n, pin.value); };
       box.appendChild(pin);
+
+      /* 积木的内容。与 params 分开：params 是「Blender 调用长什么样」，
+         content 是「这块里写什么字」——预览只认后者。容器类控件
+         （row/column/box/split/grid_flow/panel/separator/scale_y）没有内容，
+         它们只分组或占位，所以这段对它们整段跳过。 */
+      var spec = contentSpec(n.wkey);
+      if (spec && spec.length) {
+        var cwrap = document.createElement("div");
+        cwrap.className = "pcontent";
+        var ctit = document.createElement("div");
+        ctit.className = "pfb";
+        ctit.textContent = "这块里写什么（左边预览就照着画）：";
+        cwrap.appendChild(ctit);
+        spec.forEach(function (f) { cwrap.appendChild(contentInput(n, f)); });
+        box.appendChild(cwrap);
+      }
     }
 
     n.errors.forEach(function (e) {
@@ -1521,6 +1562,382 @@ function panelReport() {
   setStatus("DEMO panel 插入 " + proposal.length + " 块");
 }
 
+/* ---------------- 界面预览（左栏） ----------------
+   用户原话「左侧映射出来界面，右侧是积木」：右侧是零件表，左边必须把零件
+   拼起来之后真正长什么样画出来——不画出来就永远搭不出一个界面。
+
+   两条纪律：
+   1) 从数据渲染，不拼 HTML 字符串。写死模板的话，积木数据一改预览就悄悄
+      过期（迷你图示那条教训）。所以这里只有 createElement + className。
+   2) 诚实。只画 Blender 真画得出来的东西，颜色只用 style.css 里那 23 个
+      实测值。主题里没有红也没有绿，所以「有拦截 / 做不到」一律靠底色明度、
+      边框、删除线表达，不靠颜色。 */
+
+/* 每种控件的内容字段。容器类控件（只分组或占位）不在表里。 */
+var CONTENT_SPEC = {
+  row:      [{ field: "heading", label: "标题文字" }],
+  column:   [{ field: "heading", label: "标题文字" }],
+  label:    [{ field: "text", label: "文字" }, { field: "icon", label: "图标" }],
+  operator: [{ field: "text", label: "按钮文字" }, { field: "icon", label: "图标" }],
+  prop:     [{ field: "label", label: "属性名" }, { field: "value", label: "当前值" }],
+  textbox:  [{ field: "placeholder", label: "占位提示" }, { field: "lines", label: "可见行数" }]
+};
+
+function contentSpec(wkey) { return CONTENT_SPEC[wkey] || null; }
+
+/* 新积木的起手内容：空按钮没法定形，起手给一句能直接看懂的。
+   文案来自 vocabulary.json 的 starter_content（数据在这里，界面只负责画）。 */
+function starterContent(wkey) {
+  var s = (vocab && vocab.starter_content) || {};
+  var v = s[wkey];
+  return v ? JSON.parse(JSON.stringify(v)) : {};
+}
+
+function contentInput(n, f) {
+  var row = document.createElement("div");
+  row.className = "crow";
+  var lab = document.createElement("span");
+  lab.className = "clab";
+  lab.textContent = f.label;
+  row.appendChild(lab);
+  var inp = document.createElement("input");
+  inp.className = "pin";
+  // data-field 用 "c:" 前缀与 params / id / note 区分开：焦点保持是靠它找回来的，
+  // 撞名会让用户改参数时焦点跳到内容框。
+  inp.dataset.field = "c:" + f.field;
+  inp.dataset.uid = n.uid;
+  var v = (n.content || {})[f.field];
+  inp.value = (v == null) ? "" : String(v);
+  if (f.field === "icon") {
+    inp.setAttribute("list", "pv-icon-list");
+    inp.placeholder = "图标名（如 PLAY）";
+    inp.title = "图标只能从 Blender 实测的 " +
+      (((vocab && vocab.icons) || []).length || "?") + " 个图标名里挑：";
+  } else if (f.field === "lines") {
+    inp.placeholder = "3";
+    inp.title = "Blender 里 textbox 的 initial_visible_lines，预览按它算高度";
+  } else {
+    inp.placeholder = f.label;
+  }
+  inp.oninput = function () { setContent(n, f.field, inp.value); };
+  row.appendChild(inp);
+  return row;
+}
+
+function setContent(n, field, raw) {
+  n.content = n.content || {};
+  if (field === "lines") {
+    var v = parseInt(raw, 10);
+    // 留空 / 敲错都当「没填」：预览回落到占位形状，而不是画出一个 0 高的框。
+    n.content.lines = isNaN(v) || v < 1 ? 0 : v;
+  } else {
+    n.content[field] = raw;
+  }
+  renderCanvas();   // 连带重画预览：右边改一个字，左边当场变
+}
+
+/* 参数框按白名单只收参数名（columns=2 会被当自造参数拦下），所以取值解析
+   必须容错：写了 =值 就用，没写就用该控件的惯用缺省值。 */
+function paramValue(n, key, dflt) {
+  var toks = splitParams(n.params);
+  for (var i = 0; i < toks.length; i++) {
+    if (toks[i] === key) { return dflt; }
+    if (toks[i].indexOf(key + "=") === 0) { return toks[i].slice(key.length + 1); }
+  }
+  return null;
+}
+
+function hasParam(n, key) { return splitParams(n.params).indexOf(key) >= 0; }
+
+function numParam(n, key, dflt) {
+  var raw = paramValue(n, key, null);
+  if (raw === null) { return dflt; }
+  var v = parseFloat(raw);
+  return isNaN(v) ? dflt : v;
+}
+
+/* 一个预览节点。pvEl 只做「建元素 + 挂 data-pv」，形状一律由 className 决定。 */
+function pvEl(cls, kind) {
+  var e = document.createElement("div");
+  e.className = cls;
+  e.dataset.pv = kind;
+  return e;
+}
+
+/* 空内容不许留白：画一个压暗的占位形状，让人看得出这块在这儿、是什么形状。
+   data-empty="1" 是给测试看的——「没填」必须是一种可见状态，不是缺席。 */
+function pvSlot(txt) {
+  var s = pvEl("pv-slot pv-empty", "slot");
+  s.dataset.empty = "1";
+  s.textContent = txt || "空容器 · 控件放这里";
+  return s;
+}
+
+function pvText(e, txt, ph) {
+  if (txt) {
+    e.appendChild(document.createTextNode(txt));
+  } else {
+    e.className += " pv-empty";
+    e.dataset.empty = "1";
+    e.textContent = ph;
+  }
+  return e;
+}
+
+function pvIconSpan(c) {
+  /* 图标只用字符：离线没有图标资源，也不许引图片。预览画的是「这一块要用
+     哪个图标」这个事实——把图标名原样印出来，而不是伪造一张长得像的图。 */
+  var s = pvEl("pv-ico", "icon");
+  s.textContent = c.icon;
+  return s;
+}
+
+function renderPreview() {
+  var host = el("preview");
+  if (!host) { return; }
+  host.innerHTML = "";
+  var panel = pvEl("bpv", "panel-root");
+  panel.dataset.pvcount = String(proposal.length);
+  if (!proposal.length) {
+    var hint = document.createElement("p");
+    hint.className = "pv-hint";
+    hint.textContent = "左边这块空白就是 Blender 侧看到的面板。往右边加积木，"
+      + "它会从上到下长出来：横排并排、竖排堆叠、框和输入框都长面板里的样子。";
+    panel.appendChild(hint);
+  }
+  proposal.forEach(function (n) { panel.appendChild(pvNode(n)); });
+  host.appendChild(panel);
+}
+
+function pvNode(n) {
+  var d;
+  if (n.downgraded) {
+    /* 降级块是「这条原需求做不到 + 这样改」的记录，Blender 里根本没有这块东西。
+       预览照样给它一个位置，但画成压暗 + 删除线的一条说明：谎称它会出现，
+       预览就不诚实了。 */
+    d = pvEl("pv-down pv-empty", "downgraded");
+    d.dataset.empty = "1";
+    d.textContent = "✗ 做不到：" + n.label + "（只是记录，Blender 里不画）";
+    d.dataset.pvuid = n.uid;
+    return d;
+  }
+  d = pvWidget(n);
+  d.dataset.pvuid = n.uid;
+  return d;
+}
+
+function pvWidget(n) {
+  var k = n.wkey;
+  var c = n.content || {};
+  var d;
+  if (k === "row" || k === "column") {
+    d = pvEl(k === "row" ? "pv-row" : "pv-col", k);
+    /* 标题优先取内容（heading=... 这种带取值的写法参数框收不了，
+       页签条 / 分组标题只能靠内容），没有内容再退回参数里的裸 heading。 */
+    var head = c.heading || paramValue(n, "heading", null);
+    if (head) { d.appendChild(pvEl("pv-head", "heading")).textContent = head; }
+    d.appendChild(pvSlot());
+    return d;
+  }
+  if (k === "box") {
+    d = pvEl("pv-box" + (hasParam(n, "alert") ? " alert" : ""), "box");
+    d.appendChild(pvSlot("消息 / 一条内容"));
+    return d;
+  }
+  if (k === "split") {
+    d = pvEl("pv-split", "split");
+    var f = Math.max(0.05, Math.min(0.95, numParam(n, "factor", 0.3)));
+    var l = pvEl("pv-half", "split-left");
+    l.style.flex = "0 0 " + Math.round(f * 100) + "%";
+    l.appendChild(pvSlot("左"));
+    var r = pvEl("pv-half", "split-right");
+    r.style.flex = "1 1 auto";
+    r.appendChild(pvSlot("右"));
+    d.appendChild(l);
+    d.appendChild(r);
+    return d;
+  }
+  if (k === "grid_flow") {
+    d = pvEl("pv-grid", "grid_flow");
+    var cols = Math.max(1, Math.min(4, Math.round(numParam(n, "columns", 2))));
+    d.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
+    for (var i = 0; i < cols; i++) { d.appendChild(pvSlot()); }
+    return d;
+  }
+  if (k === "panel") {
+    d = pvEl("pv-panel", "panel");
+    var closed = hasParam(n, "default_closed");
+    var hd = pvEl("pv-head", "panel-head");
+    hd.textContent = (closed ? "▸ " : "▾ ") +
+      (paramValue(n, "idname", null) || n.id || "子面板");
+    d.appendChild(hd);
+    /* 折叠态面板不画内容区：Blender 里 closed 的 panel 本来就只剩标题条。 */
+    var body = pvEl("pv-body" + (closed ? " pv-empty" : ""), "panel-body");
+    if (closed) { body.dataset.empty = "1"; }
+    else { body.appendChild(pvSlot()); }
+    d.appendChild(body);
+    return d;
+  }
+  if (k === "label") {
+    d = pvEl("pv-label", "label");
+    if (c.icon) { d.appendChild(pvIconSpan(c)); }
+    return pvText(d, c.text, "（未填文字）");
+  }
+  if (k === "operator") {
+    d = pvEl("pv-btn", "operator");
+    if (c.icon) { d.appendChild(pvIconSpan(c)); }
+    return pvText(d, c.text, "（未填按钮文字）");
+  }
+  if (k === "prop") {
+    d = pvEl("pv-prop" + (hasParam(n, "use_property_split") ? " split" : ""), "prop");
+    var kv = pvEl("pv-k", "prop-label");
+    pvText(kv, c.label, "（未填属性名）");
+    var vv = pvEl("pv-v", "prop-value");
+    pvText(vv, c.value, "—");
+    d.appendChild(kv);
+    d.appendChild(vv);
+    return d;
+  }
+  if (k === "textbox") {
+    d = pvEl("pv-textbox", "textbox");
+    var lines = Number(c.lines) > 0 ? Math.min(10, Number(c.lines)) : 3;
+    d.style.height = (lines * 16 + 8) + "px";
+    d.appendChild(pvText(pvEl("pv-tx", "textbox-text"),
+                         c.placeholder, "（未填占位提示）"));
+    return d;
+  }
+  if (k === "separator") {
+    d = document.createElement("hr");
+    d.className = "pv-sep";
+    d.dataset.pv = "separator";
+    return d;
+  }
+  if (k === "scale_y") {
+    d = pvEl("pv-gap", "scale_y");
+    d.style.height = Math.max(6, numParam(n, "scale_y", 1) * 18) + "px";
+    d.title = "留白，不画任何东西";
+    return d;
+  }
+  /* 词汇表之外的控件（理论上到不了）：画一个诚实的「不认识」，
+     而不是悄悄画成空白。 */
+  d = pvEl("pv-slot pv-empty", "unknown");
+  d.dataset.empty = "1";
+  d.textContent = "未知控件：" + k;
+  return d;
+}
+
+/* #proposal-preview：界面预览的验收钩子。
+   报的不是 class 名（那只能证明「我写了这个 class」），而是浏览器算出来的
+   样式与几何——flex 方向、grid 列数、grid 子元素宽高、hr 的标签名。
+   把 .pv-row 改成竖排、把 grid 改回普通流、把 scale_y 的高度抹掉，
+   这里都会当场变，Python 侧的红也就落在这些行上。 */
+function pvOf(uid) {
+  return el("preview").querySelector('[data-pvuid="' + uid + '"]');
+}
+
+/* 展开一块并拿到它的某个内容输入框，和 paramsInputOf 同一个路子：按 wkey 找
+   块、按 uid 找输入框，两头都不靠下标。 */
+function contentInputOf(wkey, field) {
+  for (var i = 0; i < proposal.length; i++) {
+    if (proposal[i].wkey !== wkey) { continue; }
+    var box = el("canvas").querySelector('.pnode[data-uid="' + proposal[i].uid + '"]');
+    if (!box) { continue; }
+    return box.querySelector('[data-field="c:' + field + '"]');
+  }
+  return null;
+}
+
+function previewShape(n, e) {
+  var cs = getComputedStyle(e);
+  var s = e.tagName.toLowerCase() + "/" + cs.display + "/" + cs.flexDirection;
+  if (n.wkey === "grid_flow") {
+    s += "/" + cs.gridTemplateColumns.split(" ").filter(function (x) { return x; }).length;
+  }
+  if (n.wkey === "scale_y") { s += "/" + e.offsetHeight; }
+  if (n.wkey === "split") {
+    var l = e.firstElementChild;
+    s += "/" + (l ? Math.round(l.getBoundingClientRect().width) : -1);
+  }
+  if (n.wkey === "textbox") { s += "/" + e.offsetHeight; }
+  if (n.wkey === "panel") {
+    s += "/" + (e.querySelector(".pv-head") ? "head" : "nohead") +
+         "/" + (e.querySelector(".pv-body") ? "body" : "nobody");
+  }
+  if (n.wkey === "prop") { s += "/" + e.children.length; }
+  if (n.wkey === "label" || n.wkey === "operator") {
+    s += "/" + (e.textContent || "").length;
+  }
+  return n.wkey + "=" + s;
+}
+
+function previewReport() {
+  var shapes = [];
+  var missing = 0;
+  proposal.forEach(function (n) {
+    var e = pvOf(n.uid);
+    if (!e) { missing++; shapes.push(n.wkey + "=MISSING"); return; }
+    shapes.push(previewShape(n, e));
+  });
+  var nodes = el("preview").querySelectorAll("[data-pvuid]").length;
+
+  /* 改内容 -> 预览跟着变。走真的 input 事件 + 真的输入框：
+     直接改 proposal[0].content 再读预览，只能证明「赋值和读取互相认识」。 */
+  var lab = proposal.filter(function (x) { return x.wkey === "label"; })[0];
+  var typed = "";
+  if (lab) {
+    if (!contentInputOf("label", "text")) {
+      el("canvas").querySelector('.pnode[data-uid="' + lab.uid + '"] [data-act="fold"]').click();
+    }
+    var inp = contentInputOf("label", "text");
+    if (inp) {
+      inp.value = "正在改你的场景 · 第 2 步";
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      typed = (pvOf(lab.uid) || {}).textContent || "";
+    }
+  }
+
+  /* 清空 -> 占位形状，不是空白。 */
+  var cleared = "?";
+  if (lab) {
+    var inp2 = contentInputOf("label", "text");
+    if (inp2) {
+      inp2.value = "";
+      inp2.dispatchEvent(new Event("input", { bubbles: true }));
+      var pe = pvOf(lab.uid);
+      cleared = pe ? (pe.dataset.empty === "1" && /pv-empty/.test(pe.className)
+        ? "empty" : "filled") : "missing";
+    }
+  }
+
+  /* 折叠态面板：参数里写了 default_closed 就该只剩一条标题条。 */
+  var closedHead = "?";
+  var pan = proposal.filter(function (x) { return x.wkey === "panel"; })[0];
+  if (pan) {
+    setParams(pan, "default_closed");
+    var pe2 = pvOf(pan.uid);
+    var hd2 = pe2 && pe2.querySelector(".pv-head");
+    closedHead = hd2 ? (hd2.textContent || "?").slice(0, 1) : "?";
+  }
+
+  appendReport("preview-report", {
+    count: String(nodes),
+    proposal: String(proposal.length),
+    missing: String(missing),
+    shapes: shapes.join("|"),
+    "typedText": typed,
+    cleared: cleared,
+    "closedHead": closedHead,
+    "iconList": (document.getElementById("pv-icon-list") || { dataset: {} }).dataset
+      .iconcount || "0",
+    // 两栏：两个挂载点必须挂在同一个 .canvas-split 下，而不是「都在页面上」。
+    "twoPane": (el("preview") && el("canvas") &&
+                el("preview").closest(".canvas-split") &&
+                el("preview").closest(".canvas-split") ===
+                  el("canvas").closest(".canvas-split")) ? "1" : "0"
+  });
+  setStatus("DEMO preview 预览 " + nodes + " 节点");
+}
+
 function runDemoHook(hash) {
   var h = String(hash || "").replace(/^#/, "");
   var kind = (h === "proposal-all") ? "all"
@@ -1533,6 +1950,7 @@ function runDemoHook(hash) {
            : (h === "proposal-fold") ? "fold"
            : (h === "proposal-examples") ? "examples"
            : (h === "proposal-panel") ? "panel"
+           : (h === "proposal-preview") ? "preview"
            : (h === "proposal-empty") ? "empty" : null;
   if (!kind) { return; }
   switchView("proposal");
@@ -1560,6 +1978,7 @@ function runDemoHook(hash) {
     if (kind === "drag") { dragReport(); return; }
     if (kind === "undo") { undoReport(); return; }
     if (kind === "fold") { foldReport(); return; }
+    if (kind === "preview") { previewReport(); return; }
     var down = proposal.filter(function (x) { return x.downgraded; }).length;
     var blocked = proposal.filter(function (x) { return x.errors.length > 0; }).length;
     setStatus("DEMO " + kind + " 控件 " + (proposal.length - down) +

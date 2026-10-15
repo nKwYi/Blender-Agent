@@ -23,7 +23,27 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SRC = os.path.join(ROOT, "ui_workbench", "constraints.json")
+API = os.path.join(ROOT, "ui_workbench", "native_api.json")
 OUT = os.path.join(ROOT, "ui_workbench", "vocabulary.json")
+
+
+def load_icon_names():
+    """Blender 实测能用的图标名，从 native_api.json 的枚举项里抄。
+
+    抄而不是手写：手写名册必然会跟真实枚举漂，而图标名写错在 Blender 里是
+    直接抛异常的一类错。native_api.json 里这份枚举就是探针抓回来的 bl_icon.items
+    （1033 个，icons.count 与之相符），这份文件就是名册的证据。
+    """
+    with open(API, encoding="utf-8") as fh:
+        api = json.load(fh)
+    items = api["panels"]["properties"]["bl_icon"]["items"]
+    names = [str(x) for x in items]
+    declared = api.get("icons", {}).get("count")
+    if declared is not None and declared != len(names):
+        raise VocabularyError(
+            "native_api.json 自报 icons.count=%d，实际枚举 %d 个，名册不可信"
+            % (declared, len(names)))
+    return names
 
 PROPS_SCOPE = ("allowed_props 是精选子集，不是 UILayout 的全量参数表："
                "只收录本工作台会用到的调用形式，清单外的参数会被按"
@@ -44,27 +64,48 @@ ELEMENT_ID_HELP = {
 # 测试也能逐条核对里面的参数与元素 ID。
 # element_id 一律取自已提交的 7 份布局树（ui_workbench/data/layout/*.json）；
 # 两条留空是有意的——正好演示「元素 ID 可以不填」。
+# content 是这块里写什么字：左边预览只认它，缺了这一栏，预览就只是一排空壳。
+# 容器类控件没有 content：它们只分组，不写字。
 EXAMPLE_PANEL = {
     "title": "AI 对话",
     "caption": "整根竖排把它们从上到下串起来，横排把同一组里的控件并排放。",
     "blocks": [
         {"wkey": "row", "params": "align", "element_id": "chat.tabbar",
-         "note": "三个页签并排：AI 对话 / 详情 / 设置"},
+         "note": "三个页签并排：AI 对话 / 详情 / 设置",
+         "content": {"heading": "AI 对话"}},
         {"wkey": "column", "params": "align", "element_id": "chat.stream",
-         "note": "整根竖排：下面每一块都落在它里面，从上到下"},
+         "note": "整根竖排：下面每一块都落在它里面，从上到下",
+         "content": {"heading": "对话记录"}},
         {"wkey": "box", "params": "", "element_id": "",
-         "note": "消息流里的一条消息（元素 ID 可以留空）"},
+         "note": "消息流里的一条消息（元素 ID 可以留空）",
+         "content": {}},
         {"wkey": "label", "params": "text, icon", "element_id": "",
-         "note": "状态行：正在改你的场景 · 第 2 步"},
+         "note": "状态行：正在改你的场景 · 第 2 步",
+         "content": {"text": "正在改你的场景 · 第 2 步", "icon": "TIME"}},
         {"wkey": "column", "params": "align", "element_id": "chat.options",
-         "note": "规格选项容器：一次有几项要选，就用竖排把每项串起来"},
+         "note": "规格选项容器：一次有几项要选，就用竖排把每项串起来",
+         "content": {"heading": "需要你定一下"}},
         {"wkey": "row", "params": "align", "element_id": "",
-         "note": "三个并排的选项按钮：修改尺寸 / 更换材质 / 平滑着色"},
+         "note": "三个并排的选项按钮：修改尺寸 / 更换材质 / 平滑着色",
+         "content": {"heading": "修改尺寸 / 更换材质 / 平滑着色"}},
         {"wkey": "textbox", "params": "prop, initial_visible_lines",
-         "element_id": "chat.composer", "note": "指令输入框，可写多行"},
+         "element_id": "chat.composer", "note": "指令输入框，可写多行",
+         "content": {"placeholder": "输入建模指令…", "lines": 3}},
         {"wkey": "row", "params": "align", "element_id": "chat.action_row",
-         "note": "三个并排的操作按钮：发送指令 / 新建任务 / 清空记录"},
+         "note": "三个并排的操作按钮：发送指令 / 新建任务 / 清空记录",
+         "content": {"heading": "操作"}},
     ],
+}
+
+# 新积木的起手内容。空按钮定不了形、也看不出这是个什么控件，所以每个有内容
+# 的控件一放上来就写一句能看懂的话。容器不给起手内容（空的横排竖排本来就该
+# 是空的，写死了反而不像刚放上去的）。row / column 的 heading 之所以算内容
+# 而不是参数：参数框按白名单只收参数名，收不了取值，没有它就没法做页签条。
+STARTER_CONTENT = {
+    "label": {"text": "状态行文字", "icon": "INFO"},
+    "operator": {"text": "发送指令", "icon": "PLAY"},
+    "prop": {"label": "API Key", "value": "（未填）"},
+    "textbox": {"placeholder": "在这里输入建模指令…", "lines": 3},
 }
 
 # (key, label, uiloayout, allowed_props, blocked_props, note, constraint_key,
@@ -215,6 +256,8 @@ def build(constraints):
         "unmapped_ok": unmapped,
         "element_id_help": ELEMENT_ID_HELP,
         "example_panel": EXAMPLE_PANEL,
+        "starter_content": STARTER_CONTENT,
+        "icons": load_icon_names(),
     }
 
 

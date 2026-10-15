@@ -259,6 +259,7 @@ def main():
     # 「数据描述形状、代码负责画」的分工，两侧都要查：静态侧查数据，
     # dom_checks 查 DOM。缺一侧就会出现「数据里有图示、界面上没画」。
     demo_static_checks(vocab)
+    preview_static_checks(vocab)
 
     dom_checks()
 
@@ -477,7 +478,7 @@ def demo_static_checks(vocab):
     blocks = panel.get("blocks") or []
     ck("example_panel_schema",
        set(panel) == {"title", "caption", "blocks"}
-       and all(set(b) == {"wkey", "params", "element_id", "note"} for b in blocks),
+       and all(set(b) == {"wkey", "params", "element_id", "note", "content"} for b in blocks),
        "example_panel 字段集不对：%s / %s"
        % (sorted(panel), sorted(blocks[0]) if blocks else "<no blocks>"))
     ck("example_panel_block_count", len(blocks) == EXPECT_PANEL_BLOCKS,
@@ -515,6 +516,137 @@ def demo_static_checks(vocab):
        'id = "demo-panel-btn"' in app and "insertExamplePanel" in app,
        "app.js 没有「插入示例面板」按钮 / 没有对应的插入函数")
 
+
+# ---------- Task 13：界面预览 + 积木内容 ----------
+# 内容字段只有 4 类控件有（label / operator / prop / textbox）；容器类控件
+# 只分组或占位，不写字。写死成列表而不是从 vocabulary.json 推，是为了让
+# 「多一类 / 少一类」在两边都变红。
+CONTENT_WKEYS = ["label", "operator", "prop", "textbox"]
+CONTENT_FIELDS = {"row": ["heading"], "column": ["heading"],
+                  "label": ["text", "icon"], "operator": ["text", "icon"],
+                  "prop": ["label", "value"], "textbox": ["placeholder", "lines"]}
+# 这些控件只分组或占位，一个字都不写，界面上也就不该给它们内容输入框。
+CONTAINER_WKEYS = ["box", "split", "grid_flow", "panel", "separator", "scale_y"]
+# 每个控件在预览里必须长成什么形状。键是 data-pv，值是「标签名/display/
+# flexDirection」——浏览器算出来的样式，不是我们自己写的 class 名。
+# 注意 block 级元素的 flexDirection 浏览器仍报 row（初始值），
+# 区分横竖排靠的是 display:flex 的那几个，别把这里写成 none。
+PV_SHAPES = {
+    "row": "div/flex/row",
+    "column": "div/flex/column",
+    "box": "div/block/row",
+    "split": "div/flex/row",
+    "grid_flow": "div/grid/row/2",
+    "panel": "div/block/row/head/body",
+    "label": "div/block/row",
+    "operator": "div/block/row",
+    "prop": "div/flex/row/2",
+    "textbox": "div/block/row",
+    "separator": "hr/block/row",
+    "scale_y": "div/block/row",
+}
+EXPECT_PREVIEW_NODES = EXPECT_WIDGETS + EXPECT_REJECTED   # 12 控件 + 9 条降级记录
+
+
+def preview_static_checks(vocab):
+    """Task 13 静态侧：内容字段、名册、预览样式、以及「预览不是拼字符串」。"""
+    app = read(os.path.join(WB, "app.js"))
+    css = read(os.path.join(WB, "style.css"))
+    css_scan = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    html = read(os.path.join(WB, "index.html"))
+
+    starter = vocab.get("starter_content") or {}
+    ck("preview_starter_covers_content_wkeys", sorted(starter) == sorted(CONTENT_WKEYS),
+       "起手内容应只覆盖 %s，实际 %s" % (sorted(CONTENT_WKEYS), sorted(starter)))
+    bad = []
+    for wk, fields in CONTENT_FIELDS.items():
+        got = starter.get(wk)
+        if wk not in CONTENT_WKEYS:
+            # row / column 有内容字段（heading），但不该自带起手内容：
+            # 空的横排竖排本来就该是空的。
+            if got is not None:
+                bad.append("%s:容器不该有起手内容" % wk)
+            continue
+        got = got or {}
+        if sorted(got) != sorted(fields):
+            bad.append("%s:%s" % (wk, sorted(got)))
+        elif wk == "textbox":
+            if not isinstance(got.get("lines"), int) or got["lines"] < 1:
+                bad.append("%s:lines=%r" % (wk, got.get("lines")))
+        elif not str(got.get(fields[0]) or "").strip():
+            bad.append("%s:%s 为空" % (wk, fields[0]))
+    ck("preview_starter_fields", not bad,
+       "起手内容字段不对 / 主字段是空的：%s" % bad)
+    ck("preview_starter_operator_readable", "发送指令" in starter.get("operator", {}).get("text", ""),
+       "新建的 operator 积木应当一放上来就写着「发送指令」，实际 %r"
+       % starter.get("operator", {}).get("text"))
+
+    # 示例面板的内容：预览要能拼出一个界面，光有起手内容不够——每一块都得
+    # 写上它在示例面板里该有的字。只数「content 非空」的块数，期望值写死。
+    blocks = (vocab.get("example_panel") or {}).get("blocks") or []
+    with_text = [b["wkey"] for b in blocks
+                 if any(str(v or "").strip() for v in (b.get("content") or {}).values())]
+    ck("preview_example_content_count", len(with_text) >= 4,
+       "示例面板里带内容的块应至少 4 块（页签标题 / 状态行 / 输入框提示 / 操作行），"
+       "实际 %d 块：%s" % (len(with_text), with_text))
+    ck("preview_example_textbox_content",
+       any(b["wkey"] == "textbox" and (b.get("content") or {}).get("placeholder")
+           and (b.get("content") or {}).get("lines", 0) >= 1 for b in blocks),
+       "示例面板里的 textbox 必须自带占位提示与行数，否则预览画不出多行输入框")
+    ck("preview_example_containers_have_no_content",
+       all(not (b.get("content") or {}) for b in blocks if b["wkey"] in CONTAINER_WKEYS),
+       "容器类控件不该带 content：%s"
+       % [b["wkey"] for b in blocks if b["wkey"] in CONTAINER_WKEYS
+          and (b.get("content") or {})])
+
+    # 图标名册：逐条对着 native_api.json 的实测枚举比，不看数量。
+    icons = vocab.get("icons")
+    ck("preview_icons_present", isinstance(icons, list) and len(icons) > 0,
+       "vocabulary.json 里没有 icons 名册，图标框就没有候选")
+    if isinstance(icons, list):
+        with open(os.path.join(WB, "native_api.json"), encoding="utf-8") as fh:
+            api = json.load(fh)
+        want = api["panels"]["properties"]["bl_icon"]["items"]
+        ck("preview_icons_match_native", list(icons) == list(want),
+           "图标名册与 native_api.json 实测枚举不一致：%d vs %d"
+           % (len(icons), len(want)))
+        ck("preview_icons_count", len(icons) == api["icons"]["count"],
+           "名册长度应与 icons.count（%d）一致，实际 %d"
+           % (api["icons"]["count"], len(icons)))
+
+    # 预览的形状全部落在 CSS 上：改了 CSS 浏览器才算得出新形状。
+    need_css = [".pv-row", ".pv-col", ".pv-box", ".pv-split", ".pv-grid", ".pv-panel",
+                ".pv-label", ".pv-btn", ".pv-prop", ".pv-textbox", ".pv-sep", ".pv-gap",
+                ".pv-empty", ".pv-down", ".canvas-split"]
+    miss_css = [c for c in need_css if c not in css_scan]
+    ck("preview_css_defined", not miss_css, "style.css 缺这些预览样式：%s" % miss_css)
+    ck("preview_row_is_row",
+       re.search(r"\.pv-row\s*\{[^}]*flex-direction:\s*row", css_scan) is not None,
+       ".pv-row 必须是横向容器——横排竖排是这套工具的第一课")
+    ck("preview_col_is_column",
+       re.search(r"\.pv-col\s*\{[^}]*flex-direction:\s*column", css_scan) is not None,
+       ".pv-col 必须是纵向容器")
+
+    # 预览必须从数据建 DOM。拼 HTML 字符串的话，积木数据一改预览就悄悄过期
+    # （迷你图示那条教训）。所以画控件的那个函数里不许有 innerHTML。
+    pw = js_body(app, "function pvWidget")
+    ck("preview_built_from_data", bool(pw) and "innerHTML" not in pw,
+       "pvWidget 里出现了 innerHTML：预览一旦拼 HTML 字符串就会和数据脱节")
+    rp = js_body(app, "function renderPreview")
+    ck("preview_renders_proposal", bool(rp) and "proposal.forEach" in rp,
+       "renderPreview 必须遍历 proposal 渲染")
+    ck("preview_walks_all_wkeys", all(('"%s"' % k) in app for k in CONTAINER_WKEYS + CONTENT_WKEYS),
+       "app.js 里少了某些控件的预览分支")
+
+    # 两栏：预览与积木列表必须是同一个容器的两个子节点，否则「左预览右积木」
+    # 在 DOM 上就不成立。
+    m = re.search(r'<div class="canvas-split">(.*?)</div>\s*</div>\s*<div id="prop-notes"', html, re.S)
+    split = m.group(1) if m else ""
+    ck("preview_two_pane_html", 'id="preview"' in split and 'id="canvas"' in split
+       and split.index('id="preview"') < split.index('id="canvas"'),
+       "index.html 的提案视图不是「左预览 / 右积木」两栏：%r" % split[:120])
+    ck("preview_pane_width", re.search(r"\.preview-pane\s*\{[^}]*420px", css_scan) is not None,
+       "预览栏必须固定在 420px 左右（与实机 N 面板同宽）")
 
 
 def find_browser():
@@ -768,8 +900,102 @@ def dom_checks():
         help_checks(empty, vjson)
         examples_checks(dump(exe, url + "#proposal-examples", profile), vjson)
         panel_checks(dump(exe, url + "#proposal-panel", profile), vjson)
+        preview_checks(dump(exe, url + "#proposal-preview", profile), vjson)
     finally:
         shutil.rmtree(profile, ignore_errors=True)
+
+
+def preview_of(p):
+    """取 #preview 切片。
+
+    必须切：#canvas 的节点里也写着控件名与参数示例，整份文档里找
+    `data-pv=` 的话，测试就成了在验「字符串在不在」，而不是「预览画没画」。
+    """
+    if '<div id="preview"' not in p or '<div class="block-pane"' not in p:
+        return ""
+    return p.split('<div id="preview"')[1].split('<div class="block-pane"')[0]
+
+
+def preview_checks(page, vocab):
+    """Task 13 的 DOM 侧：12 种控件在预览里各自长成该长的形状，内容跟着改。
+
+    读数来自浏览器算出来的样式与几何（flex 方向 / grid 列数 / 元素高度），
+    不是我们自己写的 class 名——改 CSS 就改形状，这条才抓得住。
+    """
+    at = report(page, "preview-report")
+    ck("preview_hook_ran", at.get("count") == str(EXPECT_PREVIEW_NODES)
+       and at.get("proposal") == str(EXPECT_PREVIEW_NODES) and at.get("missing") == "0",
+       "预览钩子没跑起来或节点对不上：count=%s proposal=%s missing=%s"
+       % (at.get("count"), at.get("proposal"), at.get("missing")))
+    shapes = {}
+    for r in (at.get("shapes") or "").split("|"):
+        if "=" in r:
+            k, v = r.split("=", 1)
+            shapes[k] = v
+    widget_shapes = {k: v for k, v in shapes.items() if k != "__downgraded__"}
+    ck("preview_shapes_cover_all", sorted(widget_shapes) == sorted(PV_SHAPES),
+       "预览应覆盖 12 种控件，实际 %s" % sorted(widget_shapes))
+    ck("preview_shapes_keep_downgraded",
+       (at.get("shapes") or "").count("__downgraded__=") == EXPECT_REJECTED,
+       "9 条降级记录也各占一个预览位置（画成「做不到」），实际 %d"
+       % (at.get("shapes") or "").count("__downgraded__="))
+    for wk, want in sorted(PV_SHAPES.items()):
+        got = widget_shapes.get(wk, "")
+        ck("preview_shape_%s" % wk, got.startswith(want),
+           "%s 在预览里应长成 %s…，实际 %r" % (wk, want, got))
+
+    # 三处必须落在具体数字上的：网格列数、留白高度、分栏宽度。
+    # 期望值写死，不写成「比 0 大」那种放水写法。
+    gcols = shapes.get("grid_flow", "").rsplit("/", 1)[-1]
+    ck("preview_grid_two_columns", gcols == "2",
+       "grid_flow 在预览里应是 2 列网格，实际列数 %r（%s）" % (gcols, shapes.get("grid_flow")))
+    gh = shapes.get("scale_y", "").rsplit("/", 1)[-1]
+    ck("preview_scale_y_has_height", gh.isdigit() and int(gh) >= 6,
+       "scale_y 必须在预览里撑出一条空白，实际高度 %r" % gh)
+    sw = shapes.get("split", "").rsplit("/", 1)[-1]
+    ck("preview_split_left_halved", sw.isdigit() and 0 < int(sw) < 420,
+       "split 的左栏应按 factor 占一部分，实际宽 %r" % sw)
+    th = shapes.get("textbox", "").rsplit("/", 1)[-1]
+    ck("preview_textbox_multiline", th.isdigit() and int(th) >= 32,
+       "textbox 应画成多行输入区，实际高 %r" % th)
+
+    # 改内容 -> 预览跟着变（走的是真的输入框 + 真的 input 事件）。
+    # 期望值由起手内容 + 敲进去的字拼出来，不写死：写死的话，起手图标一改
+    # 这条就变成在维护第二份文案，而不是在验「预览跟不跟内容走」。
+    st = (vocab.get("starter_content") or {}).get("label") or {}
+    want_typed = (("%s%s" % (st.get("icon") or "", "正在改你的场景 · 第 2 步")))
+    ck("preview_follows_content", at.get("typed-text") == want_typed,
+       "改了 label 的文字，预览里应出现新文字，期望 %r，实际 %r"
+       % (want_typed, at.get("typed-text")))
+    # 清空 -> 占位形状，不是空白。
+    ck("preview_empty_is_placeholder", at.get("cleared") == "empty",
+       "内容清空后预览应显示压暗的占位形状，实际 %r" % at.get("cleared"))
+    ck("preview_panel_closed_collapse", at.get("closed-head") == "▸",
+       "面板写上 default_closed 后预览应收起（标题条只留 ▸），实际 %r" % at.get("closed-head"))
+
+    ck("preview_icon_datalist", at.get("icon-list") == "1033",
+       "图标候选表应喂进 1033 个实测图标名，实际 %r" % at.get("icon-list"))
+    ck("preview_two_pane_live", at.get("two-pane") == "1",
+       "预览与积木列表必须是同一个容器的两个子节点（左右两栏）")
+
+    # 直接看渲染出来的标记：分隔线必须是 hr，网格容器必须写了 repeat()。
+    pv = preview_of(page)
+    ck("preview_dom_found", bool(pv.strip()), "定位不到预览区域")
+    ck("preview_dom_separator_is_hr",
+       re.search(r'<hr[^>]*data-pv="separator"', pv) is not None,
+       "separator 在预览里必须是 <hr>")
+    ck("preview_dom_grid_repeat",
+       re.search(r'data-pv="grid_flow"[^>]*style="[^"]*grid-template-columns:\s*repeat\(2, 1fr\)', pv)
+       is not None,
+       "grid_flow 的预览节点必须写死 repeat(2, 1fr) 的网格：%r"
+       % re.findall(r'<div[^>]*data-pv="grid_flow"[^>]*>', pv))
+    ck("preview_dom_node_per_block",
+       len(re.findall(r'data-pvuid="', pv)) == EXPECT_PREVIEW_NODES,
+       "预览里应每块积木一个节点，实际 %d"
+       % len(re.findall(r'data-pvuid="', pv)))
+    ck("preview_dom_uses_no_images",
+       "<img" not in pv and "background-image" not in pv,
+       "预览不许用图片或背景图（零资源铁律）")
 
 
 def demo_nodes(bar):
@@ -910,6 +1136,28 @@ def panel_checks(page, vjson):
     want_ids = [b["element_id"] for b in vjson["example_panel"]["blocks"] if b["element_id"]]
     ck("panel_element_ids", at.get("ids") == ",".join(want_ids),
        "示例面板的元素 ID 应为 %s，实际 %s" % (want_ids, at.get("ids")))
+
+    # 插完之后左边预览必须真的拼出了一个界面，而不是一片空壳。
+    # 逐条拿示例面板自己声明的内容去预览切片里找——写死一句文案的话，
+    # 示例面板换了字这条就会变成在维护第二份副本。
+    pv = preview_of(page)
+    want_text = []
+    for b in vjson["example_panel"]["blocks"]:
+        for k, v in (b.get("content") or {}).items():
+            if isinstance(v, str) and v.strip():
+                want_text.append("%s:%s" % (k, v))
+    missing_text = [w for w in want_text if w.split(":", 1)[1] not in pv]
+    ck("panel_preview_has_content", bool(want_text) and not missing_text,
+       "插完示例面板后预览里缺这些内容：%s" % missing_text)
+    ck("panel_preview_node_per_block",
+       len(re.findall(r'data-pvuid="', pv)) == EXPECT_PANEL_BLOCKS,
+       "示例面板 %d 块应各占预览一个节点，实际 %d"
+       % (EXPECT_PANEL_BLOCKS, len(re.findall(r'data-pvuid="', pv))))
+    ck("panel_preview_multiline_composer",
+       'data-pv="textbox"' in pv and re.search(r'data-pv="textbox"[^>]*height:\s*56px', pv)
+       is not None,
+       "示例面板的输入框在预览里应是 3 行高（3*16+8），实际 %r"
+       % re.findall(r'<div[^>]*data-pv="textbox"[^>]*>', pv))
 
 
 def vocab_bar_of(p):

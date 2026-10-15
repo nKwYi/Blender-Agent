@@ -34,7 +34,18 @@
 
 <section id="view-proposal" class="view" hidden>
   <div id="vocab-bar"></div>
-  <div id="canvas"></div>
+  <!-- 两栏：左边是把积木拼起来之后真正长什么样的界面预览，右边是积木列表。
+       控件架仍然横跨顶部、降级方案仍然横跨底部——搭界面这件事本身就在
+       搭一块板，控件架是零件盒，降级栏是「做不到的东西放这儿」。 -->
+  <div class="canvas-split">
+    <div class="preview-pane">
+      <div class="pane-cap">界面预览（左边这块就是 Blender 侧看到的样子）</div>
+      <div id="preview"></div>
+    </div>
+    <div class="block-pane">
+      <div id="canvas"></div>
+    </div>
+  </div>
   <div id="prop-notes"></div>
 </section>
 
