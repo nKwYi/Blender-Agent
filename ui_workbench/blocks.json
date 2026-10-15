@@ -1,0 +1,810 @@
+{
+ "blocks": [
+  {
+   "default_variant": "busy",
+   "demo": {
+    "items": [
+     "正在改你的场景 · 第 2 步",
+     "终止任务"
+    ],
+    "kind": "box"
+   },
+   "editable": [
+    "终止按钮文字",
+    "标题文字",
+    "副标题",
+    "按钮文字"
+   ],
+   "element_id": "chat.statusbar",
+   "key": "chat_status",
+   "label": "状态提示条",
+   "slots": [
+    {
+     "label": "终止按钮文字",
+     "literal": "\"终止任务\"",
+     "name": "btn",
+     "text": "终止任务"
+    },
+    {
+     "label": "标题文字",
+     "literal": "\"它想运行一段脚本，请确认：\"",
+     "name": "title",
+     "text": "它想运行一段脚本，请确认："
+    },
+    {
+     "label": "标题文字",
+     "literal": "\"已经做了：\"",
+     "name": "done",
+     "text": "已经做了："
+    },
+    {
+     "label": "副标题",
+     "literal": "\"还没做：\"",
+     "name": "todo",
+     "text": "还没做："
+    },
+    {
+     "label": "副标题",
+     "literal": "\"没做完的部分，再说一句就行\"",
+     "name": "hint",
+     "text": "没做完的部分，再说一句就行"
+    },
+    {
+     "label": "标题文字",
+     "literal": "\"任务遇到异常\"",
+     "name": "err",
+     "text": "任务遇到异常"
+    },
+    {
+     "label": "副标题",
+     "literal": "\"该做的事：检查设置或重试指令\"",
+     "name": "advice",
+     "text": "该做的事：检查设置或重试指令"
+    },
+    {
+     "label": "按钮文字",
+     "literal": "\"重新尝试\"",
+     "name": "retry",
+     "text": "重新尝试"
+    }
+   ],
+   "tab": "chat",
+   "ui_py": "bbox = layout.box()\nbrow = bbox.row(align=True)\nbrow.label(text=get_current_action_text(run), icon='TIME')\nbrow.operator(\"deepseek.stop\", text=\"终止任务\", icon='CANCEL')",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "正在改你的场景 · 第 2 步",
+       "终止任务"
+      ],
+      "kind": "box"
+     },
+     "key": "busy",
+     "label": "忙碌中",
+     "rewrites": [],
+     "ui_py": "bbox = layout.box()\nbrow = bbox.row(align=True)\nbrow.label(text=get_current_action_text(run), icon='TIME')\nbrow.operator(\"deepseek.stop\", text=\"终止任务\", icon='CANCEL')",
+     "what": "正在跑，显示当前动作 + 终止按钮"
+    },
+    {
+     "demo": {
+      "items": [
+       "它想运行一段脚本，请确认：",
+       "批准执行",
+       "拒绝取消"
+      ],
+      "kind": "box"
+     },
+     "key": "approve",
+     "label": "待批准",
+     "rewrites": [],
+     "ui_py": "abox = layout.box()\nabox.alert = True\nabox.label(text=\"它想运行一段脚本，请确认：\", icon='QUESTION')\nif getattr(state, \"show_approval_code\", False):\n    code_call = next((c for c in run.calls if c.name == \"execute_blender_code\"), None)\n    if code_call:\n        code_text = str(code_call.args.get(\"code\", \"\") if isinstance(code_call.args, dict) else \"\")\n        cbox = abox.box()\n        for cln in code_text.splitlines()[:15]:\n            cbox.label(text=cln[:36])\n    abox.prop(state, \"show_approval_code\", text=\"收起具体代码\", icon='HIDE_OFF')\nelse:\n    abox.prop(state, \"show_approval_code\", text=\"查看具体 Python 代码\", icon='HIDE_OFF')\n\narow = abox.row(align=True)\narow.scale_y = 1.2\narow.operator(\"deepseek.approve\", text=\"批准执行\", icon='CHECKMARK')\narow.operator(\"deepseek.stop\", text=\"拒绝取消\", icon='CANCEL')",
+     "what": "它想执行代码，等你点头"
+    },
+    {
+     "demo": {
+      "items": [
+       "任务做到一半：",
+       "已经做了：",
+       "还没做："
+      ],
+      "kind": "box"
+     },
+     "key": "partial",
+     "label": "做到一半",
+     "rewrites": [],
+     "ui_py": "pbox = layout.box()\npbox.alert = False\npbox.label(text=\"任务做到一半：\", icon='INFO')\nif run.receipt and run.receipt.lines:\n    pbox.label(text=\"已经做了：\", icon='CHECKMARK')\n    for r_line in run.receipt.lines:\n        pbox.label(text=f\"  • {r_line}\")\nif getattr(run, \"skipped\", None):\n    pbox.label(text=\"还没做：\", icon='ERROR')\n    for s_line in run.skipped:\n        pbox.label(text=f\"  • {s_line}\")\npbox.label(text=\"没做完的部分，再说一句就行\", icon='FORWARD')",
+     "what": "分已做 / 未做两栏"
+    },
+    {
+     "demo": {
+      "items": [
+       "任务执行中断：…",
+       "重新尝试"
+      ],
+      "kind": "box"
+     },
+     "key": "failed",
+     "label": "失败",
+     "rewrites": [],
+     "ui_py": "fbox = layout.box()\nfbox.alert = True\nerr_msg = state.settled_err or \"任务遇到异常\"\nfbox.label(text=f\"任务执行中断：{err_msg}\", icon='ERROR')\nfbox.label(text=\"该做的事：检查设置或重试指令\", icon='INFO')\nfrow = fbox.row(align=True)\nfrow.operator(\"deepseek.run_prompt\", text=\"重新尝试\", icon='FILE_REFRESH')",
+     "what": "整个界面唯一的报错块"
+    }
+   ],
+   "what": "任务在跑的时候，面板顶部那一整条。四种样子：正在跑、等你批准、做到一半、失败。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "AI 对话",
+     "详情",
+     "设置"
+    ],
+    "kind": "row"
+   },
+   "editable": [],
+   "element_id": "chat.tabbar",
+   "key": "chat_tabbar",
+   "label": "页签条",
+   "slots": [],
+   "tab": "chat",
+   "ui_py": "trow = layout.row(align=True)\ntrow.prop(state, \"active_tab\", expand=True)",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "AI 对话",
+       "详情",
+       "设置"
+      ],
+      "kind": "row"
+     },
+     "key": "only",
+     "label": "三个页签",
+     "rewrites": [],
+     "ui_py": "trow = layout.row(align=True)\ntrow.prop(state, \"active_tab\", expand=True)",
+     "what": "对话 / 详情 / 设置，点哪个画哪个"
+    }
+   ],
+   "what": "面板最顶上那三个页签（对话 / 详情 / 设置）。插件里是真实面板的一部分。"
+  },
+  {
+   "default_variant": "user",
+   "demo": {
+    "items": [
+     "帮我做一个马克杯"
+    ],
+    "kind": "box"
+   },
+   "editable": [
+    "小标题文字"
+   ],
+   "element_id": "chat.stream",
+   "key": "chat_bubble",
+   "label": "消息气泡",
+   "slots": [
+    {
+     "label": "小标题文字",
+     "literal": "\"执行的操作：\"",
+     "name": "steps",
+     "text": "执行的操作："
+    }
+   ],
+   "tab": "chat",
+   "ui_py": "ubox = layout.box()\nfor ln in wrap_text(item.text, max_chars=18):\n    urow = ubox.row()\n    urow.alignment = 'RIGHT'\n    urow.label(text=ln)",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "帮我做一个马克杯"
+      ],
+      "kind": "box"
+     },
+     "key": "user",
+     "label": "你说的话",
+     "rewrites": [],
+     "ui_py": "ubox = layout.box()\nfor ln in wrap_text(item.text, max_chars=18):\n    urow = ubox.row()\n    urow.alignment = 'RIGHT'\n    urow.label(text=ln)",
+     "what": "装在盒子里、文字右对齐"
+    },
+    {
+     "demo": {
+      "items": [
+       "耗时 12.4s",
+       "执行的操作：",
+       "新增对象：马克杯"
+      ],
+      "kind": "col"
+     },
+     "key": "ai",
+     "label": "AI 回答",
+     "rewrites": [
+      {
+       "from": "arow = abox.row(align=True)",
+       "to": "arow = layout.row(align=True)",
+       "why": "ui.py 里 abox 就是 layout（AI 气泡不装框）；独立导出时 abox 不在作用域，改绑 layout"
+      },
+      {
+       "from": "res_box = abox.box()",
+       "to": "res_box = layout.box()",
+       "why": "同上：新增对象那个盒子改绑 layout"
+      }
+     ],
+     "ui_py": "if item.duration_str:\n    arow = layout.row(align=True)\n    arow.alignment = 'LEFT'\n    arow.label(text=f\"耗时 {item.duration_str}\", icon='COMMUNITY')\nif item.steps_json:\n    sbox = layout.box()\n    sbox.label(text=\"执行的操作：\", icon='FILE_SCRIPT')\n    for st in steps:\n        sbox.label(text=f\"✓ {st}\")\nif item.added_objects_str:\n    res_box = layout.box()\n    res_box.label(text=f\"新增对象：{item.added_objects_str}\", icon='MESH_DATA')",
+     "what": "不装框，带耗时 / 执行步骤 / 新增对象"
+    }
+   ],
+   "what": "对话流里的一条消息。你说的话装在盒子里右对齐，AI 的话不装框，直接排在流里。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "细节 1：杯型风格",
+     "细节 2：容量",
+     "细节 3：材质"
+    ],
+    "kind": "col"
+   },
+   "editable": [
+    "选项按钮文字",
+    "推荐按钮文字"
+   ],
+   "element_id": "chat.options",
+   "key": "chat_questions",
+   "label": "规格选项组",
+   "slots": [
+    {
+     "label": "选项按钮文字",
+     "literal": "f\"选择: {lbl}\"",
+     "name": "opt",
+     "text": "选择: {lbl}"
+    },
+    {
+     "label": "推荐按钮文字",
+     "literal": "\"按推荐参数开始建模\"",
+     "name": "rec",
+     "text": "按推荐参数开始建模"
+    }
+   ],
+   "tab": "chat",
+   "ui_py": "for q_idx, q in enumerate(questions):\n    qbox = layout.box()\n    qbox.label(text=f\"细节 {q_idx + 1}：{q.get('title', '')}\", icon='QUESTION')\n    for opt in q.get(\"options\", []):\n        val = opt.get(\"value\") or opt.get(\"label\", \"\")\n        lbl = opt.get(\"label\", val)\n        orow = qbox.row()\n        btn = orow.operator(\"deepseek.submit_selection\",\n                            text=f\"选择: {lbl}\",\n                            icon='CHECKBOX_DEHLT')\n        btn.custom_prompt = f\"针对「{q.get('title', '')}」，我选择：{val}\"\n\nrec_btn = layout.operator(\"deepseek.submit_selection\",\n                        text=\"按推荐参数开始建模\",\n                        icon='PLAY')\nrec_btn.custom_prompt = info.get(\"all_recommended\", \"全部按推荐参数开始建模！\")",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "细节 1：杯型风格",
+       "细节 2：容量",
+       "细节 3：材质"
+      ],
+      "kind": "col"
+     },
+     "key": "only",
+     "label": "反问一组",
+     "rewrites": [
+      {
+       "from": "qbox = abox.box()",
+       "to": "qbox = layout.box()",
+       "why": "ui.py 里这一组挂在对话流 abox（就是 layout）里；独立导出改绑 layout"
+      },
+      {
+       "from": "text=f\"选择: {lbl}\",",
+       "to": "text=f\"选择: {lbl}\",",
+       "why": "同一句，只是为了缩进对齐到 orow.operator 的续行而重折"
+      },
+      {
+       "from": "rec_btn = abox.operator(\"deepseek.submit_selection\",",
+       "to": "rec_btn = layout.operator(\"deepseek.submit_selection\",",
+       "why": "同上：abox 就是 layout，独立导出改绑 layout"
+      },
+      {
+       "from": "text=\"按推荐参数开始建模\",",
+       "to": "text=\"按推荐参数开始建模\",",
+       "why": "同一句，只是为了缩进对齐到 rec_btn.operator 的续行而重折"
+      }
+     ],
+     "ui_py": "for q_idx, q in enumerate(questions):\n    qbox = layout.box()\n    qbox.label(text=f\"细节 {q_idx + 1}：{q.get('title', '')}\", icon='QUESTION')\n    for opt in q.get(\"options\", []):\n        val = opt.get(\"value\") or opt.get(\"label\", \"\")\n        lbl = opt.get(\"label\", val)\n        orow = qbox.row()\n        btn = orow.operator(\"deepseek.submit_selection\",\n                            text=f\"选择: {lbl}\",\n                            icon='CHECKBOX_DEHLT')\n        btn.custom_prompt = f\"针对「{q.get('title', '')}」，我选择：{val}\"\n\nrec_btn = layout.operator(\"deepseek.submit_selection\",\n                        text=\"按推荐参数开始建模\",\n                        icon='PLAY')\nrec_btn.custom_prompt = info.get(\"all_recommended\", \"全部按推荐参数开始建模！\")",
+     "what": "细节 N + N 个选择按钮 + 一个全按推荐"
+    }
+   ],
+   "what": "AI 反问规格时给你的一组选择：一项一个盒，底下每个选项一个按钮，一个选项占满一整行。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "cols": 2,
+    "items": [
+     "修改尺寸",
+     "更换材质",
+     "增加倒角",
+     "平滑着色"
+    ],
+    "kind": "grid"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "chat_pills",
+   "label": "快捷指令网格",
+   "slots": [],
+   "tab": "chat",
+   "ui_py": "pills = list(quick_pills(state))\nif pills:\n    pbox = layout.box()\n    p_row1 = pbox.row(align=True)\n    p_row2 = pbox.row(align=True)\n    mid = (len(pills) + 1) // 2\n    for i, pill in enumerate(pills):\n        target_row = p_row1 if i < mid else p_row2\n        target_row.operator(\"deepseek.quick_pill\", text=pill).action = pill",
+   "variants": [
+    {
+     "demo": {
+      "cols": 2,
+      "items": [
+       "修改尺寸",
+       "更换材质",
+       "增加倒角",
+       "平滑着色"
+      ],
+      "kind": "grid"
+     },
+     "key": "only",
+     "label": "两行按钮",
+     "rewrites": [],
+     "ui_py": "pills = list(quick_pills(state))\nif pills:\n    pbox = layout.box()\n    p_row1 = pbox.row(align=True)\n    p_row2 = pbox.row(align=True)\n    mid = (len(pills) + 1) // 2\n    for i, pill in enumerate(pills):\n        target_row = p_row1 if i < mid else p_row2\n        target_row.operator(\"deepseek.quick_pill\", text=pill).action = pill",
+     "what": "两行并排的快捷指令"
+    }
+   ],
+   "what": "输入框上面那两行快捷按钮，点一下等于替你把这句话打进去。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "输入建模指令:",
+     "高度 3",
+     "用自然语言描述要建模什么，可多行"
+    ],
+    "kind": "prop"
+   },
+   "editable": [
+    "标签文字",
+    "占位提示",
+    "按钮文字"
+   ],
+   "element_id": "chat.composer",
+   "key": "chat_composer",
+   "label": "对话输入区",
+   "slots": [
+    {
+     "label": "标签文字",
+     "literal": "\"输入建模指令:\"",
+     "name": "label",
+     "text": "输入建模指令:"
+    },
+    {
+     "label": "占位提示",
+     "literal": "\"用自然语言描述要建模什么，可多行\"",
+     "name": "ph",
+     "text": "用自然语言描述要建模什么，可多行"
+    },
+    {
+     "label": "按钮文字",
+     "literal": "\"发送指令\"",
+     "name": "send",
+     "text": "发送指令"
+    }
+   ],
+   "tab": "chat",
+   "ui_py": "cbox = layout.box()\ncrow = cbox.row(align=True)\ncrow.label(text=\"输入建模指令:\", icon='TEXT')\ncrow.prop(state, \"prompt_lines\", text=\"\", slider=True)\ncbox.textbox(state, \"prompt\", initial_visible_lines=state.prompt_lines,\n             placeholder=\"用自然语言描述要建模什么，可多行\")\n\nbrow = cbox.row(align=True)\nbrow.scale_y = 1.3\nif not busy:\n    brow.operator(\"deepseek.run_prompt\", text=\"发送指令\", icon='PLAY')\nelse:\n    brow.operator(\"deepseek.stop\", text=\"终止任务\", icon='CANCEL')",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "输入建模指令:",
+       "高度 3",
+       "用自然语言描述要建模什么，可多行"
+      ],
+      "kind": "prop"
+     },
+     "key": "only",
+     "label": "输入区",
+     "rewrites": [],
+     "ui_py": "cbox = layout.box()\ncrow = cbox.row(align=True)\ncrow.label(text=\"输入建模指令:\", icon='TEXT')\ncrow.prop(state, \"prompt_lines\", text=\"\", slider=True)\ncbox.textbox(state, \"prompt\", initial_visible_lines=state.prompt_lines,\n             placeholder=\"用自然语言描述要建模什么，可多行\")\n\nbrow = cbox.row(align=True)\nbrow.scale_y = 1.3\nif not busy:\n    brow.operator(\"deepseek.run_prompt\", text=\"发送指令\", icon='PLAY')\nelse:\n    brow.operator(\"deepseek.stop\", text=\"终止任务\", icon='CANCEL')",
+     "what": "多行输入框 + 发送或终止"
+    }
+   ],
+   "what": "面板最下面那块：一句提示 + 可拖高度的输入框 + 发送/终止。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "新建任务",
+     "清空记录"
+    ],
+    "kind": "row"
+   },
+   "editable": [
+    "按钮文字"
+   ],
+   "element_id": "chat.action_row",
+   "key": "chat_actions",
+   "label": "底部操作行",
+   "slots": [
+    {
+     "label": "按钮文字",
+     "literal": "\"新建任务\"",
+     "name": "new",
+     "text": "新建任务"
+    },
+    {
+     "label": "按钮文字",
+     "literal": "\"清空记录\"",
+     "name": "clear",
+     "text": "清空记录"
+    }
+   ],
+   "tab": "chat",
+   "ui_py": "arow = layout.row(align=True)\nif can_undo(state):\n    arow.operator(\"deepseek.undo_task\", text=\"回退操作\", icon='LOOP_BACK')\narow.operator(\"deepseek.new_task\", text=\"新建任务\", icon='ADD')\narow.operator(\"deepseek.clear\", text=\"清空记录\", icon='TRASH')",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "新建任务",
+       "清空记录"
+      ],
+      "kind": "row"
+     },
+     "key": "only",
+     "label": "操作行",
+     "rewrites": [
+      {
+       "from": "arow = cbox.row(align=True)",
+       "to": "arow = layout.row(align=True)",
+       "why": "ui.py 里这一行挂在输入区的 cbox 里；操作行单独成块，上一块的盒子不该被拖进来"
+      }
+     ],
+     "ui_py": "arow = layout.row(align=True)\nif can_undo(state):\n    arow.operator(\"deepseek.undo_task\", text=\"回退操作\", icon='LOOP_BACK')\narow.operator(\"deepseek.new_task\", text=\"新建任务\", icon='ADD')\narow.operator(\"deepseek.clear\", text=\"清空记录\", icon='TRASH')",
+     "what": "三个并排的按钮"
+    }
+   ],
+   "what": "输入区下面那一行按钮：回退（能回退时才出现）/ 新建任务 / 清空记录。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "工具调用（4）",
+     "1. list_scene_objects",
+     "2. create_lathe_profile"
+    ],
+    "kind": "box"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "detail_calls",
+   "label": "工具调用记录",
+   "slots": [],
+   "tab": "detail",
+   "ui_py": "tbox = layout.box()\ntbox.label(text=f\"工具调用（{len(run.calls)}）\", icon='CONSOLE')\nfor i, call in enumerate(run.calls):\n    icon = {\"ok\": 'CHECKMARK', \"error\": 'ERROR', \"running\": 'TIME', \"awaiting\": 'ERROR'}.get(call.status, 'NONE')\n    srow = tbox.row(align=True)\n    srow.label(text=f\"{i + 1}. {call.name}\", icon=icon)\n    srow.label(text=call.summary()[:34])\n    op = srow.operator(\"deepseek.show_call\", text=\"\", icon='TEXT')\n    op.index = i",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "工具调用（4）",
+       "1. list_scene_objects",
+       "2. create_lathe_profile"
+      ],
+      "kind": "box"
+     },
+     "key": "only",
+     "label": "调用列表",
+     "rewrites": [],
+     "ui_py": "tbox = layout.box()\ntbox.label(text=f\"工具调用（{len(run.calls)}）\", icon='CONSOLE')\nfor i, call in enumerate(run.calls):\n    icon = {\"ok\": 'CHECKMARK', \"error\": 'ERROR', \"running\": 'TIME', \"awaiting\": 'ERROR'}.get(call.status, 'NONE')\n    srow = tbox.row(align=True)\n    srow.label(text=f\"{i + 1}. {call.name}\", icon=icon)\n    srow.label(text=call.summary()[:34])\n    op = srow.operator(\"deepseek.show_call\", text=\"\", icon='TEXT')\n    op.index = i",
+     "what": "标题 + 每次调用一行"
+    }
+   ],
+   "what": "这一趟任务调了哪些工具，一次一行，点一行看那次调用的详情。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "详情 / 转录内容",
+     "（整段原文）"
+    ],
+    "kind": "prop"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "detail_transcript",
+   "label": "完整转录",
+   "slots": [],
+   "tab": "detail",
+   "ui_py": "box = layout.box()\nbox.label(text=\"详情 / 转录内容\", icon='CONSOLE')\nbox.prop(state, \"transcript\", text=\"\")",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "详情 / 转录内容",
+       "（整段原文）"
+      ],
+      "kind": "prop"
+     },
+     "key": "only",
+     "label": "转录正文",
+     "rewrites": [],
+     "ui_py": "box = layout.box()\nbox.label(text=\"详情 / 转录内容\", icon='CONSOLE')\nbox.prop(state, \"transcript\", text=\"\")",
+     "what": "标题 + 多行正文"
+    }
+   ],
+   "what": "整段对话原文，一个可滚动的多行框。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "本次用量（实测）",
+     "输入 4820 · 缓存命中 3960",
+     "输出 612",
+     "轮次：3/12 · 耗时：41.2s"
+    ],
+    "kind": "col"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "detail_usage",
+   "label": "用量统计",
+   "slots": [],
+   "tab": "detail",
+   "ui_py": "ubox = layout.box()\nubox.label(text=\"本次用量（实测）\", icon='INFO')\nu = run.usage\nubox.label(text=f\"输入 {u.get('prompt_tokens', '—')} · 缓存命中 {u.get('prompt_cache_hit_tokens', '—')}\")\nubox.label(text=f\"输出 {u.get('completion_tokens', '—')}\")\nest = int((u.get(\"prompt_tokens\") or 0) * 1.0)\nubox.label(text=f\"上下文占用估算 约 {est / 1000:.1f}k / 8k（估算，非服务端返回）\")\nubox.label(text=f\"轮次：{run.rounds}/{run.limit} · 耗时：{run.elapsed:.1f}s\", icon='TIME')",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "本次用量（实测）",
+       "输入 4820 · 缓存命中 3960",
+       "输出 612",
+       "轮次：3/12 · 耗时：41.2s"
+      ],
+      "kind": "col"
+     },
+     "key": "only",
+     "label": "用量统计",
+     "rewrites": [],
+     "ui_py": "ubox = layout.box()\nubox.label(text=\"本次用量（实测）\", icon='INFO')\nu = run.usage\nubox.label(text=f\"输入 {u.get('prompt_tokens', '—')} · 缓存命中 {u.get('prompt_cache_hit_tokens', '—')}\")\nubox.label(text=f\"输出 {u.get('completion_tokens', '—')}\")\nest = int((u.get(\"prompt_tokens\") or 0) * 1.0)\nubox.label(text=f\"上下文占用估算 约 {est / 1000:.1f}k / 8k（估算，非服务端返回）\")\nubox.label(text=f\"轮次：{run.rounds}/{run.limit} · 耗时：{run.elapsed:.1f}s\", icon='TIME')",
+     "what": "输入 / 缓存 / 输出 / 轮次耗时"
+    }
+   ],
+   "what": "这一趟花了多少 token、几轮、多久。上下文占用是本地估算，不是服务端返回的。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "导出完整转录"
+    ],
+    "kind": "btn"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "detail_export",
+   "label": "导出转录",
+   "slots": [],
+   "tab": "detail",
+   "ui_py": "if state.history or (run and run.calls):\n    layout.operator(\"deepseek.export\", text=\"导出完整转录\", icon='EXPORT')",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "导出完整转录"
+      ],
+      "kind": "btn"
+     },
+     "key": "only",
+     "label": "导出按钮",
+     "rewrites": [],
+     "ui_py": "if state.history or (run and run.calls):\n    layout.operator(\"deepseek.export\", text=\"导出完整转录\", icon='EXPORT')",
+     "what": "导出完整转录"
+    }
+   ],
+   "what": "把整段转录存成一个文件的那个按钮。有记录时才出现。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "服务商",
+     "DeepSeek",
+     "打开 DeepSeek 官方文档"
+    ],
+    "kind": "prop"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "settings_provider",
+   "label": "服务商配置",
+   "slots": [],
+   "tab": "settings",
+   "ui_py": "sbox = layout.box()\nsbox.label(text=\"服务商配置\", icon='PREFERENCES')\nif p:\n    sbox.prop(p, \"provider\", text=\"服务商\")\nelse:\n    sbox.label(text=f\"当前服务商：{prov_info['name']}\")\n\ndoc_row = sbox.row(align=True)\ndoc_op = doc_row.operator(\"wm.url_open\", text=f\"打开 {prov_info['name']} 官方文档\", icon='URL')\ndoc_op.url = prov_info[\"doc_url\"]",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "服务商",
+       "DeepSeek",
+       "打开 DeepSeek 官方文档"
+      ],
+      "kind": "prop"
+     },
+     "key": "only",
+     "label": "服务商",
+     "rewrites": [],
+     "ui_py": "sbox = layout.box()\nsbox.label(text=\"服务商配置\", icon='PREFERENCES')\nif p:\n    sbox.prop(p, \"provider\", text=\"服务商\")\nelse:\n    sbox.label(text=f\"当前服务商：{prov_info['name']}\")\n\ndoc_row = sbox.row(align=True)\ndoc_op = doc_row.operator(\"wm.url_open\", text=f\"打开 {prov_info['name']} 官方文档\", icon='URL')\ndoc_op.url = prov_info[\"doc_url\"]",
+     "what": "服务商下拉 + 官方文档按钮"
+    }
+   ],
+   "what": "用哪家（DeepSeek / MiniMax），外加一个跳官方文档的按钮。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "API Key",
+     "（未填）",
+     "未配置 API Key"
+    ],
+    "kind": "prop"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "settings_key",
+   "label": "API Key 配置",
+   "slots": [],
+   "tab": "settings",
+   "ui_py": "kbox = layout.box()\nkbox.label(text=\"API Key 配置\", icon='KEYINGSET')\nif p:\n    row = kbox.row(align=True)\n    row.alert = not p.api_key.strip()\n    row.prop(p, \"api_key\", text=\"API Key\")\nif cfg[\"api_key\"]:\n    kbox.label(text=f\"已生效（来源：{'偏好设置' if cfg['key_source'] == 'prefs' else '环境变量'}）\", icon='CHECKMARK')\nelse:\n    erow = kbox.row(align=True)\n    erow.alert = True\n    erow.label(text=f\"未配置 API Key（也可配置环境变量 {prov_info['key_env']}）\", icon='ERROR')",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "API Key",
+       "（未填）",
+       "未配置 API Key"
+      ],
+      "kind": "prop"
+     },
+     "key": "only",
+     "label": "Key",
+     "rewrites": [],
+     "ui_py": "kbox = layout.box()\nkbox.label(text=\"API Key 配置\", icon='KEYINGSET')\nif p:\n    row = kbox.row(align=True)\n    row.alert = not p.api_key.strip()\n    row.prop(p, \"api_key\", text=\"API Key\")\nif cfg[\"api_key\"]:\n    kbox.label(text=f\"已生效（来源：{'偏好设置' if cfg['key_source'] == 'prefs' else '环境变量'}）\", icon='CHECKMARK')\nelse:\n    erow = kbox.row(align=True)\n    erow.alert = True\n    erow.label(text=f\"未配置 API Key（也可配置环境变量 {prov_info['key_env']}）\", icon='ERROR')",
+     "what": "Key 输入框 + 生效状态"
+    }
+   ],
+   "what": "填 Key 的那一行，外加一行告诉你现在有没有生效、是从哪来的。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "当前模型",
+     "deepseek-chat",
+     "获取最新模型列表"
+    ],
+    "kind": "prop"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "settings_model",
+   "label": "模型配置",
+   "slots": [],
+   "tab": "settings",
+   "ui_py": "mbox = layout.box()\nmbox.label(text=\"模型配置\", icon='PLUGIN')\nif p:\n    mbox.prop(p, \"model\", text=\"当前模型\")\nelse:\n    mbox.label(text=f\"当前模型：{cfg['model']}\")\n\nfetch_row = mbox.row(align=True)\nfetch_row.operator(\"deepseek.fetch_models\", text=\"获取最新模型列表\", icon='FILE_REFRESH')",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "当前模型",
+       "deepseek-chat",
+       "获取最新模型列表"
+      ],
+      "kind": "prop"
+     },
+     "key": "only",
+     "label": "模型",
+     "rewrites": [],
+     "ui_py": "mbox = layout.box()\nmbox.label(text=\"模型配置\", icon='PLUGIN')\nif p:\n    mbox.prop(p, \"model\", text=\"当前模型\")\nelse:\n    mbox.label(text=f\"当前模型：{cfg['model']}\")\n\nfetch_row = mbox.row(align=True)\nfetch_row.operator(\"deepseek.fetch_models\", text=\"获取最新模型列表\", icon='FILE_REFRESH')",
+     "what": "模型下拉 + 拉取按钮"
+    }
+   ],
+   "what": "当前用哪个模型，外加一个「去官网把最新列表拉回来」的按钮。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "cols": 2,
+    "items": [
+     "deepseek-chat",
+     "deepseek-reasoner"
+    ],
+    "kind": "grid"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "settings_model_list",
+   "label": "模型快捷网格",
+   "slots": [],
+   "tab": "settings",
+   "ui_py": "if available_models:\n    lbox = mbox.box()\n    lbox.label(text=\"点击快速切换模型：\", icon='INFO')\n    cur_model = (p.model if p else cfg[\"model\"]).strip()\n    flow = lbox.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True) if hasattr(lbox, \"grid_flow\") else lbox.column(align=True)\n    for m in available_models[:12]:\n        is_cur = (m == cur_model)\n        btn = flow.operator(\"deepseek.set_model\", text=m, icon='CHECKMARK' if is_cur else 'NONE', depress=is_cur)\n        btn.model_name = m",
+   "variants": [
+    {
+     "demo": {
+      "cols": 2,
+      "items": [
+       "deepseek-chat",
+       "deepseek-reasoner"
+      ],
+      "kind": "grid"
+     },
+     "key": "only",
+     "label": "模型网格",
+     "rewrites": [],
+     "ui_py": "if available_models:\n    lbox = mbox.box()\n    lbox.label(text=\"点击快速切换模型：\", icon='INFO')\n    cur_model = (p.model if p else cfg[\"model\"]).strip()\n    flow = lbox.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True) if hasattr(lbox, \"grid_flow\") else lbox.column(align=True)\n    for m in available_models[:12]:\n        is_cur = (m == cur_model)\n        btn = flow.operator(\"deepseek.set_model\", text=m, icon='CHECKMARK' if is_cur else 'NONE', depress=is_cur)\n        btn.model_name = m",
+     "what": "两列并排的模型按钮"
+    }
+   ],
+   "what": "两列的模型按钮，点一下直接切过去，当前模型那颗按钮是压下的。"
+  },
+  {
+   "default_variant": "only",
+   "demo": {
+    "items": [
+     "Base URL",
+     "超时(秒) 120",
+     "最大轮次 12",
+     "时间预算(秒) 300",
+     "面板历史条数 8"
+    ],
+    "kind": "prop"
+   },
+   "editable": [],
+   "element_id": "",
+   "key": "settings_advanced",
+   "label": "高级运行参数",
+   "slots": [],
+   "tab": "settings",
+   "ui_py": "abox = layout.box()\nabox.label(text=\"高级运行参数\", icon='PREFERENCES')\nabox.prop(p, \"base_url\", text=\"Base URL\")\nrow = abox.row(align=True)\nrow.prop(p, \"timeout\", text=\"超时(秒)\")\nrow.prop(p, \"max_turns\", text=\"最大轮次\")\nrow = abox.row(align=True)\nrow.prop(p, \"wall_budget\", text=\"时间预算(秒)\")\nrow.prop(p, \"history_page\", text=\"面板历史条数\")\nabox.prop(p, \"allow_arbitrary_code\")",
+   "variants": [
+    {
+     "demo": {
+      "items": [
+       "Base URL",
+       "超时(秒) 120",
+       "最大轮次 12",
+       "时间预算(秒) 300",
+       "面板历史条数 8"
+      ],
+      "kind": "prop"
+     },
+     "key": "only",
+     "label": "高级参数",
+     "rewrites": [],
+     "ui_py": "abox = layout.box()\nabox.label(text=\"高级运行参数\", icon='PREFERENCES')\nabox.prop(p, \"base_url\", text=\"Base URL\")\nrow = abox.row(align=True)\nrow.prop(p, \"timeout\", text=\"超时(秒)\")\nrow.prop(p, \"max_turns\", text=\"最大轮次\")\nrow = abox.row(align=True)\nrow.prop(p, \"wall_budget\", text=\"时间预算(秒)\")\nrow.prop(p, \"history_page\", text=\"面板历史条数\")\nabox.prop(p, \"allow_arbitrary_code\")",
+     "what": "五个属性 + 一个开关"
+    }
+   ],
+   "what": "平时不用动的几个：Base URL、超时、最大轮次、时间预算、历史条数、要不要放行任意代码。"
+  }
+ ],
+ "demo_kinds": [
+  "row",
+  "col",
+  "box",
+  "split",
+  "grid",
+  "panel",
+  "label",
+  "btn",
+  "prop",
+  "rule",
+  "gap"
+ ],
+ "generated_for": "blender_deepseek_agent/ui.py",
+ "tab_labels": {
+  "chat": "对话",
+  "detail": "详情",
+  "settings": "设置"
+ },
+ "what": "业务块 = 插件界面里真实存在的一整块东西（状态提示条、消息气泡、输入区…）。每一块的 ui_py 都是 ui.py 里那段代码原样抄来的，导出时直接用它，不做翻译。"
+}

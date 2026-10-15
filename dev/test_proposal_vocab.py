@@ -1176,8 +1176,18 @@ def demo_nodes(bar):
 
 
 def demo_checks(page, vjson):
-    """A：12 个控件各自画出一张小图示，图示里的小方块数量与数据一致。"""
-    bar = vocab_bar_of(page)
+    """A：12 个控件各自画出一张小图示，图示里的小方块数量与数据一致。
+
+    Task 19 改动的唯一一处：切片从 #vocab-bar 换成 #adv-host。
+    原因是控件架分了两层（业务块在上、原语在折叠的高级区），而业务块卡
+    复用的是同一个图示渲染器——扫整条 #vocab-bar 会多出 16 张业务块的图示，
+    把「12 个原语各画一张」这件事量成「16 + 12」。
+    断言本身一个字没松：仍然是逐块比 data-dwkey、data-dkind 与小方块数量，
+    仍然钉死 12 张 / 18 个小方块。
+    """
+    bar = adv_host_of(page)
+    ck("dom_adv_host_found", bool(bar.strip()),
+       "定位不到 #adv-host（高级：UILayout 原语那层的挂载点）")
     nodes = demo_nodes(bar)
     ck("dom_demo_one_per_widget", len(nodes) == EXPECT_WIDGETS,
        "控件架里应有 %d 张图示，实际 %d" % (EXPECT_WIDGETS, len(nodes)))
@@ -1571,6 +1581,21 @@ def vocab_bar_of(p):
     if '<div id="vocab-bar"' not in p or '<div id="canvas"' not in p:
         return ""
     return p.split('<div id="vocab-bar"')[1].split('<div id="canvas"')[0]
+
+
+def adv_host_of(p):
+    """取高级区宿主 #adv-host 的切片（那 12 张 UILayout 原语卡）。
+
+    Task 19 起控件架分两层：业务块在上，UILayout 原语收进
+    <details id="adv-primitives"> 里的 #adv-host。所以凡是「12 个原语的
+    图示 / 按钮」类断言都必须切这一段——扫整个 #vocab-bar 会把上面
+    16 张业务块卡一起数进来，而它们的数据在 blocks.json 里，
+    由 dev/test_proposal_blocks.py 另一套断言盯着。两条各管各的，
+    互不代劳：同一份图示渲染器被两处复用，靠切片区分才量得准。
+    """
+    if '<div id="adv-host"' not in p:
+        return ""
+    return p.split('<div id="adv-host"')[1].split('<div id="canvas"')[0]
 
 
 def empty_hint_of(p):

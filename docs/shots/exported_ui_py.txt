@@ -1,0 +1,81 @@
+# -*- coding: utf-8 -*-
+#
+# ⚠ 工具生成 · 未经验证：这段代码由 UI Workbench 从积木树自动导出，从没在真实 Blender 里跑过。是草稿，不是能直接粘贴就用的成品。
+#
+# 由 UI Workbench 从「对话」界面的积木树导出，生成时间 2026-10-15 07:06:51，共 6 块。
+# 积木的先后顺序 = 面板从上到下的顺序；容器积木 = 一层 layout 容器，
+# 容器里的子积木就画在它下面那几行。
+
+
+def draw_chat_content(layout, state):
+    """「对话」界面。工具生成 · 未经验证：这段代码由 UI Workbench 从积木树自动导出，从没在真实 Blender 里跑过。是草稿，不是能直接粘贴就用的成品。"""
+    # ── 1) 页签条1 · 页签条  —— 工作台自动生成，未经验证
+    #   想做什么 · 为什么：（这块没写标注）
+    #   出处：blender_deepseek_agent/ui.py 里「三个页签」这一段，原样抄来（不是翻译出来的）
+    trow = layout.row(align=True)
+    trow.prop(state, "active_tab", expand=True)
+    # ── 2) 状态提示条1 · 状态提示条  —— 工作台自动生成，未经验证
+    #   想做什么 · 为什么：（这块没写标注）
+    #   出处：blender_deepseek_agent/ui.py 里「忙碌中」这一段，原样抄来（不是翻译出来的）
+    bbox = layout.box()
+    brow = bbox.row(align=True)
+    brow.label(text=get_current_action_text(run), icon='TIME')
+    brow.operator("deepseek.stop", text="终止任务", icon='CANCEL')
+    # ── 3) 消息气泡1 · 消息气泡  —— 工作台自动生成，未经验证
+    #   想做什么 · 为什么：（这块没写标注）
+    #   出处：blender_deepseek_agent/ui.py 里「你说的话」这一段，原样抄来（不是翻译出来的）
+    ubox = layout.box()
+    for ln in wrap_text(item.text, max_chars=18):
+        urow = ubox.row()
+        urow.alignment = 'RIGHT'
+        urow.label(text=ln)
+    # ── 4) 规格选项组1 · 规格选项组  —— 工作台自动生成，未经验证
+    #   想做什么 · 为什么：（这块没写标注）
+    #   出处：blender_deepseek_agent/ui.py 里「反问一组」这一段，原样抄来（不是翻译出来的）
+    for q_idx, q in enumerate(questions):
+        qbox = layout.box()
+        qbox.label(text=f"细节 {q_idx + 1}：{q.get('title', '')}", icon='QUESTION')
+        for opt in q.get("options", []):
+            val = opt.get("value") or opt.get("label", "")
+            lbl = opt.get("label", val)
+            orow = qbox.row()
+            btn = orow.operator("deepseek.submit_selection",
+                                text=f"选择: {lbl}",
+                                icon='CHECKBOX_DEHLT')
+            btn.custom_prompt = f"针对「{q.get('title', '')}」，我选择：{val}"
+
+    rec_btn = layout.operator("deepseek.submit_selection",
+                            text="按推荐参数开始建模",
+                            icon='PLAY')
+    rec_btn.custom_prompt = info.get("all_recommended", "全部按推荐参数开始建模！")
+    #   为独立成块改绑过 4 处（局部变量改绑 layout），改的理由见 blocks.json 的 rewrites
+    # ── 5) 对话输入区1 · 对话输入区  —— 工作台自动生成，未经验证
+    #   想做什么 · 为什么：（这块没写标注）
+    #   出处：blender_deepseek_agent/ui.py 里「输入区」这一段，原样抄来（不是翻译出来的）
+    cbox = layout.box()
+    crow = cbox.row(align=True)
+    crow.label(text="输入建模指令:", icon='TEXT')
+    crow.prop(state, "prompt_lines", text="", slider=True)
+    cbox.textbox(state, "prompt", initial_visible_lines=state.prompt_lines,
+                 placeholder="用自然语言描述要建模什么，可多行")
+
+    brow = cbox.row(align=True)
+    brow.scale_y = 1.3
+    if not busy:
+        brow.operator("deepseek.run_prompt", text="发送指令", icon='PLAY')
+    else:
+        brow.operator("deepseek.stop", text="终止任务", icon='CANCEL')
+    # ── 6) 底部操作行1 · 底部操作行  —— 工作台自动生成，未经验证
+    #   想做什么 · 为什么：（这块没写标注）
+    #   出处：blender_deepseek_agent/ui.py 里「操作行」这一段，原样抄来（不是翻译出来的）
+    arow = layout.row(align=True)
+    if can_undo(state):
+        arow.operator("deepseek.undo_task", text="回退操作", icon='LOOP_BACK')
+    arow.operator("deepseek.new_task", text="新建任务", icon='ADD')
+    arow.operator("deepseek.clear", text="清空记录", icon='TRASH')
+    #   为独立成块改绑过 1 处（局部变量改绑 layout），改的理由见 blocks.json 的 rewrites
+
+
+# ---- 落笔前必须人工处理的 0 处 ----
+# （没有发现缺算子名 / 缺属性名的地方。但这段代码仍然没在 Blender 里跑过，
+#   至少要先把整段贴进 Blender 看一眼渲染结果，再合进 ui.py。）

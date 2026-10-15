@@ -1,0 +1,190 @@
+# -*- coding: utf-8 -*-
+"""变异验证：故意把被测逻辑打坏，看哪些断言真的变红。
+
+为什么要这个：断言全绿有两种可能——「实现是对的」与「断言是空的」。
+栽过的坑有两种：变异被别的守卫兜住（红 0 条），以及断言被注释里同一个词
+满足。所以每个变异都必须**指名它应该打红哪几条**，跑完逐条对照，
+对不上就说明那条断言不可证伪。
+
+用法：
+    python dev/mutate_blocks.py              # 跑全部
+    $env:UW_MUT="M1,M7"; python dev\mutate_blocks.py   # 只跑其中几个
+
+每个变异都真的把一份仓库副本打坏、在副本里跑 dev/test_proposal_blocks.py，
+所以慢（一次全量约十几分钟）。最后打印 MUTATIONS_ALL_OK / MUTATIONS_HAVE_GAPS，
+非零退出码表示有变异没被抓住。
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+NEED = ["ui_workbench", "dev", "blender_deepseek_agent"]
+
+# (名字, 目标文件, 旧文本, 新文本, 期望变红的断言前缀)
+MUTS = [
+    ("M1_改文案不落到导出",
+     "ui_workbench/app.js",
+     "    src = src.replace(s.literal, pyStrF(val, s.literal.indexOf(\"f\\\"\") === 0));",
+     "    /* mutated: 不再替换 */",
+     ("dom_biz_text_edit_in_export", "dom_biz_old_text_replaced")),
+
+    ("M2_导出不再原样带走ui_py",
+     "ui_workbench/app.js",
+     "  var src = applyBizTexts(String(v.ui_py), b, n);",
+     "  var src = \"# mutated: 改成自己编的一句\";",
+     ("dom_export_carries_real_code",)),
+
+    ("M3_业务块不走pyBizLines",
+     "ui_workbench/app.js",
+     "    if (n.bkey) {\n      pyBizLines(out, todo, n, ind);\n      return;\n    }",
+     "    if (false) {\n      pyBizLines(out, todo, n, ind);\n      return;\n    }",
+     # 故意不指望 dom_export_py_parses：业务块掉进原语那条路之后，
+     # 生成出来的是 host + "" + "()" 这种**语法上仍然合法**的代码，
+     # ast.parse 当然过。真正抓住它的是 dom_export_carries_real_code
+     # （导出里已经没有 ui.py 那两段真实调用了）。
+     ("dom_export_carries_real_code",)),
+
+    ("M4_高级区默认展开",
+     "ui_workbench/app.js",
+     "  det.className = \"advanced\";",
+     "  det.className = \"advanced\";\n  det.open = true;",
+     ("app_advanced_collapsed_by_default", "dom_adv_collapsed_by_default")),
+
+    ("M5_业务块上又冒出参数框",
+     "ui_workbench/app.js",
+     "  var idIn = document.createElement(\"input\");\n  idIn.className = \"pin\";\n  idIn.dataset.field = \"id\";",
+     "  var idIn = document.createElement(\"input\");\n  idIn.className = \"pin pinp\";\n  idIn.dataset.field = \"params\";",
+     ("dom_biz_no_param_box", "dom_biz_has_note_boxes")),
+
+    ("M6_少一块业务块",
+     "dev/build_blocks.py",
+     "    doc = build()\n    n = _selfcheck(doc)",
+     "    doc = build()\n    doc[\"blocks\"] = doc[\"blocks\"][:-1]   # mutated: 砍掉一块\n"
+     "    n = _selfcheck(doc)",
+     # 故意不指望 dom_shelf_has_every_block：那条比的是「控件架 vs
+     # blocks.json 逐块同序」，两边一起少一块时它照样成立——它防的是
+     # 界面与数据对不上，不是数据本身少了一块。少一块由块数那几条抓。
+     ("blocks_count", "blocks_tab_counts", "dom_shelf_blocks_total",
+      "dom_shelf_buttons", "dom_all_status_line")),
+
+    ("M7_编造一行ui_py（既不在ui.py也没登记）",
+     # 直接改 blocks.json，不改生成器：改生成器的话 build_blocks.py 自己的
+     # 出处自检会先抛 BlockError、拒绝落盘，blocks.json 保持原样——
+     # 那证明的是「生成器拦得住」，不是「测试里的出处核对拦得住」。
+     # 这里要单独验后者，所以直接往产物里塞一行编的。
+     # 注意别连引号一起匹配：ui_py 在 json 里是一整个带 \n 的字符串。
+     "ui_workbench/blocks.json",
+     "bbox = layout.box()",
+     "bbox = layout.MUTATED()",
+     ("grounded_no_undeclared_lines",)),
+
+    ("M8_业务块可以嵌套（容器判定放行）",
+     "ui_workbench/app.js",
+     "function isContainer(n) {\n  // 业务块一律不是容器：它装不了东西（面板上一整块就是它自己）。\n  if (n && n.bkey) { return false; }\n  return n && !n.downgraded && CONTAINER_WKEYS.indexOf(n.wkey) >= 0;\n}",
+     "function isContainer(n) {\n  return n && !n.downgraded && CONTAINER_WKEYS.indexOf(n.wkey) >= 0;\n}",
+     ("app_biz_is_not_container",)),
+
+    ("M9_业务块少一样输入（改文案）",
+     "ui_workbench/app.js",
+     '    inp.dataset.field = "btext";',
+     '    inp.dataset.field = "btext_MUT";',
+     ("dom_biz_has_text_boxes", "app_biz_has_text_slots")),
+
+    ("M10_预览不画业务块",
+     "ui_workbench/app.js",
+     "  if (n.bkey) {\n    d = pvBiz(n);",
+     "  if (false) {\n    d = pvBiz(n);",
+     ("dom_biz_preview_nodes",)),
+]
+
+
+def copy_repo(dst):
+    for n in NEED:
+        s = os.path.join(SRC, n)
+        d = os.path.join(dst, n)
+        if os.path.isdir(s):
+            shutil.copytree(s, d, ignore=shutil.ignore_patterns("_tmp_verify"))
+        else:
+            shutil.copy2(s, d)
+
+
+def main():
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    # 只跑其中几个时用 UW_MUT 过滤，省得每次都等十分钟。
+    only = [x for x in (os.environ.get("UW_MUT") or "").split(",") if x]
+    muts = [m for m in MUTS if not only or m[0].startswith(tuple(only))]
+    tmp = tempfile.mkdtemp(prefix="bizmut_")
+    rows = []
+    try:
+        for name, rel, old, new, want in muts:
+            root = os.path.join(tmp, re.sub(r"\W+", "_", name))
+            os.makedirs(root, exist_ok=True)
+            copy_repo(root)
+            p = os.path.join(root, rel)
+            with open(p, encoding="utf-8") as fh:
+                src = fh.read()
+            if old not in src:
+                rows.append((name, "PATCH_FAIL", "目标文本没找到（变异没打上）", want))
+                continue
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(src.replace(old, new) if rel.endswith("blocks.json")
+                         else src.replace(old, new, 1))
+            # 生成器改了就得把两份产物都重跑：blocks.json 变了但 data.js 没变的话，
+            # 页面读的还是旧数据，DOM 那几条断言量的是上一版界面。
+            if rel == "dev/build_blocks.py":
+                for script in ("build_blocks.py", "build_data_js.py"):
+                    subprocess.run([sys.executable, os.path.join(root, "dev", script)],
+                                   cwd=root, capture_output=True, env=env)
+            e2 = dict(env)
+            e2["UW_ROOT"] = root
+            r = subprocess.run([sys.executable, os.path.join(root, "dev", "test_proposal_blocks.py")],
+                               cwd=root, capture_output=True, env=e2, timeout=2400)
+            out = r.stdout.decode("utf-8", "replace")
+            reds = set()
+            for m in re.finditer(r"^FAIL (\w+)", out, re.M):
+                reds.add(m.group(1))
+            summ = re.search(r"^PASS (\d+)  FAIL (\d+)", out, re.M)
+            hit = [w for w in want if w in reds]
+            miss = [w for w in want if w not in reds]
+            rows.append((name,
+                         summ.group(0) if summ else "NO_SUMMARY",
+                         "红 %d 条" % len(reds),
+                         want, hit, miss,
+                         sorted(reds)[:8]))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    print("\n================ 变异结果 ================")
+    ok = True
+    for r in rows:
+        name = r[0]
+        summ = r[1]
+        want = r[3]
+        if summ in ("PATCH_FAIL", "NO_SUMMARY"):
+            print("[%s] %s -- %s" % (name, summ, r[2]))
+            ok = False
+            continue
+        if len(r) < 6:
+            print("[%s] %s" % (name, summ))
+            ok = False
+            continue
+        hit, miss, reds = r[4], r[5], r[6]
+        mark = "OK " if hit and not miss else "BAD"
+        if miss or not hit:
+            ok = False
+        print("[%s] %-28s %s | 期望红 %s | 实红前几个 %s"
+              % (mark, name, summ, ",".join(want), ",".join(reds)))
+        if miss:
+            print("      !! 没红：%s" % ",".join(miss))
+    print("==========================================")
+    print("MUTATIONS_ALL_OK" if ok else "MUTATIONS_HAVE_GAPS")
+    return 0 if ok else 1
+
+
+sys.exit(main())

@@ -108,10 +108,19 @@ function loadPlan() {
    作废（用户攒了两小时的东西），所以逐块补默认，而不是整份丢弃。 */
 function normalizeNode(raw) {
   var n = raw || {};
+  /* 业务块没有 wkey（它不是 UILayout 原语），只有一个 bkey。所以 wkey 的
+     默认值只在「不是业务块」时才生效——否则存档里的业务块读回来会变成
+     一块 label，界面上看着没丢，导出的代码却换成了别的东西。 */
+  var bkey = n.bkey ? String(n.bkey) : null;
   return {
     uid: String(n.uid || nextUid()),
     parent: n.parent || null,
-    wkey: String(n.wkey || "label"),
+    wkey: bkey ? "" : String(n.wkey || "label"),
+    bkey: bkey,
+    bvar: String(n.bvar || ""),
+    /* 已改过的文案：键是槽的 name，值是用户写的新文案。没改过的槽用
+       blocks.json 里的原文——所以存档里不必把每句默认文案都存一份。 */
+    btexts: (n.btexts && typeof n.btexts === "object") ? n.btexts : {},
     label: String(n.label || "（存档里的块）"),
     uiloayout: String(n.uiloayout || ""),
     allowed_props: n.allowed_props || [],
@@ -137,7 +146,8 @@ function normalizeNode(raw) {
    它跑在「上一趟已经存过盘」的那份浏览器档案里，用的就是真实刷新那条路径。 */
 function restorePlan() {
   var h = String(window.location.hash || "");
-  if (h.indexOf("#proposal") === 0 && h !== "#proposal-restore") { return 0; }  var d = loadPlan();
+  if ((h.indexOf("#proposal") === 0 && h !== "#proposal-restore") ||
+      h.indexOf("#biz") === 0) { return 0; }  var d = loadPlan();
   if (!d) { return 0; }
   var got = 0;
   TAB_ORDER.forEach(function (k) {
@@ -479,6 +489,11 @@ var TAB_LABELS = { chat: "对话", detail: "详情", settings: "设置" };
 var TAB_ORDER = ["chat", "detail", "settings"];
 
 var vocab = null;
+/* 业务块（ui_workbench/blocks.json，dev/build_blocks.py 产出）。
+   它是提案视图的第一词汇表：用户先看到的是「这个界面由哪几块东西组成」，
+   vocabulary.json 里那 12 个 UILayout 原语退到下面折叠的「高级」区里。
+   两种块共用一个画布，但形状不同——见 renderBizNode / renderNode。 */
+var blocksDoc = null;
 
 /* 积木身份：每块拿到一个单调递增、永不复用的 uid（b1、b2……）。
    为什么必须是 uid 而不是数组下标：下标是位置。提案视图一旦能删除、能排序，
@@ -839,6 +854,8 @@ function idxByUid(uid) {
 var CONTAINER_WKEYS = ["row", "column", "box", "split", "grid_flow", "panel"];
 
 function isContainer(n) {
+  // 业务块一律不是容器：它装不了东西（面板上一整块就是它自己）。
+  if (n && n.bkey) { return false; }
   return n && !n.downgraded && CONTAINER_WKEYS.indexOf(n.wkey) >= 0;
 }
 
@@ -1041,6 +1058,18 @@ function bindSelection() {
   }
 }
 
+/* 业务块。缺了就直接说清楚该跑哪个脚本——沉默地只留 12 个原语，
+   用户会以为「工作台就这些」，而真相是数据没生成。 */
+function loadBlocks() {
+  return getJSON("blocks.json").then(function (b) {
+    if (!b || !b.blocks || !b.blocks.length) {
+      throw new Error("blocks.json 结构不对（缺 blocks 或 blocks 是空的）");
+    }
+    blocksDoc = b;
+    return b;
+  });
+}
+
 function loadVocab() {
   return getJSON("vocabulary.json").then(function (v) {
     if (!v || !v.widgets || !v.rejected) {
@@ -1048,12 +1077,14 @@ function loadVocab() {
     }
     vocab = v;
     buildIconList();
-    renderVocabBar();
-    renderRejected();
-    renderElementIdHelp();
-    renderUnmapped();
-    renderCanvas();
-    return v;
+    return loadBlocks().then(function () {
+      renderVocabBar();
+      renderRejected();
+      renderElementIdHelp();
+      renderUnmapped();
+      renderCanvas();
+      return v;
+    });
   });
 }
 
@@ -1113,6 +1144,55 @@ function renderVocabBar() {
   var host = el("vocab-bar");
   host.innerHTML = "";
   renderSubtabs(host);
+  /* ---------------- 业务块（第一词汇表）----------------
+     放在最上面、默认展开，是因为用户试了很多轮还是说「不会用」：
+     根因是拿 UILayout 当词汇表。横排竖排、元素 ID、参数、归属这六个概念
+     比它要解决的问题还难。低代码平台不会让你想 flexbox，它给你
+     「客户表格」「审批表单」——所以这里给的是业务块，点一下就是插件里
+     真实存在的整块代码。 */
+  var h = document.createElement("b");
+  h.textContent = "界面块（这个面板由哪几块组成 · 点一下加到画布最下面，搭好后可拖动换位）：";
+  host.appendChild(h);
+  var intro = document.createElement("div");
+  intro.className = "scope";
+  intro.textContent = (blocksDoc && blocksDoc.what)
+    ? blocksDoc.what
+    : "块 = 插件界面里真实存在的一整块东西。";
+  host.appendChild(intro);
+  var bcards = document.createElement("div");
+  bcards.className = "wcards";
+  bcards.id = "block-cards";
+  ((blocksDoc && blocksDoc.blocks) || []).forEach(function (b) {
+    bcards.appendChild(blockCard(b));
+  });
+  host.appendChild(bcards);
+
+  /* ---------------- 高级：UILayout 原语（默认收起）----------------
+     原语一块没删：容器能装东西、参数有白名单、降级清单——这些是
+     「业务块装不下」时的退路。默认收起是因为大多数界面靠业务块就搭得起来，
+     而把 12 张原语卡摆在第一屏正是「不会用」的来源之一。
+     用 <details> 而不是 display:none：收起的只是视觉，DOM 里照样在，
+     无头验收（--dump-dom）仍然拿得到那 12 个按钮。 */
+  var det = document.createElement("details");
+  det.id = "adv-primitives";
+  det.className = "advanced";
+  var sum = document.createElement("summary");
+  sum.textContent = "高级：UILayout 原语（业务块搭不出来时用这一层）";
+  det.appendChild(sum);
+  var advHost = document.createElement("div");
+  advHost.id = "adv-host";
+  det.appendChild(advHost);
+  host.appendChild(det);
+
+  renderPrimitives(advHost);
+  renderUndoBar();
+}
+
+/* 高级区里的原语控件架。原来 renderVocabBar 的整段搬到这里，逻辑一字未改
+   ——12 张卡、示例面板按钮、props_scope 说明都在，只是挂载点从 vocab-bar
+   换成了折叠区里的 adv-host。降级清单 / 元素 ID 说明 / 未收录能力仍然挂在
+   vocab-bar 上（它们不是「控件」，是别的东西）。 */
+function renderPrimitives(host) {
   var h = document.createElement("b");
   h.textContent = "可用控件（点一下落到画布最下面，搭好后可拖动换位）：";
   host.appendChild(h);
@@ -1144,7 +1224,6 @@ function renderVocabBar() {
     sc.textContent = vocab.props_scope;
     host.appendChild(sc);
   }
-  renderUndoBar();
 }
 
 /* 迷你图示。数据（vocabulary.json 的 demo 字段）只描述形状，这里负责画。
@@ -1189,6 +1268,268 @@ function renderDemo(w) {
     box.appendChild(sub);
   }
   return box;
+}
+
+/* ---------------- 业务块 ----------------
+   一张业务块卡 = 一张图示 + 一个名字 + 一句话「它是什么、什么时候出现」
+   +（有多样式时）一个变体下拉 + 一个「加进去」按钮。
+
+   为什么卡片上还带变体下拉：状态提示条有四种样子（忙碌 / 待批准 /
+   做到一半 / 失败），它们在 ui.py 里就是四段不同的代码。用户要的
+   「失败那一条长什么样」不是改文案能改出来的，所以这是一个选择，不是一个输入框。 */
+function blockByKey(k) {
+  var bs = (blocksDoc && blocksDoc.blocks) || [];
+  for (var i = 0; i < bs.length; i++) {
+    if (bs[i].key === k) { return bs[i]; }
+  }
+  return null;
+}
+
+function variantOf(b, vkey) {
+  var vs = (b && b.variants) || [];
+  for (var i = 0; i < vs.length; i++) {
+    if (vs[i].key === vkey) { return vs[i]; }
+  }
+  return (b && b.variants && b.variants[0]) ? b.variants[0] : null;
+}
+
+function blockCard(b) {
+  var card = document.createElement("div");
+  card.className = "wcard bcard";
+  card.dataset.bcardFor = b.key;
+  card.dataset.tab = b.tab;
+  // 图示复用原语那套渲染器：形状语言只有一套（row/col/box/grid/prop…），
+  // 两处各画一套只会让用户以为它们是两回事。
+  card.appendChild(renderDemo({ key: b.key, demo: b.demo }));
+  var btx = document.createElement("button");
+  btx.dataset.bkey = b.key;
+  btx.textContent = b.label;
+  btx.title = "点一下加到画布最下面；搭好后按住积木上的空白处可拖动换位\n" +
+    b.what + "\n（这个界面块对应的代码就是插件 ui.py 里现成的那一段，"
+    + "导出时原样带走，不会被重新翻译）";
+  btx.onclick = function () { addBizBlock(b); };
+  card.appendChild(btx);
+  var tab = document.createElement("span");
+  tab.className = "btab";
+  tab.textContent = TAB_LABELS[b.tab] || b.tab;
+  card.appendChild(tab);
+  var what = document.createElement("div");
+  what.className = "wnote";
+  what.textContent = b.what;
+  card.appendChild(what);
+  if ((b.variants || []).length > 1) {
+    var sel = document.createElement("select");
+    sel.className = "pvar";
+    sel.dataset.bvar = b.key;
+    sel.title = "这一块有几种样子。选中的那种决定导出哪一段代码——"
+      + "它们在插件里本来就是不同的代码。";
+    b.variants.forEach(function (v) {
+      var o = document.createElement("option");
+      o.value = v.key;
+      o.textContent = v.label;
+      sel.appendChild(o);
+    });
+    sel.value = b.default_variant;
+    /* 换下拉就换掉这张卡的图示与说明：卡片得先让人看清「选中的那款长什么样」，
+       否则这段 UI 只是让人先插一块再回头改。 */
+    var vw = document.createElement("div");
+    vw.className = "wnote";
+    sel.onchange = function () {
+      var vv = variantOf(b, sel.value);
+      if (!vv) { return; }
+      var old = card.querySelector(".demo");
+      if (old) { card.replaceChild(renderDemo({ key: b.key, demo: vv.demo }), old); }
+      vw.textContent = vv.what;
+    };
+    vw.textContent = variantOf(b, b.default_variant).what;
+    card.appendChild(sel);
+    card.appendChild(vw);
+    /* 插入按钮读下拉当前值。放在 select 之后，所以「选失败 → 加一块」
+       就是连着两下，不用先去别处改这块的设置。 */
+    btx.onclick = function () { addBizBlock(b, sel.value); };
+  }
+  return card;
+}
+
+/* 插入一块业务块。它只有五样东西可改：变体、几处文案、一个备注名（元素 ID）、
+   自己的注解——外加通用的拖动排序 / 复制 / 删除。
+   没有参数框、没有归属、没有子块：这一块在插件里就是完整的一段，
+   让用户「往里再塞点东西」只会导出 Blender 那边写不出来的代码。 */
+function addBizBlock(b, vkey) {
+  var v = variantOf(b, vkey || b.default_variant);
+  proposal.push({
+    uid: nextUid(),
+    parent: null,
+    wkey: "",
+    bkey: b.key,
+    bvar: v ? v.key : (b.default_variant || ""),
+    btexts: {},
+    label: b.label,
+    uiloayout: "",
+    allowed_props: [],
+    blocked_props: [],
+    params: "",
+    /* 元素 ID 变成可选的「备注名」，默认按序号自动生成。不填照样能导出——
+       它只影响导出的注释，不影响代码。 */
+    id: autoNoteName(b.label),
+    note: "",
+    content: {},
+    errors: [],
+    expanded: false,
+    downgraded: false
+  });
+  renderCanvas();
+}
+
+/* 自动备注名：同一块插第几块就叫什么（块1 / 块2 / 块3…）。
+   用户不填也能导出，所以这个名字只是「别忘了这块叫什么」的兜底。 */
+function autoNoteName(label) {
+  var n = proposal.filter(function (x) { return x.label === label; }).length + 1;
+  return label + n;
+}
+
+/* 画布上的一块业务块。和 renderNode 的差别就是「变简单」那几处：
+   没有参数框、没有归属下拉、没有移入/移出、没有子块区；
+   多出来的是变体下拉与这一块能改的那几处文案。 */
+function renderBizNode(n) {
+  var b = blockByKey(n.bkey);
+  var box = document.createElement("div");
+  box.className = "note pnode bnode";
+  box.setAttribute("draggable", "true");
+  box.dataset.parent = "";
+  box.dataset.idx = String(idxByUid(n.uid));
+  box.dataset.uid = n.uid;
+  box.dataset.bkey = n.bkey;
+  box.dataset.bvar = n.bvar || "";
+  box.dataset.downgraded = "0";
+  box.dataset.status = "ok";
+  box.dataset.errors = "0";
+  box.dataset.expanded = n.expanded ? "1" : "0";
+
+  var head = document.createElement("div");
+  head.className = "phead";
+  var grip = document.createElement("span");
+  grip.className = "drop-handler";
+  grip.textContent = "⋮⋮";
+  grip.title = "按住这块积木的空白处拖动，可以换位置";
+  head.appendChild(grip);
+  var tag = document.createElement("span");
+  tag.className = "ptag";
+  tag.textContent = b ? (TAB_LABELS[b.tab] || b.tab) + " · 界面块" : "界面块";
+  head.appendChild(tag);
+  var nm = document.createElement("b");
+  nm.textContent = n.label;
+  head.appendChild(nm);
+  var code = document.createElement("code");
+  code.textContent = b ? (b.variants.length + " 种样式") : "";
+  head.appendChild(code);
+  head.appendChild(bizChip("fold", n.uid, n.expanded ? "收起" : "展开",
+    n.expanded ? "把改文案 / 备注名这两样折起来" : "展开这一块，改文案与备注名",
+    function () { n.expanded = !n.expanded; renderCanvas(); }));
+  head.appendChild(bizChip("dup", n.uid, "复制", "原地复制一块（副本身份独立）",
+    function () { dupNode(idxByUid(n.uid)); }));
+  head.appendChild(bizChip("del", n.uid, "删除", "删掉这块积木", function () {
+    delNode(idxByUid(n.uid));
+  }, "chip bad"));
+  box.appendChild(head);
+
+  if (!n.expanded) { return box; }
+
+  // 变体下拉：放在最上面，因为换变体会换掉下面所有可改文案的位置。
+  if (b && (b.variants || []).length > 1) {
+    var row = document.createElement("div");
+    row.className = "crow";
+    var lab = document.createElement("span");
+    lab.className = "clab";
+    lab.textContent = "样式";
+    row.appendChild(lab);
+    var sel = document.createElement("select");
+    sel.className = "pin psel";
+    sel.dataset.field = "bvar";
+    sel.dataset.uid = n.uid;
+    b.variants.forEach(function (v) {
+      var o = document.createElement("option");
+      o.value = v.key;
+      o.textContent = v.label;
+      sel.appendChild(o);
+    });
+    sel.value = n.bvar;
+    sel.onchange = function () {
+      n.bvar = sel.value;
+      // 换变体就把已改文案清掉：那些文案是针对旧变体里那句话的，
+      // 带过去会让导出的代码里出现「两段各改了一半」的句子。
+      n.btexts = {};
+      renderCanvas();
+    };
+    row.appendChild(sel);
+    var vw = document.createElement("div");
+    vw.className = "wnote";
+    var vv = variantOf(b, n.bvar);
+    vw.textContent = vv ? vv.what : "";
+    row.appendChild(vw);
+    box.appendChild(row);
+  }
+
+  // 可改文案：只给当前变体里真的出现的那些槽（busy 里没有「已经做了：」）。
+  var v = b ? variantOf(b, n.bvar) : null;
+  var src = v ? String(v.ui_py) : "";
+  (b && b.slots || []).forEach(function (s) {
+    if (src.indexOf(s.literal) < 0) { return; }
+    var wrap = document.createElement("div");
+    wrap.className = "crow";
+    var l2 = document.createElement("span");
+    l2.className = "clab";
+    l2.textContent = s.label;
+    wrap.appendChild(l2);
+    var inp = document.createElement("input");
+    inp.className = "pin";
+    inp.dataset.field = "btext";
+    inp.dataset.uid = n.uid;
+    inp.dataset.slot = s.name;
+    inp.placeholder = "改这里只会改代码里那一句文案";
+    inp.value = (n.btexts && n.btexts[s.name] != null) ? n.btexts[s.name] : s.text;
+    inp.oninput = function () {
+      n.btexts = n.btexts || {};
+      if (inp.value === s.text) { delete n.btexts[s.name]; }
+      else { n.btexts[s.name] = inp.value; }
+      savePlan();
+      renderPyOut();
+    };
+    wrap.appendChild(inp);
+    box.appendChild(wrap);
+  });
+
+  var idIn = document.createElement("input");
+  idIn.className = "pin";
+  idIn.dataset.field = "id";
+  idIn.dataset.uid = n.uid;
+  idIn.placeholder = "备注名（可空，不填也能导出）";
+  idIn.title = "只是导出里那行注释里写的名字，方便你回头对上代码。\n"
+    + "不填不影响导出——这一块本来就是插件里现成的一段。";
+  idIn.value = n.id;
+  idIn.oninput = function () { n.id = idIn.value; savePlan(); renderPyOut(); };
+  box.appendChild(idIn);
+
+  var ta = document.createElement("textarea");
+  ta.className = "pnote";
+  ta.dataset.field = "note";
+  ta.dataset.uid = n.uid;
+  ta.placeholder = "这块要做什么？为什么？";
+  ta.value = n.note;
+  ta.oninput = function () { n.note = ta.value; savePlan(); renderPyOut(); };
+  box.appendChild(ta);
+  return box;
+}
+
+function bizChip(act, uid, text, title, fn, cls) {
+  var b = document.createElement("button");
+  b.className = cls || "chip";
+  b.dataset.act = act;
+  b.dataset.uid = uid;
+  b.textContent = text;
+  b.title = title;
+  b.onclick = fn;
+  return b;
 }
 
 function widgetCard(w) {
@@ -1645,12 +1986,13 @@ function renderEmptyHint() {
   var p = document.createElement("p");
   p.id = "empty-hint";
   p.className = "hint";
-  p.textContent = "点上面的控件，它就落到画布最下面；搭好之后，按住积木上" +
+  p.textContent = "点上面的界面块，它就落到画布最下面；搭好之后，按住积木上" +
     "按钮以外的空白处可以随时拖动换位，也可以复制一块、或删掉重来。" +
-    "积木默认是折起来的，点「展开」才出现参数、元素 ID 和备注三个输入框。" +
+    "积木默认是折起来的，点「展开」才出现改文案与备注名。" +
     "积木从上到下的顺序，"+
-    "就是插件里面板从上到下的顺序。挑不到想要的效果时，看下方「做不到」列表——" +
-    "点它插入的是降级方案，原需求会被标成做不到。搭好后切回镜像视图，对着真实截图比。";
+    "就是插件里面板从上到下的顺序。挑不到想要的效果时，把下面折叠的" +
+    "「高级：UILayout 原语」展开——做不到的东西都列在那儿，点它插入的是" +
+    "降级方案，原需求会被标成做不到。搭好后切回镜像视图，对着真实截图比。";
   return p;
 }
 
@@ -1719,6 +2061,10 @@ function renderLevel(host, parentUid) {
    抽成独立函数是因为树递归之后「画一块」这件事要能被单独调用——
    容器那层自己套一个 .pgroup 把孩子装进去。 */
 function renderNode(n) {
+  /* 业务块有自己的画法（renderBizNode）：它没有参数、没有归属、没有子块。
+     这一句分派是两种块唯一的汇合点——往下所有既有代码都可以假定
+     「拿到的是一块 UILayout 原语」。 */
+  if (n.bkey) { return renderBizNode(n); }
   var i = idxByUid(n.uid);   // 仅供调试看顺序，任何定位都不许用它
   var box = document.createElement("div");
     box.className = "note pnode" + (n.downgraded ? " down" : (n.errors.length ? " blocked" : ""));
@@ -2596,9 +2942,34 @@ function pvNode(n) {
     d.dataset.pvuid = n.uid;
     return d;
   }
+  if (n.bkey) {
+    d = pvBiz(n);
+    d.dataset.pvuid = n.uid;
+    return d;
+  }
   d = pvWidget(n);
   d.dataset.pvuid = n.uid;
   return d;
+}
+
+/* 业务块的预览：直接照 blocks.json 里这块的 demo 画。
+   为什么不给业务块另发明一套预览形状——它的形状就是它在插件里的形状，
+   照抄 demo 最诚实；而且这样「卡片上的图示」和「左边预览」必然是同一套画法，
+   两边不会各画各的。 */
+function pvBiz(n) {
+  var b = blockByKey(n.bkey);
+  var v = b ? variantOf(b, n.bvar) : null;
+  var demo = (v && v.demo) || (b && b.demo) || { kind: "box", items: [] };
+  var wrap = pvEl("pv-biz", "biz");
+  wrap.dataset.pvk = demo.kind || "box";
+  /* 名字单独一个元素：pvText 是「就地改并返回同一个元素」，拿它的返回值
+     当子节点会把外层的 className 一起改掉（上一版就是这么把 .pv-biz
+     变成 .pv-bizname 的，样式跟着丢）。 */
+  var head = pvEl("pv-bizname", "bizname");
+  head.textContent = n.label;
+  wrap.appendChild(head);
+  wrap.appendChild(renderDemo({ key: n.bkey, demo: demo }));
+  return wrap;
 }
 
 /* 往一个容器节点里放它的孩子。
@@ -3135,6 +3506,14 @@ function pyStr(s) {
     .replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n") + '"';
 }
 
+/* 业务块改文案时用：原句是 f-string 就保住 f 前缀。
+   丢掉它，「选择: {lbl}」会变成字面上的花括号——插件里那个按钮
+   就永远显示「选择: {lbl}」这几个字符，而不是那个选项的名字。 */
+function pyStrF(s, keepF) {
+  var q = pyStr(s);
+  return keepF ? ("f" + q) : q;
+}
+
 /* True / False / None / 数字照抄，其余一律当字符串加引号。
    不判断的话 align=False 会被写成 align="False"——那在 Blender 里是
    一个非空的字符串，真值，参数等于反过来生效。 */
@@ -3251,6 +3630,56 @@ function pyPropName(n, todo) {
   return "TODO_属性名待定";
 }
 
+/* 业务块往导出里写的那几行：出处说明 + 那段原样的 ui_py。
+   写在 pyLevel 里（而不是另开一个导出器）是为了让 pyCols / pyStats
+   这两本账自动包含业务块——导出面板上「共几块」的统计才不会少算。 */
+function pyBizLines(out, todo, n, ind) {
+  var b = blockByKey(n.bkey);
+  var v = b ? variantOf(b, n.bvar) : null;
+  if (!v) {
+    // blocks.json 里查不到这块：多半是数据换了版本而存档还是旧的。
+    // 宁可明说，也不生成一段来路不明的代码。
+    out.push(ind + "# ⚠ blocks.json 里没有「" + n.bkey + "」这一块，无法生成代码（请重跑 dev/build_blocks.py）");
+    todo.push("界面块「" + n.bkey + "」在 blocks.json 里不存在，请重跑 dev/build_blocks.py");
+    return;
+  }
+  out.push(ind + "#   出处：blender_deepseek_agent/ui.py 里「" + v.label +
+    "」这一段，原样抄来（不是翻译出来的）");
+  var src = applyBizTexts(String(v.ui_py), b, n);
+  var lines = src.split("\n");
+  for (var i = 0; i < lines.length; i++) {
+    out.push(lines[i].length ? (ind + lines[i]) : "");
+  }
+  var rw = v.rewrites || [];
+  if (rw.length) {
+    out.push(ind + "#   为独立成块改绑过 " + rw.length + " 处（局部变量改绑 layout），"
+      + "改的理由见 blocks.json 的 rewrites");
+  }
+}
+
+/* 把用户改过的文案套回那段 ui_py。
+
+   只替换**字符串字面量**：逐字找出 blocks.json 里登记的那句原文，换成
+   重新转义过的新句。绝不整行重写——所以用户写什么都改不坏结构，
+   引号、反斜杠、换行都由 pyStr 负责。
+
+   原文在代码里出现两次以上时不替换（blocks.json 生成期已经禁止这种槽），
+   宁可留着默认文案，也不能猜用户想改哪一处。 */
+function applyBizTexts(src, b, n) {
+  var texts = n.btexts || {};
+  (b.slots || []).forEach(function (s) {
+    var val = texts[s.name];
+    if (val == null || val === s.text) { return; }
+    var cnt = src.split(s.literal).length - 1;
+    if (cnt !== 1) {
+      pyStats.textSkipped = (pyStats.textSkipped || 0) + 1;
+      return;
+    }
+    src = src.replace(s.literal, pyStrF(val, s.literal.indexOf("f\"") === 0));
+  });
+  return src;
+}
+
 function pyNoteLines(n, ind) {
   var out = [ind + "#   想做什么 · 为什么：" +
     (n.note ? n.note : "（这块没写标注）")];
@@ -3307,6 +3736,16 @@ function pyLevel(out, todo, used, parentUid, host, depth) {
     if (n.downgraded) {
       // 降级块在 Blender 里根本没有对应东西：生成代码就是谎称它会出现。
       out.push(ind + "# ✗ 做不到，所以这里不生成代码（只是这条需求的记录）");
+      return;
+    }
+
+    /* 业务块不做翻译：它带的那段 ui_py 就是插件 ui.py 里现成的代码，
+       原样贴出去。翻译过的代码「看起来对但画不出来」是最坏的一种错，
+       而业务块这条路从设计上就不经过任何翻译。
+       文案改动只落在字符串字面量上，所以替换用的是「逐字找出那个字面量、
+       换成重新转义过的新字面量」，不会碰到任何结构。 */
+    if (n.bkey) {
+      pyBizLines(out, todo, n, ind);
       return;
     }
 
@@ -3413,7 +3852,7 @@ function buildPy() {
   var todo = [];
   var used = {};
   pyCols = {};
-  pyStats = { total: 0, todo: 0 };
+  pyStats = { total: 0, todo: 0, textSkipped: 0 };
   pyFlag = { todo: false };
   var now = new Date().toISOString().replace("T", " ").slice(0, 19);
   out.push("# -*- coding: utf-8 -*-");
@@ -3448,11 +3887,35 @@ function buildPy() {
 /* ---------------- 方案说明（Markdown）----------------
    这是「告诉你」的主渠道，所以格式必须干净：只讲搭了什么、你想了什么、
    哪里降级了、哪些还没验证。一行调试信息都不塞。 */
+/* 业务块在方案说明里的那几行。它没有「代码形态 / 参数 / 归属」那些栏——
+   那些栏说的都是 UILayout 原语的事，硬套到业务块上会写出「参数：（空）」
+   这种让人以为漏填了的假字段。业务块该说的是：它是哪一块、什么样式、
+   改了哪几句文案。 */
+function mdBizBlock(n, depth) {
+  var ind = mdIndent(depth);
+  var b = blockByKey(n.bkey);
+  var v = b ? variantOf(b, n.bvar) : null;
+  var lines = [ind + "- **" + n.label + "**（界面块 · " +
+    (b ? (TAB_LABELS[b.tab] || b.tab) : "未知界面") + "）"];
+  if (v) { lines.push(ind + "  - 样式：" + v.label + " —— " + v.what); }
+  lines.push(ind + "  - 备注名：" + (n.id ? ("`" + n.id + "`") : "（没填，不影响导出）"));
+  lines.push(ind + "  - 代码出处：blender_deepseek_agent/ui.py 里「" +
+    (v ? v.label : n.bkey) + "」那一段，原样抄来");
+  var edits = [];
+  (b && b.slots || []).forEach(function (s) {
+    var val = (n.btexts || {})[s.name];
+    if (val != null && val !== s.text) { edits.push(s.label + " = " + val); }
+  });
+  if (edits.length) { lines.push(ind + "  - 改了文案：" + edits.join("；")); }
+  return lines;
+}
+
 function mdIndent(depth) { return new Array(depth + 1).join("  "); }
 
 function mdBlock(n, depth) {
   var ind = mdIndent(depth);
   var c = n.content || {};
+  if (n.bkey) { return mdBizBlock(n, depth); }
   var head = ind + "- **" + n.label + "**（" + n.wkey + "）";
   if (n.downgraded) {
     return [head + " —— 降级项，Blender 里做不到，不生成代码",
@@ -4036,6 +4499,10 @@ function demoTabSpec(rest) {
 
 function runDemoHook(hash) {
   var h = String(hash || "").replace(/^#/, "");
+  /* 业务块钩子（#biz-*）在进 runDemoHook 之前就被接走了：它们测的是
+     界面块那一层（无嵌套 / 无参数框 / 导出原样带走 ui.py），
+     与底下那套 UILayout 原语的钩子互不相干。 */
+  if (h.indexOf("biz-") === 0) { runBizHook(h); return; }
   var kind = (h === "proposal-all") ? "all"
            : (h === "proposal-blocked") ? "blocked"
            : (h === "proposal-typing") ? "typing"
@@ -4116,6 +4583,154 @@ function runDemoHook(hash) {
   }).catch(function (e) {
     setStatus("DEMO 失败：" + e.message);
   });
+}
+
+/* ---------------- 业务块的验收钩子（#biz-*）----------------
+   这些 hash 只给无头 Edge 用（dev/test_proposal_blocks.py）与截图用，
+   真人打开工作台永远是空 hash 或 #idle。它们刻意只点**真实按钮**、
+   只读**浏览器算出来的东西**，不直接调内部函数——否则验的就不是
+   用户点的那条路了。
+
+     #biz-empty   只切视图，什么都不插（看空态与控件架）
+     #biz-all     把 16 块全点一遍
+     #biz-demo    插一个 6 块的对话界面（截图 2 用）
+     #biz-report  插完跑一遍读数并报出来：块数 / 有没有嵌套 /
+                  有没有参数框 / 变体下拉 / 拖动重排 / 文案改动是否落到导出
+     #biz-export  报出导出的 ui.py 全文（验它能被 ast.parse） */
+function runBizHook(hash) {
+  var h = String(hash || "").replace(/^#/, "");
+  var kind = h.indexOf("biz-") === 0 ? h.slice(4) : null;
+  if (!kind) { return; }
+  switchView("proposal");
+  loadVocab().then(function () {
+    if (kind === "empty") {
+      setStatus("BIZ empty 块 0");
+      return;
+    }
+    if (kind === "all") {
+      var bs = el("vocab-bar").querySelectorAll("button[data-bkey]");
+      for (var i = 0; i < bs.length; i++) { bs[i].click(); }
+      setStatus("BIZ all 块 " + proposal.length);
+      return;
+    }
+    if (kind === "demo") { insertBizDemo(); return; }
+    if (kind === "report") { insertBizDemo(); bizReport(); return; }
+    if (kind === "export") { insertBizDemo(); bizExportReport(); return; }
+    setStatus("BIZ 未知钩子：" + kind);
+  }).catch(function (e) {
+    setStatus("BIZ 失败：" + e.message);
+  });
+}
+
+/* 一套 6 块的对话界面。挑法：页签条 / 状态提示条 / 消息气泡 /
+   对话输入区 / 底部操作行 / 规格选项组——正好是插件对话面板里从上到下
+   真实存在的那几块（ui.py 的 draw_chat_content）。 */
+function insertBizDemo() {
+  var want = ["chat_tabbar", "chat_status", "chat_bubble", "chat_questions",
+              "chat_composer", "chat_actions"];
+  want.forEach(function (k) {
+    var b = blockByKey(k);
+    if (b) { addBizBlock(b); }
+  });
+  setStatus("BIZ 已插入 " + proposal.length + " 块（对话面板）");
+}
+
+function bizReport() {
+  var canvas = el("canvas");
+  /* 拖动重排：把第 1 块挪到最后。派发真的 DragEvent 走一遍真链路，
+     不直接调 reorderTo——要验的就是「用户拖一下会怎样」。 */
+  var before = uidListOf(proposal);
+  var boxes = canvas.querySelectorAll('.bnode[data-uid]');
+  if (boxes.length > 1) {
+    fireDrag(boxes[0], "dragstart", 0, null);
+    var last = boxes[boxes.length - 1];
+    var r = last.getBoundingClientRect();
+    fireDrag(last, "dragover", r.bottom - 2, null);
+    fireDrag(last, "drop", r.bottom - 2, null);
+  }
+  clearDrag();
+  var after = uidListOf(proposal);
+
+  /* 文案改动：把状态提示条（busy 变体）那个「终止任务」改成别的，
+     看它有没有真的落到导出的代码里。
+
+     用「改前 / 改后各数一遍出现次数」而不是「改完就全文不该有这句」：
+     插件里「终止任务」这四个字不止一处（对话输入区的 else 分支也有），
+     按全文找会得到一个恒假的断言。真正要证明的是**这一处**被换掉了。 */
+  var status = proposal.filter(function (n) { return n.bkey === "chat_status"; })[0];
+  var slotName = "";
+  var before2 = buildPy();
+  var oldCount = 0;
+  if (status) {
+    var b = blockByKey(status.bkey);
+    var v = variantOf(b, status.bvar);
+    var s = (b.slots || []).filter(function (x) {
+      return String(v.ui_py).indexOf(x.literal) >= 0;
+    })[0];
+    if (s) {
+      slotName = s.name;
+      oldCount = before2.split(s.literal).length - 1;
+      status.btexts = {};
+      status.btexts[s.name] = "立刻停下";
+    }
+  }
+  var py = buildPy();
+  var edited = slotName ? (py.indexOf("立刻停下") >= 0) : false;
+  var newCount = slotName
+    ? (py.split("\"" + "终止任务\"").length - 1) : 0;
+
+  /* 展开全部：改文案 / 备注名 / 样式下拉这三样输入框只在展开态进 DOM，
+     不展开就量不到，等于让「折叠时渲染错误」这类 bug 逃过去。 */
+  proposal.forEach(function (n) { n.expanded = true; });
+  renderCanvas();
+  var canvas = el("canvas");
+  /* dataset 的键必须是驼峰：写 "biz-nodes" 会在赋值时直接抛
+     TypeError（DOMStringMap 不接受带横线的属性名），整条钩子就哑了。
+     落到 DOM 上是 data-biz-nodes，测试那边按横线读回来。 */
+  appendReport("biz-report", {
+    "blocks": String(proposal.length),
+    "bizNodes": String(canvas.querySelectorAll(".bnode").length),
+    /* 「业务块不可再嵌套」：画布上不许出现 .pgroup（容器分组框），
+       也不许出现任何带 data-parent 的业务块。 */
+    "pgroups": String(canvas.querySelectorAll(".pgroup").length),
+    "nested": String(canvas.querySelectorAll(".bnode[data-parent]:not([data-parent=''])").length),
+    /* 「业务块没有参数框」：data-field="params" 一个都不该有。 */
+    "paramBoxes": String(canvas.querySelectorAll('[data-field="params"]').length),
+    "parentSelects": String(canvas.querySelectorAll('[data-field="parent"]').length),
+    "moveBtns": String(canvas.querySelectorAll(".pmove").length),
+    "textBoxes": String(canvas.querySelectorAll('[data-field="btext"]').length),
+    "idBoxes": String(canvas.querySelectorAll('[data-field="id"]').length),
+    "variantSelects": String(canvas.querySelectorAll('[data-field="bvar"]').length),
+    "shelfCards": String(document.querySelectorAll(".bcard").length),
+    "shelfButtons": String(document.querySelectorAll("button[data-bkey]").length),
+    "advDetails": String(document.querySelectorAll("details#adv-primitives").length),
+    "pvBiz": String(canvas.ownerDocument.querySelectorAll(".pv-biz").length),
+    "dragChanged": (before !== after) ? "1" : "0",
+    "dragFirstWasFirst":
+      (before.split(",")[0] !== after.split(",")[0]) ? "1" : "0",
+    "editedInPy": edited ? "1" : "0",
+    "oldCount": String(oldCount),
+    "newCount": String(newCount),
+    "slot": slotName,
+    "pyLines": String(py.split("\n").length)
+  });
+}
+
+function bizExportReport() {
+  var py = buildPy();
+  appendReport("biz-export", {
+    "pyLines": String(py.split("\n").length),
+    "py": py
+  });
+  /* 截图要看的就是这段代码，而它在页面最底下。前面还有一屏控件架加一屏
+     画布，无头 --screenshot 只截视口，滚过去也只滚到导出面板的标题。
+     所以给 body 挂一个只给截图用的 class，由 style.css 把控件架与画布收掉。
+     真人打开工作台永远不会带上这个 class（只有 #biz-export 这条钩子会加）。 */
+  document.body.classList.add("uw-shot-export");
+  var panel = el("export-panel");
+  if (panel && panel.scrollIntoView) {
+    panel.scrollIntoView({ block: "start" });
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);

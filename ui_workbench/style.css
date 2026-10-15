@@ -316,6 +316,50 @@ button.chip {
   border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit;
 }
 .wnote { color: var(--text-dim); font-size: 11px; line-height: 1.5; margin-top: 4px; }
+
+/* ---- 业务块 ----
+   业务块卡比原语卡宽：它要在一张卡里讲清「这是什么、什么时候出现」，
+   128px 装不下那句话，用户就只能靠名字猜——而「猜」正是要消掉的那件事。
+   高级区（<details>）默认收起：12 张原语卡不该占着第一屏。 */
+.advanced { margin: 10px 0 4px; }
+.advanced > summary {
+  cursor: pointer; color: var(--text-dim); padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+.bcard { width: 236px; }
+.bcard > button { text-align: left; }
+/* 业务块卡比原语卡宽，里面那些小方块是同一套图示渲染器画出来的：
+   方块里的字是单行不折的，宽度一变就会顶出卡片边界。把溢出关掉、
+   长字收成省略号——图示只需要看得出「有几块、排成什么形状」，
+   上面本来就有一句话写着这块是什么。 */
+.bcard .demo { overflow: hidden; }
+.bcard .d-it { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.btab {
+  display: inline-block; margin: 4px 0 0; padding: 0 6px; font-size: 11px;
+  border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim);
+}
+.pvar {
+  display: block; width: 100%; margin: 6px 0 0;
+  background: var(--field); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px;
+  font: inherit;
+}
+.bnode .phead code { color: var(--text-dim); }
+/* 预览里的业务块：块名 + 它自己的图示，中间用一条竖线隔开，
+   让人一眼看出「这是一整块」，而不是几个互不相干的小元件。 */
+.pv-biz {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 4px 6px; border-left: 2px solid var(--border);
+}
+.pv-bizname { color: var(--text); font-size: 12px; }
+
+/* ---- 截图模式（只给 #biz-export 用）----
+   导出面板在页面最底下，前面还有一屏控件架加一屏画布；无头 --screenshot
+   只截视口，不收掉上面那两屏就永远截不到那段代码。真人打开工作台不会带上
+   这个 class，所以这条规则对日常使用没有任何影响。不含任何新色值。 */
+body.uw-shot-export #vocab-bar,
+body.uw-shot-export .canvas-split,
+body.uw-shot-export #prop-notes { display: none; }
 .demo {
   display: flex; background: var(--panel); border: 1px solid var(--border);
   border-radius: 4px; padding: 4px; height: 56px; align-items: stretch;
