@@ -3209,6 +3209,9 @@ function pyAttrLines(n, varName, ind) {
   return out;
 }
 
+/* 占位名字一律写成「一眼认得出不是真的」的样子：deepseek.TODO_算子名待定
+   而不是 deepseek.TODO_填算子名——扫代码的人先看到「待定」两个字，
+   不会以为那只是个人类可读的后缀就照抄进 ui.py。 */
 function pyOperatorId(n, todo) {
   var id = String(n.id || "").trim();
   if (id.indexOf("deepseek.") === 0) { return id; }
@@ -3218,14 +3221,34 @@ function pyOperatorId(n, todo) {
     return "deepseek." + id;
   }
   todo.push("算子「" + n.label + "」还没填元素 ID，代码里留的是 TODO 占位——请填真实算子名");
-  return "deepseek.TODO_填算子名";
+  return "deepseek.TODO_算子名待定";
 }
+
+/* 元素 ID 与 Property 名是两回事。元素 ID 是工作台里定位这块积木用的，
+   state.prop() 要的是 state 上真有的属性名。把 "chat.composer" 原样塞进
+   state.prop(state, "chat.composer") 看着能抄、真跑起来是 AttributeError——
+   这种「看着对其实对不上」的代码最费时间，所以只有下表核对过的才照抄，
+   其余一律在行首标 TODO。
+   下表抄自 blender_deepseek_agent/ui.py:953 的 draw_chat_content：
+     cbox.textbox(state, "prompt", initial_visible_lines=state.prompt_lines, ...) */
+var PY_PROP_NAMES = {
+  "chat.composer": "prompt"
+};
 
 function pyPropName(n, todo) {
   var id = String(n.id || "").trim();
-  if (id) { return id; }
+  if (PY_PROP_NAMES[id]) { return PY_PROP_NAMES[id]; }
+  if (id) {
+    /* 有元素 ID 但没核对过：照填可以（用户多半知道自己写的是什么），
+       但必须在这一块前面留一行行首 # TODO，见 pyLevel 里 pyFlag.todo 的用法。
+       宁好多一句提醒，也不要给一段看着能跑、实际对不上的代码。 */
+    todo.push("「" + n.label + "」的元素 ID 是「" + id +
+      "」，它未必就是 state 上的 Property 名，已照原样填上——请核对真实属性名");
+    pyFlag.todo = true;
+    return id;
+  }
   todo.push("「" + n.label + "」还没填元素 ID，属性名留的是 TODO 占位——请填真实的 Property 名字");
-  return "TODO_属性名";
+  return "TODO_属性名待定";
 }
 
 function pyNoteLines(n, ind) {
@@ -3244,10 +3267,37 @@ function pyNoteLines(n, ind) {
   return out;
 }
 
-/* 递归翻译一层。host = 生成出来的代码里「这些东西该往哪放」的变量名。 */
+/* buildPy 一次运行里记的两本账。导出面板上那行统计、测试报告里的缩进表，
+   读的都是它们——同一份数，不许两处各算一遍（各算一遍就迟早对不上）。 */
+var pyCols = {};
+var pyStats = { total: 0, todo: 0 };
+/* pyPropName 遇到「有元素 ID 但没核对过」时置位：这一块生成的代码看着能跑，
+   实际未必对得上，行首必须留一行 # TODO 提醒。 */
+var pyFlag = { todo: false };
+
+/* 占位标记写在行首：grep '# TODO' 一把抓得到，扫一眼代码的人也不会把
+   deepseek.TODO_算子名待定 当成真算子名抄走。 */
+function pyTodoComment(n, ind) {
+  return ind + "# TODO: 「" + n.label + "」还没填真实取值（元素 ID / Property 名 / "
+    + "算子名），下面这行是占位，不能直接用。";
+}
+
+/* 递归翻译一层。host = 生成出来的代码里「这些东西该往哪放」的变量名。
+   depth 只用于 pyCols 的记账，不再决定缩进——原因见下面那三行。 */
 function pyLevel(out, todo, used, parentUid, host, depth) {
-  var ind = pyIndent(depth);
+  /* 缩进是这个生成器最要紧的形状，而它的正确答案只有一个：全部同列。
+     Blender 的 UILayout 不是上下文管理器——row = layout.row() 之后紧跟的
+     row.label() 必须和这一行同列；嵌套只能靠变量名表达（col / col2 / col3 /
+     grid），真实的 ui.py 里 draw_chat_content 也正是这么写的。
+     往下多缩一格在 Python 里不是「更深」，是 IndentationError：函数体里
+     第一个定格的块之后，同一层没有 for/if/while 去开一个 suite，那行直接
+     unexpected indent。递归里为子块加一级深度，就是当年那个 bug。
+     ast.parse 是这件事唯一的判据，dev/test_proposal_vocab.py 每次都跑。 */
+  var ind = pyIndent(1);
   nodesAtDepth(parentUid).forEach(function (n, i) {
+    var idx = proposal.indexOf(n);
+    pyCols[idx] = ind.length;
+    pyStats.total++;
     var c = n.content || {};
     var head = ind + "# ── " + (i + 1) + ") " +
       (n.id || "（没填元素 ID）") + " · " + n.label;
@@ -3277,6 +3327,7 @@ function pyLevel(out, todo, used, parentUid, host, depth) {
     var kw = (CONTAINER_WKEYS.indexOf(n.wkey) >= 0) ? pyKw(n, todo) : "";
     var base = null;
     var stmt = null;
+    pyFlag.todo = false;
     if (n.wkey === "row" || n.wkey === "column") {
       var kwc = kw;
       var head2 = c.heading || paramValue(n, "heading", null);
@@ -3304,6 +3355,14 @@ function pyLevel(out, todo, used, parentUid, host, depth) {
         (hasParam(n, "default_closed") ? ", default_closed=True" : "") + ")";
     } else {
       stmt = pyLeaf(n, host, todo);
+    }
+
+    /* 这块要不要先喊一声 TODO：语句里自带占位名字（deepseek.TODO_算子名待定），
+       或者 pyPropName 说「这个属性名没核对过」。两种都必须在行首留标记，
+       否则用户扫过去只会以为那段是能直接用的。 */
+    if (pyFlag.todo || /TODO/.test(String(stmt))) {
+      pyStats.todo++;
+      out.push(pyTodoComment(n, ind));
     }
 
     if (base) {
@@ -3353,6 +3412,9 @@ function buildPy() {
   var out = [];
   var todo = [];
   var used = {};
+  pyCols = {};
+  pyStats = { total: 0, todo: 0 };
+  pyFlag = { todo: false };
   var now = new Date().toISOString().replace("T", " ").slice(0, 19);
   out.push("# -*- coding: utf-8 -*-");
   out.push("#");
@@ -3646,6 +3708,28 @@ function renderExportPanel() {
 function renderPyOut() {
   var pre = el("py-out");
   if (pre) { pre.textContent = buildPy(); }
+  /* 统计行紧贴代码上方：导出看着像「完事了」，其实一半的块还是占位。
+     不靠红黄绿表达状态（实测主题里没有红也没有绿），靠文字 + 明度差：
+     数字用亮色，说明用暗色。 */
+  var st = el("py-stat");
+  if (!st) { return; }
+  st.innerHTML = "";
+  var okN = pyStats.total - pyStats.todo;
+  var a = document.createElement("span");
+  a.className = "code-stat-num";
+  a.textContent = "共 " + pyStats.total + " 块 · 其中 " + pyStats.todo +
+    " 块带 TODO 占位 · " + okN + " 块已完整";
+  var b = document.createElement("span");
+  b.className = "code-stat-hint";
+  b.textContent = (pyStats.todo > 0)
+    ? ("——带占位的 " + pyStats.todo + " 块不能直接粘进 ui.py，先按行首的 # TODO 逐条填真值；"
+       + "已完整的那 " + okN + " 块同样还没在真实 Blender 里跑过。")
+    : "——每一块都还没在真实 Blender 里跑过，贴进 ui.py 后先看渲染结果。";
+  st.appendChild(a);
+  st.appendChild(b);
+  st.dataset.total = String(pyStats.total);
+  st.dataset.todo = String(pyStats.todo);
+  st.dataset.ok = String(okN);
 }
 
 /* #proposal-select：从右栏点 <-> 从左栏点，两个方向各走一遍真 click。
@@ -3849,6 +3933,9 @@ function exportReport() {
      「代码看着对」就又变成了唯一证据。 */
   var vb = el("vocab-bar").querySelector('button[data-wkey="separator"]');
   if (vb) { vb.click(); }
+  /* 先把面板刷新一次：上面刚点进来的分隔线得进 <pre>，也得出现在统计行里。
+     不刷的话下面量到的 pyStats 与用户眼前那行数字对不上。 */
+  renderPyOut();
   var py = buildPy();
   var md = buildMarkdown();
   var js = buildJSON();
@@ -3856,24 +3943,26 @@ function exportReport() {
      检查它的原文真的进了 Markdown。写死一句示例文案的话，
      生成器把 note 整个吞掉也照样绿。 */
   var noted = proposal.filter(function (n) { return !!n.note; })[0];
-  /* 缩进是这个生成器最要紧的形状：容器必须比它的直接孩子深正好一层。
-     量法：找到第一行「变量 = 某容器.xxx(」的容器语句，再往下找第一条
-     非注释语句，两行的列差必须正好是 4。
-     之前那版量的是「box 行和后面某条 label 行的差」——它们其实是兄弟，
-     差值 0 看着像失败，其实是探针挑错了行。 */
-  var depths = [];
   var lines = py.split("\n");
-  var CONTAINER_CALL = /^\s*(\w+) = [\w.]+\.(row|column|box|split|grid_flow|panel)\(/;
-  for (var i = 0; i < lines.length && depths.length < 3; i++) {
-    var cm = CONTAINER_CALL.exec(lines[i]);
-    if (!cm) { continue; }
-    for (var j = i + 1; j < lines.length; j++) {
-      var t = lines[j];
-      if (!t.trim() || /^\s*#/.test(t)) { continue; }
-      depths.push(t.length - t.replace(/^\s*/, "").length -
-                  (lines[i].length - lines[i].replace(/^\s*/, "").length));
-      break;
-    }
+  /* 缩进是这个生成器最要紧的形状：Blender 的 UILayout 不是上下文管理器，
+     row = layout.row() 后面那几行必须和它自己同列，多一格贴进 ui.py 就是
+     IndentationError。
+     量的不是「容器行的下一行差几列」——没有子块的容器后面那行是它的兄弟，
+     差 0 是碰巧，不是证据（上一版就是这么挑错了行）。这里按树去找：
+     每个容器的第一块子积木 vs 容器自己，差必须是 0。 */
+  var COLS = pyCols;
+  var deltas = [];
+  for (var ci = 0; ci < proposal.length; ci++) {
+    var node = proposal[ci];
+    if (CONTAINER_WKEYS.indexOf(node.wkey) < 0) { continue; }
+    var kids = childrenOf(node.uid);
+    if (!kids.length) { continue; }
+    deltas.push(COLS[proposal.indexOf(kids[0])] - COLS[ci]);
+  }
+  var mapKeys = [];
+  for (var ki = 0; ki < proposal.length; ki++) {
+    if (COLS[ki] === undefined) { continue; }
+    mapKeys.push(ki);
   }
   var pyLines = lines.length;
   /* 数的是「哪种调用出现了几次」，不是「有几行字里写着 layout.」：
@@ -3885,23 +3974,40 @@ function exportReport() {
   var opLines = lines.filter(function (l) {
     return /\.operator\(/.test(l);
   }).length;
-  /* TODO 只数「代码里那些占位」，不算文末清单里复述它们的那几行：
-     清单条目本身也写着 TODO_填算子名，一并数进去就翻倍了。 */
+  /* TODO 只数「代码里那些占位语句」，不算注释、更不算文末清单里复述它们
+     的那几行：清单条目本身也写着 TODO_算子名待定，一并数进去就翻倍了。
+     判据是「非注释行里出现 TODO」——正好是用户扫代码时会看见的那些行。 */
   var cut = lines.findIndex(function (l) {
     return /落笔前必须人工处理的/.test(l);
   });
-  var codePart = lines.slice(0, cut < 0 ? lines.length : cut).join("\n");
+  var codePart = lines.slice(0, cut < 0 ? lines.length : cut);
+  var todoStmts = codePart.filter(function (l) {
+    var t = l.trim();
+    return t.indexOf("#") !== 0 && /TODO/.test(t);
+  });
+  var todoFlags = codePart.filter(function (l) {
+    return /^\s*#\s*TODO:/.test(l);
+  });
   appendReport("export-report", {
     pyLines: String(pyLines),
     pyHead: lines.slice(0, 4).join(" / ").slice(0, 200),
     pyHasFunc: /def draw_chat_content\(layout, state\):/.test(py) ? "1" : "0",
-    pyHasIndent: depths.length ? String(depths[0]) : "",
-    pyIndentN: String(depths.length),
+    pyChildDeltas: deltas.join(","),
+    pyChildDeltaN: String(deltas.length),
+    pyIndentMap: mapKeys.map(function (i) { return i + ":" + COLS[i]; }).join(" "),
+    pyBlockKeys: mapKeys.map(function (i) {
+      return proposal[i].wkey + "|" + (proposal[i].id || "");
+    }).join(" "),
+    pyStatTotal: String(pyStats.total),
+    pyStatTodo: String(pyStats.todo),
+    pyStatOk: String(pyStats.total - pyStats.todo),
+    pyStatShown: String(((el("py-stat") || {}).textContent || "").length),
+    pyTodoFlagged: String(todoFlags.length),
     pyHasNote: noted && py.indexOf(noted.note) >= 0 ? "1" : "0",
     pyHasUnverified: (py.match(/未经验证/g) || []).length,
     pyHasSep: String(sepLines),
     pyHasOp: String(opLines),
-    pyTodo: String((codePart.match(/TODO/g) || []).length),
+    pyTodo: String(todoStmts.length),
     pyChecks: (py.match(/必须人工处理的 (\d+) 处/) || [0, "?"])[1],
     mdLines: String(md.split("\n").length),
     mdHasTree: /## 一、当前搭了什么/.test(md) ? "1" : "0",

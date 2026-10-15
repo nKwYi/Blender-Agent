@@ -11,6 +11,8 @@
   2. 无头 Edge 侧真渲染提案视图，核对 12 个控件与全部降级方案能不能插入、
      拦截拦不拦得住——静态检查看不到 app.js 算出来的 DOM。
 """
+import ast
+import html
 import json
 import os
 import pathlib
@@ -2262,6 +2264,9 @@ def export_checks(page, vocab):
     把标注吞了，点一百次按钮也是错的。
     """
     at = report(page, "export-report")
+    # 期望值全部对着 vocabulary.json 的真数据算，不写死数字：
+    # 示例面板一改，写死的数字就会变成一条永远红或者永远绿的假断言。
+    panel = (vocab.get("example_panels") or {}).get("chat", {}).get("blocks") or []
     ck("export_hook_ran", bool(at) and int(at.get("py-lines", "0") or 0) > 20,
        "导出钩子没跑起来：%s" % at)
     ck("export_py_function",
@@ -2271,12 +2276,127 @@ def export_checks(page, vocab):
     ck("export_py_function_visible",
        "def draw_chat_content(layout, state):" in pre_of(page),
        "页面上那段 <pre> 里没有 def draw_chat_content(layout, state):")
-    # 缩进是这个生成器最要紧的形状：容器比它的直接孩子浅正好一层。
-    # 查子串 "    " 没用（那对任何文件都成立），量的是两行的真实列差。
-    ck("export_py_indents_one_level",
-       at.get("py-has-indent") == "4" and at.get("py-indent-n", "0") == "3",
-       "容器必须比它的直接孩子深正好一层（4 列）；抽了 %s 处，差值 %s"
-       % (at.get("py-indent-n"), at.get("py-has-indent")))
+    # 缩进是这个生成器最要紧的形状，而它的正确答案只有一个：全部同列。
+    # UILayout 不是上下文管理器，row = layout.row() 后面那几行必须和它自己同列；
+    # 往下多缩一格在 Python 里不是「更深」，是 IndentationError（见 export_py_parses_as_python）。
+    # 量法：按树去找每个容器的第一块子积木，比它自己的列数，差必须是 0。
+    # 不是「容器行的下一行」——没有子块的容器后面那行是它的兄弟，差 0 是碰巧不是证据。
+    deltas = [d for d in (at.get("py-child-deltas") or "").split(",") if d != ""]
+    ck("export_py_child_same_indent_as_container",
+       len(deltas) >= 3 and all(d == "0" for d in deltas),
+       "容器与它的第一块子积木必须同列（差 0）；抽了 %d 处，差值 %s"
+       % (len(deltas), deltas))
+    # 逐块钉死：每一块的列数都必须是 4，且必须等于它父块的列数。
+    # 这一条对着 vocabulary.json 的 example_panel_parents 算，不对着报告自报的值算。
+    parent_map = (vocab.get("example_panel_parents") or {}).get("chat") or {}
+    n_blocks = len(panel) + 1          # +1：钩子真点了一个分隔线上来
+    cols = {}
+    for tok in (at.get("py-indent-map") or "").split():
+        if ":" not in tok:
+            continue
+        i, c = tok.split(":", 1)
+        cols[int(i)] = int(c)
+    want_cols = {}
+    for i in range(n_blocks):
+        anc = 0
+        cur = i
+        while True:
+            pi = parent_map.get(str(cur))
+            if pi in (None, "", -1) or str(pi) == "-1":
+                break
+            cur = int(pi)
+            anc += 1
+            if anc > 20:
+                break
+        # UILayout 的嵌套只能靠变量名表达，代码里所有块都在同一列。
+        want_cols[i] = 4
+    ck("export_py_indent_map_covers_every_block",
+       len(cols) == n_blocks,
+       "缩进表覆盖了 %d 块，示例面板 + 分隔线应当是 %d 块" % (len(cols), n_blocks))
+    ck("export_py_every_block_at_one_level",
+       bool(cols) and all(cols[i] == want_cols[i] for i in cols),
+       "每一块都必须落在第 4 列：%s" % sorted(set(cols.values())))
+    bad_kids = []
+    for i, c in cols.items():
+        pi = parent_map.get(str(i))
+        if pi in (None, "", -1) or str(pi) == "-1":
+            continue
+        if cols.get(int(pi)) != c:
+            bad_kids.append("%d(%d) vs 父 %d(%d)" % (i, c, int(pi), cols.get(int(pi))))
+    ck("export_py_child_never_deeper_than_parent", not bad_kids,
+       "子积木比父容器缩进更深的有：%s" % bad_kids)
+    # 块与块的对应关系也要核对：索引对不上，上面的列数就全是在比空气。
+    want_keys = ["%s|%s" % (b["wkey"], b.get("element_id") or "") for b in panel]
+    want_keys.append("separator|")
+    ck("export_py_block_keys_match_panel",
+       (at.get("py-block-keys") or "").split() == want_keys,
+       "导出时看到的块序与示例面板对不上：%s" % (at.get("py-block-keys") or "")[:200])
+    # 生成的代码必须能被 Python 解析器接受——这一条一次抓住所有缩进错误，
+    # 比逐条比对列数强得多。ast 是标准库，不启 Blender。
+    src = py_src(page)
+    try:
+        ast.parse(src)
+        ck("export_py_parses_as_python", True, "")
+    except SyntaxError as e:
+        ck("export_py_parses_as_python", False,
+           "生成的 ui.py 片段 Python 解析不过：%s（第 %s 行）\n%s"
+           % (e.msg, e.lineno, src.split("\n")[(e.lineno or 1) - 1]))
+    # 占位必须写在行首的 # TODO 上，否则用户扫一眼就把它当真值抄走了。
+    code_lines = []
+    for ln in src.split("\n"):
+        if re.match(r"^#\s*-+\s*落笔前必须人工处理的", ln):
+            break
+        code_lines.append(ln)
+    unmarked = []
+    for i, ln in enumerate(code_lines):
+        if "TODO" not in ln or ln.strip().startswith("#"):
+            continue
+        prev = code_lines[i - 1].strip() if i else ""
+        if not prev.startswith("# TODO:"):
+            unmarked.append(ln)
+    ck("export_py_todo_placeholder_is_flagged", not unmarked,
+       "这些占位行前面没有行首 # TODO 标记：%s" % unmarked[:3])
+    ck("export_py_todo_flag_count_matches",
+       at.get("py-todo-flagged") == at.get("py-todo") and int(at.get("py-todo", "0") or 0) > 0,
+       "占位语句 %s 处，行首 # TODO 标记 %s 处，两者应当相等且不为 0"
+       % (at.get("py-todo"), at.get("py-todo-flagged")))
+    # 元素 ID 与 Property 名不是一回事：不能把 "chat.composer" 当属性名塞进 state。
+    ck("export_py_prop_table_is_not_empty", bool(VERIFIED_PROPS),
+       "app.js 里 PY_PROP_NAMES 是空的或没解析出来：ui.py 里核对过的属性名一条都没有")
+    ck("export_py_textbox_uses_real_prop_name",
+       'textbox(state, "prompt"' in src and 'textbox(state, "chat.composer"' not in src,
+       "textbox 的属性名应当是 ui.py 里真实存在的 prompt（见 app.js PY_PROP_NAMES），"
+       "不能把元素 ID chat.composer 当 Property 名")
+    # 反过来也一样：没核对过的属性名必须被标成占位，不许「看着能跑」。
+    lying = []
+    for i, ln in enumerate(code_lines):
+        m2 = re.search(r"\.(prop|textbox)\(state, \"([^\"]+)\"", ln)
+        if not m2:
+            continue
+        prev = code_lines[i - 1].strip() if i else ""
+        if not prev.startswith("# TODO:") and m2.group(2) not in VERIFIED_PROPS:
+            lying.append(ln.strip())
+    ck("export_py_no_unverified_prop_name", not lying,
+       "这些属性名没在 ui.py 里核对过、也没标占位：%s" % lying[:3])
+    # 统计行：几个坑必须一眼可见。数对着示例面板的真数据算 + 那个分隔线。
+    want_todo_blocks = len([b for b in panel if b["wkey"] in ("operator", "prop", "textbox")
+                            and not b.get("element_id")])
+    ck("export_stat_total_matches", at.get("py-stat-total") == str(n_blocks),
+       "统计行说总共 %s 块，应当是 %d 块（示例面板 + 分隔线）"
+       % (at.get("py-stat-total"), n_blocks))
+    ck("export_stat_todo_matches", at.get("py-stat-todo") == str(want_todo_blocks),
+       "统计行说 %s 块带 TODO 占位，示例面板里没填元素 ID 的算子/属性是 %d 块"
+       % (at.get("py-stat-todo"), want_todo_blocks))
+    ck("export_stat_ok_is_the_rest",
+       at.get("py-stat-ok") == str(n_blocks - want_todo_blocks),
+       "统计行说 %s 块已完整，应当是 %d - %d = %d 块"
+       % (at.get("py-stat-ok"), n_blocks, want_todo_blocks, n_blocks - want_todo_blocks))
+    stat_txt = stat_row_of(page)
+    ck("export_stat_row_is_rendered",
+       ("共 %d 块" % n_blocks) in stat_txt and
+       ("%d 块带 TODO 占位" % want_todo_blocks) in stat_txt and
+       ("%d 块已完整" % (n_blocks - want_todo_blocks)) in stat_txt,
+       "导出面板上那行统计没有渲染出来或对不上：%r" % stat_txt[:160])
     ck("export_py_carries_note", at.get("py-has-note") == "1",
        "ui.py 里没带上积木的标注")
     # 每一块都得声明「未经验证」，一块都不能漏。
@@ -2285,7 +2405,6 @@ def export_checks(page, vocab):
        "ui.py 里只有 %d 处写了「未经验证」：每块都该有一处" % unv)
     # 数量对着示例面板的真数据算，不写死 9：示例面板一改，写死的数字就会
     # 变成一条永远红或者永远绿的假断言。
-    panel = (vocab.get("example_panels") or {}).get("chat", {}).get("blocks") or []
     want_op = len([b for b in panel if b["wkey"] == "operator"])
     # TODO 一共几处：没填元素 ID 的算子 + 没填元素 ID 的 prop/textbox 属性名。
     # 文末清单标题里那一次不算进 TODO 计数。
@@ -2387,6 +2506,37 @@ def pre_of(p):
     """
     m = re.search(r'<pre id="py-out">(.*?)</pre>', p, re.S)
     return m.group(1) if m else ""
+
+
+def py_src(p):
+    """#py-out 的真实文本（解掉 HTML 实体）。
+
+    ast.parse 要吃的是源码，不是 DOM 序列化后的 &amp; / &lt;。
+    导出面板上那行统计同理：量的是渲染出来的那行字，不是钩子自报的数。
+    """
+    return html.unescape(pre_of(p))
+
+
+def stat_row_of(p):
+    """导出面板上那行统计的渲染文本。"""
+    m = re.search(r'<div class="code-stat" id="py-stat"[^>]*>(.*?)</div>', p, re.S)
+    return html.unescape(m.group(1)) if m else ""
+
+
+def verified_props():
+    """从 app.js 的 PY_PROP_NAMES 里读出「已在 ui.py 里核对过」的属性名集合。
+
+    故意解析源文件而不是在这里重抄一份：抄一份的话，表一改这里就会悄悄
+    过期，过期之后 export_py_no_unverified_prop_name 会把正确的代码判成撒谎。
+    """
+    txt = read(os.path.join(WB, "app.js"))
+    m = re.search(r"var PY_PROP_NAMES = \{(.*?)\};", txt, re.S)
+    if not m:
+        return set()
+    return set(v for _, v in re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', m.group(1)))
+
+
+VERIFIED_PROPS = verified_props()
 
 
 def _fb_for_blocker(rkey):

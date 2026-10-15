@@ -409,6 +409,11 @@ button.chip {
 #export-panel h3 { font-size: 13px; font-weight: normal; color: var(--text); margin: 0 0 4px; }
 #export-panel .code-cap { color: var(--text-dim); font-size: 11px; margin: 8px 0 4px; }
 #export-panel .code-cap b { font-weight: normal; color: var(--text); }
+/* 导出统计：几个坑必须一眼可见。实测主题里没有红也没有绿，所以不靠颜色
+   分「能不能用」，靠明度差（数字亮、说明暗）+ 文字本身。 */
+#py-stat { font-size: 11px; margin: 0 0 6px; line-height: 1.6; }
+#py-stat .code-stat-num { color: var(--text); }
+#py-stat .code-stat-hint { color: var(--text-dim); }
 #py-out {
   margin: 0; max-height: 420px; overflow: auto; white-space: pre;
   background: var(--inner); color: var(--text); border: 1px solid var(--border);
