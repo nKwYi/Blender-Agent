@@ -1248,6 +1248,14 @@ function renderDemo(w) {
   var icons = d.icons || [];
   var bare = d.bare || [];
   var cols = Number(d.cols) > 0 ? Number(d.cols) : 0;
+  /* inset：右边那一栏留白。Blender 那边是 layout.split(factor=…) 取**左边**
+     那列、宽 = factor × 内容宽（实测 align 是 bool 且不影响位置），所以这里
+     也做成「盒子自己不变、只是右边空出一块」——不是把盒子挪位置。 */
+  if (d.inset) {
+    var ins = Math.max(0, Math.min(0.6, Number(d.inset) || 0));
+    box.dataset.dinset = String(ins);
+    box.style.marginRight = Math.round(ins * 100) + "%";
+  }
   if (cols) {
     box.dataset.dcols = String(cols);
     /* 网格的列数必须真的由数据决定，所以这一种形状改用 CSS grid：

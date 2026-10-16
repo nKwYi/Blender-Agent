@@ -252,34 +252,35 @@
     },
     {
      "demo": {
+      "bare": [
+       0,
+       1,
+       2
+      ],
       "icons": [
        "COMMUNITY",
        "FILE_SCRIPT",
        "MESH_DATA"
       ],
+      "inset": 0.22,
       "items": [
        "耗时 12.4s",
        "执行的操作：",
        "新增对象：马克杯"
       ],
-      "kind": "col"
+      "kind": "box"
      },
      "key": "ai",
      "label": "AI 回答",
      "rewrites": [
       {
-       "from": "arow = abox.row(align=True)",
-       "to": "arow = layout.row(align=True)",
-       "why": "ui.py 里 abox 就是 layout（AI 气泡不装框）；独立导出时 abox 不在作用域，改绑 layout"
-      },
-      {
-       "from": "res_box = abox.box()",
-       "to": "res_box = layout.box()",
-       "why": "同上：新增对象那个盒子改绑 layout"
+       "from": "res_box.label(text=f\"新增对象：{item.added_objects_str}\", icon='MESH_DATA')",
+       "to": "abox.label(text=f\"新增对象：{item.added_objects_str}\", icon='MESH_DATA')",
+       "why": "ui.py 里 res_box = abox.box() 又开了一个内盒，整段就成了两层框；用户要求 AI 回复只有一层盒，所以并回 abox 直画"
       }
      ],
-     "ui_py": "if item.duration_str:\n    arow = layout.row(align=True)\n    arow.alignment = 'LEFT'\n    arow.label(text=f\"耗时 {item.duration_str}\", icon='COMMUNITY')\nif item.steps_json:\n    sbox = layout.box()\n    sbox.label(text=\"执行的操作：\", icon='FILE_SCRIPT')\n    for st in steps:\n        sbox.label(text=f\"✓ {st}\")\nif item.added_objects_str:\n    res_box = layout.box()\n    res_box.label(text=f\"新增对象：{item.added_objects_str}\", icon='MESH_DATA')",
-     "what": "不装框，带耗时 / 执行步骤 / 新增对象"
+     "ui_py": "acol = layout.split(factor=AI_MARGIN_SPLIT)\nif isinstance(acol, tuple):\n    acol = acol[0]\nabox = acol.box()\nif item.duration_str:\n    arow = abox.row(align=True)\n    arow.alignment = 'LEFT'\n    arow.label(text=f\"耗时 {item.duration_str}\", icon='COMMUNITY')\nif item.steps_json:\n    abox.label(text=\"执行的操作：\", icon='FILE_SCRIPT')\n    for st in steps:\n        abox.label(text=f\"✓ {st}\")\nif item.added_objects_str:\n    abox.label(text=f\"新增对象：{item.added_objects_str}\", icon='MESH_DATA')",
+     "what": "整段一个盒（耗时 / 执行步骤 / 新增对象），右边留一栏空白"
     }
    ],
    "what": "对话流里的一条消息。你说的话装在盒子里——**一个盒，盒里不再套盒**，文字按盒子的宽度折行（把面板拉宽，每行的字就变多，不给气泡做窄栏也不写死宽度）。**默认展开**：折叠是给长提示词用的，不是默认藏起来——收起时只留一行标题（首句摘要 + 总字数），展开/收起按钮在右下角。Blender 侧就是 layout.panel(idname, default_closed)，idname 对同一条气泡稳定，展开/收起状态跟着积木走。AI 的话不装框，直接排在流里。"
@@ -421,9 +422,9 @@
      "label": "反问一组",
      "rewrites": [
       {
-       "from": "sbody = abox.box() if questions else abox",
+       "from": "sbody = abox",
        "to": "sbody = layout.box()",
-       "why": "ui.py 里这一段挂在对话流 abox 里并按有无 questions 决定要不要另起一盒；独立导出时 abox 不在作用域，直接新建一个盒，也就是「整段规格装在同一个盒里」（用户第 6 条）"
+       "why": "ui.py 里规格段直接画在 AI 那个整段盒 abox 上（用户要求整段只一层盒，规格区是它的一部分而不是另一个盒）；独立导出这一块时abox 不在作用域，于是自己新建一个盒把整段规格装起来"
       }
      ],
      "ui_py": "sbody = layout.box()\nfor q_idx, q in enumerate(questions):\n    q_title = re.sub(r\"^\\s*\\d+\\s*[.、．)）]\\s*\",\n                     \"\", str(q.get('title', '')))\n    sbody.label(text=f\"细节 {q_idx + 1}：{q_title}\",\n                icon='MENU_PANEL')\n    opts = q.get(\"options\", [])\n    orow_holder = sbody.row(align=True)\n    for opt in opts:\n        val = opt.get(\"value\") or opt.get(\"label\", \"\")\n        lbl = opt.get(\"label\", val)\n        orow = orow_holder\n        btn = orow.operator(\"deepseek.submit_selection\",\n                    text=f\"选择: {lbl}\",\n                    icon='CHECKBOX_DEHLT')\n        btn.custom_prompt = f\"针对「{q_title}」，我选择：{val}\"\n\nrec_btn = sbody.operator(\"deepseek.submit_selection\",\n                text=\"按推荐参数开始建模\",\n                icon='PLAY')\nrec_btn.custom_prompt = info.get(\"all_recommended\", \"全部按推荐参数开始建模！\")",

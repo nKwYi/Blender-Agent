@@ -246,18 +246,24 @@ def build():
     # 用 layout.panel(idname, default_closed)，那是真能收起、带原生箭头的控件。
     user_box = ['ubox = _uw_msg_panel(layout, "chat.user_msg", item.text,'
                 " open_default=True)"]
-    ai_box = ["if item.duration_str:",
-              "    arow = layout.row(align=True)",
+    # AI 的话：整段**一个盒**，右边留一栏空白。ui.py:1026-1029 是
+    # layout.split(factor=AI_MARGIN_SPLIT) 取左边那列（实测 split 返回左边列、
+    # 宽 = factor × 内容宽，右边留白；align 在 5.2 是 bool 且不影响位置），
+    # 盒画在那列里 —— 规格区不再是另一个盒，盒里也不再套盒。
+    ai_box = ["acol = layout.split(factor=AI_MARGIN_SPLIT)",
+              "if isinstance(acol, tuple):",
+              "    acol = acol[0]",
+              "abox = acol.box()",
+              "if item.duration_str:",
+              "    arow = abox.row(align=True)",
               "    arow.alignment = 'LEFT'",
               '    arow.label(text=f"耗时 {item.duration_str}", icon=\'COMMUNITY\')',
               "if item.steps_json:",
-              "    sbox = layout.box()",
-              "    sbox.label(text=%s, icon='FILE_SCRIPT')" % pyq("执行的操作："),
+              "    abox.label(text=%s, icon='FILE_SCRIPT')" % pyq("执行的操作："),
               "    for st in steps:",
-              '        sbox.label(text=f"✓ {st}")',
+              '        abox.label(text=f"✓ {st}")',
               "if item.added_objects_str:",
-              "    res_box = layout.box()",
-              '    res_box.label(text=f"新增对象：{item.added_objects_str}", icon=\'MESH_DATA\')']
+              '    abox.label(text=f"新增对象：{item.added_objects_str}", icon=\'MESH_DATA\')']
     bubble_slots = [{"name": "steps", "label": "小标题文字",
                      "text": "执行的操作：", "literal": pyq("执行的操作：")}]
     # 故意给一条**长**的：折叠这件事只有长消息才谈得上，短消息折了也没意义。
@@ -292,17 +298,24 @@ def build():
                                 " layout.panel(idname, default_closed)——那是真能收起、"
                                 "自带原生箭头的控件。展开/收起的状态跟着积木走，"
                                 "导出时把 open_default 一起带出去。"}]),
-            V("ai", "AI 回答", "不装框，带耗时 / 执行步骤 / 新增对象", ai_box,
-              D("col", ["耗时 12.4s", "执行的操作：", "新增对象：马克杯"],
-                icons=["COMMUNITY", "FILE_SCRIPT", "MESH_DATA"]),
+            V("ai", "AI 回答",
+              "整段一个盒（耗时 / 执行步骤 / 新增对象），右边留一栏空白", ai_box,
+              # 盒里那几格是**盒里的正文**（bare）：不画各自的框，
+              # 整段读起来就是一个盒。inset 是右边那一栏空白。
+              D("box", ["耗时 12.4s", "执行的操作：", "新增对象：马克杯"],
+                icons=["COMMUNITY", "FILE_SCRIPT", "MESH_DATA"],
+                bare=[0, 1, 2], inset=0.22),
               rewrites=[
-                  {"to": "arow = layout.row(align=True)",
-                   "from": "arow = abox.row(align=True)",
-                   "why": "ui.py 里 abox 就是 layout（AI 气泡不装框）；"
-                          "独立导出时 abox 不在作用域，改绑 layout"},
-                  {"to": "res_box = layout.box()",
-                   "from": "res_box = abox.box()",
-                   "why": "同上：新增对象那个盒子改绑 layout"},
+                  # ui.py 里「新增对象」那一格是 abox 底下另起的一个内盒
+                  # （res_box = abox.box()）。用户改成整段只有一层盒，所以并回
+                  # abox 直画，去掉那个内盒。
+                  {"to": 'abox.label(text=f"新增对象：{item.added_objects_str}",'
+                         " icon='MESH_DATA')",
+                   "from": 'res_box.label(text=f"新增对象：{item.added_objects_str}",'
+                           " icon='MESH_DATA')",
+                   "why": "ui.py 里 res_box = abox.box() 又开了一个内盒，"
+                          "整段就成了两层框；用户要求 AI 回复只有一层盒，"
+                          "所以并回 abox 直画"},
               ]),
         ],
         "default_variant": "user",
@@ -344,10 +357,10 @@ def build():
                 "literal": pyq("按推荐参数开始建模")}]
     q_rewrites = [
         {"to": "sbody = layout.box()",
-         "from": "sbody = abox.box() if questions else abox",
-         "why": "ui.py 里这一段挂在对话流 abox 里并按有无 questions 决定要不要"
-                "另起一盒；独立导出时 abox 不在作用域，直接新建一个盒，"
-                "也就是「整段规格装在同一个盒里」（用户第 6 条）"},
+         "from": "sbody = abox",
+         "why": "ui.py 里规格段直接画在 AI 那个整段盒 abox 上（用户要求整段只"
+                "一层盒，规格区是它的一部分而不是另一个盒）；独立导出这一块时"
+                "abox 不在作用域，于是自己新建一个盒把整段规格装起来"},
     ]
     # 单盒：引子「需要你定一下」+ 三个细节的标题 + 每一串选择按钮 + 结语，
     # 全部装在**同一个**盒里。此前是「外盒 + 每个细节各自再一个内盒」，

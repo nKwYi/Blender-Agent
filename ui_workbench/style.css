@@ -447,19 +447,20 @@ body.uw-shot-canvas #block-cards { display: none; }
   /* 窄面板里方块只剩图标，格子收窄一点，否则四个并排还是会把图标挤扁。 */
   .demo .d-it { padding: 0 3px; }
 }
-/* ---- 你说的话：一个盒，到此为止 ----
-   .demo 本身就是那个气泡盒，所以里面的文字**不再套一个带边框的方块**——
-   .demo.d-msgtxt 的直接孩子 .d-msgtext 没有边框也没有底色，读起来就是
-   「盒子里的一段话」。把它当 d-box 画的话盒里又出来一个带边框的方块，
-   两层框套着，看着像两个东西。（规格那块的双层盒是用户要的，走 .d-group，
-   两种形状不许混为一谈。） */
-.demo.d-msgtxt { background: var(--inner); }
+/* ---- 你说的话：彻底无框 ----
+   用户原话「不要用户消息的盒框」：这一段不再有盒，也不画底色，文字直接
+   落在面板底色上。原来这里的 background/border 全撤了——留着就还是一块
+   深色底，读起来仍是「盒子里的一段话」。 */
+.demo.d-msgtxt {
+  background: transparent; border: 0; height: auto; padding: 2px 0;
+}
 .demo.d-msgtxt .d-msgtext {
   flex: 1 1 auto; min-width: 0; color: var(--text); font-size: 11px;
   line-height: 1.5; padding: 2px 4px;
-  /* 左对齐 + 从左边空两个字符。缩进用 padding 而不是 text-indent：
-     text-indent 只推第一行，多行的话第二行起就贴回左边了。 */
-  text-align: left; padding-left: 2em;
+  /* 左对齐 + **只缩首行**两个全角字符，续行顶格。用 text-indent 而不是
+     padding-left：padding 推的是每一行，多行的话第二行起就跟着缩了，
+     那不是「缩进」，是一整块窄栏。 */
+  text-align: left; text-indent: 2em;
 }
 /* 盒宽 = 面板宽：这一格**不给宽度**，由 .demo 跟着预览容器走，文字按盒内
    宽度折行。把面板拉宽，每行的字就变多——所以这里不写 max-width、不做
