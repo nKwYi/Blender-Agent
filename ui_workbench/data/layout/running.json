@@ -44,7 +44,7 @@
     },
     {
       "kind": "box",
-      "element_id": null,
+      "element_id": "chat.statusbar",
       "alert": false,
       "active": false,
       "enabled": true,
@@ -248,8 +248,12 @@
       "alignment": "EXPAND",
       "use_property_split": false,
       "emboss": "NONE",
-      "texts": [],
-      "icons": [],
+      "texts": [
+        "输入建模指令:"
+      ],
+      "icons": [
+        "TEXT"
+      ],
       "ops": [],
       "props": [
         {
@@ -264,35 +268,6 @@
         }
       ],
       "children": [
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "输入建模指令:"
-          ],
-          "icons": [
-            "TEXT"
-          ],
-          "ops": [],
-          "props": [
-            {
-              "data": "DEEPSEEK_PG_state",
-              "prop": "prompt_lines",
-              "text": "",
-              "kwargs": {
-                "slider": "True"
-              }
-            }
-          ],
-          "children": []
-        },
         {
           "kind": "row",
           "element_id": "chat.stop_btn",

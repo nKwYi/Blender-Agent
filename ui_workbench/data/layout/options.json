@@ -142,7 +142,9 @@
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "选择: 经典直筒微收口 (推荐)"
+            "选择: 经典直筒微收口 (推荐)",
+            "选择: 鼓腹圆润",
+            "选择: 手作厚壁窑变"
           ],
           "icons": [],
           "ops": [
@@ -154,26 +156,7 @@
               "assigned": {
                 "custom_prompt": "针对「1. 杯型风格」，我选择：经典直筒微收口"
               }
-            }
-          ],
-          "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "选择: 鼓腹圆润"
-          ],
-          "icons": [],
-          "ops": [
+            },
             {
               "id": "deepseek.submit_selection",
               "text": "选择: 鼓腹圆润",
@@ -182,26 +165,7 @@
               "assigned": {
                 "custom_prompt": "针对「1. 杯型风格」，我选择：鼓腹圆润"
               }
-            }
-          ],
-          "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "选择: 手作厚壁窑变"
-          ],
-          "icons": [],
-          "ops": [
+            },
             {
               "id": "deepseek.submit_selection",
               "text": "选择: 手作厚壁窑变",
@@ -247,7 +211,9 @@
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "选择: 短嘴 (推荐)"
+            "选择: 短嘴 (推荐)",
+            "选择: 长嘴",
+            "选择: 无嘴"
           ],
           "icons": [],
           "ops": [
@@ -259,26 +225,7 @@
               "assigned": {
                 "custom_prompt": "针对「2. 壶嘴」，我选择：短嘴"
               }
-            }
-          ],
-          "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "选择: 长嘴"
-          ],
-          "icons": [],
-          "ops": [
+            },
             {
               "id": "deepseek.submit_selection",
               "text": "选择: 长嘴",
@@ -287,26 +234,7 @@
               "assigned": {
                 "custom_prompt": "针对「2. 壶嘴」，我选择：长嘴"
               }
-            }
-          ],
-          "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "选择: 无嘴"
-          ],
-          "icons": [],
-          "ops": [
+            },
             {
               "id": "deepseek.submit_selection",
               "text": "选择: 无嘴",
@@ -352,7 +280,9 @@
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "选择: 紫砂一体"
+            "选择: 紫砂一体",
+            "选择: 竹节缠绕 (推荐)",
+            "选择: 无把手"
           ],
           "icons": [],
           "ops": [
@@ -364,26 +294,7 @@
               "assigned": {
                 "custom_prompt": "针对「3. 把手材质」，我选择：紫砂一体"
               }
-            }
-          ],
-          "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "选择: 竹节缠绕 (推荐)"
-          ],
-          "icons": [],
-          "ops": [
+            },
             {
               "id": "deepseek.submit_selection",
               "text": "选择: 竹节缠绕 (推荐)",
@@ -392,26 +303,7 @@
               "assigned": {
                 "custom_prompt": "针对「3. 把手材质」，我选择：竹节缠绕"
               }
-            }
-          ],
-          "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "选择: 无把手"
-          ],
-          "icons": [],
-          "ops": [
+            },
             {
               "id": "deepseek.submit_selection",
               "text": "选择: 无把手",
@@ -530,8 +422,12 @@
       "alignment": "EXPAND",
       "use_property_split": false,
       "emboss": "NONE",
-      "texts": [],
-      "icons": [],
+      "texts": [
+        "输入建模指令:"
+      ],
+      "icons": [
+        "TEXT"
+      ],
       "ops": [],
       "props": [
         {
@@ -546,35 +442,6 @@
         }
       ],
       "children": [
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "输入建模指令:"
-          ],
-          "icons": [
-            "TEXT"
-          ],
-          "ops": [],
-          "props": [
-            {
-              "data": "DEEPSEEK_PG_state",
-              "prop": "prompt_lines",
-              "text": "",
-              "kwargs": {
-                "slider": "True"
-              }
-            }
-          ],
-          "children": []
-        },
         {
           "kind": "row",
           "element_id": "chat.send_btn",

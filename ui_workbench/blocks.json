@@ -44,7 +44,7 @@
      "what": "对话 / 详情 / 设置，点哪个画哪个"
     }
    ],
-   "what": "面板最顶上那三个页签（对话 / 详情 / 设置），排在状态提示条**上面**——页签是入口，状态条才是这一页现在的情况。注意：插件里页签上的字来自 ui.py 的 active_tab 枚举，现在还写着「AI 对话」——真要改成「对话」是改那个字符串。"
+   "what": "面板最顶上那三个页签（对话 / 详情 / 设置），排在状态提示条**上面**——页签是入口，状态条才是这一页现在的情况。页签上不写「AI」两个字：面板所在分类已经叫「AI 对话」，页签再写一遍是废话。插件那边同样只写「对话」（ui.py 的 active_tab 枚举第一项就是「对话」），两边一致。"
   },
   {
    "default_variant": "busy",
@@ -292,7 +292,7 @@
     ],
     "groups": [
      {
-      "icon": "QUESTION",
+      "icon": "MENU_PANEL",
       "item_icons": [
        "CHECKBOX_DEHLT",
        "CHECKBOX_DEHLT",
@@ -306,7 +306,7 @@
       "title": "细节 1：杯型风格"
      },
      {
-      "icon": "QUESTION",
+      "icon": "MENU_PANEL",
       "item_icons": [
        "CHECKBOX_DEHLT",
        "CHECKBOX_DEHLT",
@@ -320,7 +320,7 @@
       "title": "细节 2：容量"
      },
      {
-      "icon": "QUESTION",
+      "icon": "MENU_PANEL",
       "item_icons": [
        "CHECKBOX_DEHLT",
        "CHECKBOX_DEHLT",
@@ -361,7 +361,7 @@
     }
    ],
    "tab": "chat",
-   "ui_py": "for q_idx, q in enumerate(questions):\n    qbox = layout.box()\n    mark(qbox, CHAT_OPTIONS)\n    qbox.label(text=f\"细节 {q_idx + 1}：{q.get('title', '')}\", icon='QUESTION')\n    opts = q.get(\"options\", [])\n    # 横排：一行里并排放全部选项。Blender 量不了文字宽度，\n    # 所以按字数估算做降级——选项多或标签太长就换回竖排。\n    too_wide = len(opts) > 3 or sum(len(str(o.get(\"label\", \"\"))) for o in opts) > 22\n    if too_wide:\n        orow_holder = qbox.column(align=True)\n    else:\n        orow_holder = qbox.row(align=True)\n    for opt in opts:\n        val = opt.get(\"value\") or opt.get(\"label\", \"\")\n        lbl = opt.get(\"label\", val)\n        orow = orow_holder\n        btn = orow.operator(\"deepseek.submit_selection\",\n                            text=f\"选择: {lbl}\",\n                            icon='CHECKBOX_DEHLT')\n        btn.custom_prompt = f\"针对「{q.get('title', '')}」，我选择：{val}\"\n\nrec_btn = layout.operator(\"deepseek.submit_selection\",\n                        text=\"按推荐参数开始建模\",\n                        icon='PLAY')\nrec_btn.custom_prompt = info.get(\"all_recommended\", \"全部按推荐参数开始建模！\")",
+   "ui_py": "sbody = layout.box()\nfor q_idx, q in enumerate(questions):\n    q_title = re.sub(r\"^\\s*\\d+\\s*[.、．)）]\\s*\",\n                     \"\", str(q.get('title', '')))\n    sbody.label(text=f\"细节 {q_idx + 1}：{q_title}\",\n                icon='MENU_PANEL')\n    opts = q.get(\"options\", [])\n    orow_holder = sbody.row(align=True)\n    for opt in opts:\n        val = opt.get(\"value\") or opt.get(\"label\", \"\")\n        lbl = opt.get(\"label\", val)\n        orow = orow_holder\n        btn = orow.operator(\"deepseek.submit_selection\",\n                    text=f\"选择: {lbl}\",\n                    icon='CHECKBOX_DEHLT')\n        btn.custom_prompt = f\"针对「{q_title}」，我选择：{val}\"\n\nrec_btn = sbody.operator(\"deepseek.submit_selection\",\n                text=\"按推荐参数开始建模\",\n                icon='PLAY')\nrec_btn.custom_prompt = info.get(\"all_recommended\", \"全部按推荐参数开始建模！\")",
    "variants": [
     {
      "demo": {
@@ -370,7 +370,7 @@
       ],
       "groups": [
        {
-        "icon": "QUESTION",
+        "icon": "MENU_PANEL",
         "item_icons": [
          "CHECKBOX_DEHLT",
          "CHECKBOX_DEHLT",
@@ -384,7 +384,7 @@
         "title": "细节 1：杯型风格"
        },
        {
-        "icon": "QUESTION",
+        "icon": "MENU_PANEL",
         "item_icons": [
          "CHECKBOX_DEHLT",
          "CHECKBOX_DEHLT",
@@ -398,7 +398,7 @@
         "title": "细节 2：容量"
        },
        {
-        "icon": "QUESTION",
+        "icon": "MENU_PANEL",
         "item_icons": [
          "CHECKBOX_DEHLT",
          "CHECKBOX_DEHLT",
@@ -421,42 +421,28 @@
      "label": "反问一组",
      "rewrites": [
       {
-       "from": "qbox = abox.box()",
-       "to": "qbox = layout.box()",
-       "why": "ui.py 里这一组挂在对话流 abox（就是 layout）里；独立导出改绑 layout"
-      },
-      {
-       "from": "rec_btn = abox.operator(\"deepseek.submit_selection\",",
-       "to": "rec_btn = layout.operator(\"deepseek.submit_selection\",",
-       "why": "同上：abox 就是 layout，独立导出改绑 layout"
-      },
-      {
-       "from": "text=\"按推荐参数开始建模\",",
-       "to": "text=\"按推荐参数开始建模\",",
-       "why": "同一句，只是为了缩进对齐到 rec_btn.operator 的续行而重折"
+       "from": "sbody = abox.box() if questions else abox",
+       "to": "sbody = layout.box()",
+       "why": "ui.py 里这一段挂在对话流 abox 里并按有无 questions 决定要不要另起一盒；独立导出时 abox 不在作用域，直接新建一个盒，也就是「整段规格装在同一个盒里」（用户第 6 条）"
       }
      ],
-     "ui_py": "for q_idx, q in enumerate(questions):\n    qbox = layout.box()\n    mark(qbox, CHAT_OPTIONS)\n    qbox.label(text=f\"细节 {q_idx + 1}：{q.get('title', '')}\", icon='QUESTION')\n    opts = q.get(\"options\", [])\n    # 横排：一行里并排放全部选项。Blender 量不了文字宽度，\n    # 所以按字数估算做降级——选项多或标签太长就换回竖排。\n    too_wide = len(opts) > 3 or sum(len(str(o.get(\"label\", \"\"))) for o in opts) > 22\n    if too_wide:\n        orow_holder = qbox.column(align=True)\n    else:\n        orow_holder = qbox.row(align=True)\n    for opt in opts:\n        val = opt.get(\"value\") or opt.get(\"label\", \"\")\n        lbl = opt.get(\"label\", val)\n        orow = orow_holder\n        btn = orow.operator(\"deepseek.submit_selection\",\n                            text=f\"选择: {lbl}\",\n                            icon='CHECKBOX_DEHLT')\n        btn.custom_prompt = f\"针对「{q.get('title', '')}」，我选择：{val}\"\n\nrec_btn = layout.operator(\"deepseek.submit_selection\",\n                        text=\"按推荐参数开始建模\",\n                        icon='PLAY')\nrec_btn.custom_prompt = info.get(\"all_recommended\", \"全部按推荐参数开始建模！\")",
-     "what": "引子一句 + 每个细节一个盒（标题 + N 个选择按钮）"
+     "ui_py": "sbody = layout.box()\nfor q_idx, q in enumerate(questions):\n    q_title = re.sub(r\"^\\s*\\d+\\s*[.、．)）]\\s*\",\n                     \"\", str(q.get('title', '')))\n    sbody.label(text=f\"细节 {q_idx + 1}：{q_title}\",\n                icon='MENU_PANEL')\n    opts = q.get(\"options\", [])\n    orow_holder = sbody.row(align=True)\n    for opt in opts:\n        val = opt.get(\"value\") or opt.get(\"label\", \"\")\n        lbl = opt.get(\"label\", val)\n        orow = orow_holder\n        btn = orow.operator(\"deepseek.submit_selection\",\n                    text=f\"选择: {lbl}\",\n                    icon='CHECKBOX_DEHLT')\n        btn.custom_prompt = f\"针对「{q_title}」，我选择：{val}\"\n\nrec_btn = sbody.operator(\"deepseek.submit_selection\",\n                text=\"按推荐参数开始建模\",\n                icon='PLAY')\nrec_btn.custom_prompt = info.get(\"all_recommended\", \"全部按推荐参数开始建模！\")",
+     "what": "引子一句 + 三个细节（标题 + N 个横排选择按钮）"
     }
    ],
-   "what": "AI 反问规格时给你的一组选择。外面一个大盒（就是这条 AI 消息的气泡盒），里面每个细节自己一个盒，标题和那一串选择按钮装在同一个盒里。选项**字少就横排并排**，超过 4 个左右才退回一个一行（Blender 那边量不到宽度，这个判断由预览替它做）。"
+   "what": "AI 反问规格时给你的一组选择。**整段装在同一个盒里**：引子、每个细节的标题、那一串选择按钮、结语，全在一个盒内，不再「外盒 + 每个细节各自一个内盒」把内容切碎。标题是「细节 N：标题」——AI 给的标题常自带「1. 」这种 markdown 序号，拼接前先剥掉，免得出现「细节 1：1.杯型风格」两个 1；图标用 MENU_PANEL（这一组是等你从菜单里选，分组标题），不是语义对不上的问号。选项**永远横排并排**，文字截断不退回竖排——面板可以拉宽，纵向空间才是真约束。"
   },
   {
    "default_variant": "only",
    "demo": {
-    "cols": 4,
+    "cols": 2,
     "icons": [
      "CON_SIZELIKE",
-     "MATSHADERBALL",
-     "MOD_BEVEL",
-     "NORMALS_VERTEX"
+     "MATSHADERBALL"
     ],
     "items": [
      "修改尺寸",
-     "更换材质",
-     "增加倒角",
-     "平滑着色"
+     "更换材质"
     ],
     "kind": "grid"
    },
@@ -466,33 +452,29 @@
    "label": "快捷指令网格",
    "slots": [],
    "tab": "chat",
-   "ui_py": "pills = list(quick_pills(state))\nif pills:\n    pbox = layout.box()\n    p_row1 = pbox.row(align=True)\n    p_row2 = pbox.row(align=True)\n    mid = (len(pills) + 1) // 2\n    for i, pill in enumerate(pills):\n        target_row = p_row1 if i < mid else p_row2\n        target_row.operator(\"deepseek.quick_pill\", text=pill).action = pill",
+   "ui_py": "pills = list(quick_pills(state))\nif pills:\n    pbox = layout.box()\n    if len(pills) <= 2:\n        pill_rows = [pbox.row(align=True)]\n    else:\n        pill_rows = [pbox.row(align=True), pbox.row(align=True)]\n    mid = (len(pills) + 1) // 2\n    for i, pill in enumerate(pills):\n        target_row = pill_rows[0] if (len(pills) <= 2 or i < mid) else pill_rows[1]\n        target_row.operator(\"deepseek.quick_pill\", text=pill).action = pill",
    "variants": [
     {
      "demo": {
-      "cols": 4,
+      "cols": 2,
       "icons": [
        "CON_SIZELIKE",
-       "MATSHADERBALL",
-       "MOD_BEVEL",
-       "NORMALS_VERTEX"
+       "MATSHADERBALL"
       ],
       "items": [
        "修改尺寸",
-       "更换材质",
-       "增加倒角",
-       "平滑着色"
+       "更换材质"
       ],
       "kind": "grid"
      },
      "key": "only",
-     "label": "一行四个",
+     "label": "并排两条",
      "rewrites": [],
-     "ui_py": "pills = list(quick_pills(state))\nif pills:\n    pbox = layout.box()\n    p_row1 = pbox.row(align=True)\n    p_row2 = pbox.row(align=True)\n    mid = (len(pills) + 1) // 2\n    for i, pill in enumerate(pills):\n        target_row = p_row1 if i < mid else p_row2\n        target_row.operator(\"deepseek.quick_pill\", text=pill).action = pill",
-     "what": "一行并排的四个快捷指令"
+     "ui_py": "pills = list(quick_pills(state))\nif pills:\n    pbox = layout.box()\n    if len(pills) <= 2:\n        pill_rows = [pbox.row(align=True)]\n    else:\n        pill_rows = [pbox.row(align=True), pbox.row(align=True)]\n    mid = (len(pills) + 1) // 2\n    for i, pill in enumerate(pills):\n        target_row = pill_rows[0] if (len(pills) <= 2 or i < mid) else pill_rows[1]\n        target_row.operator(\"deepseek.quick_pill\", text=pill).action = pill",
+     "what": "并排一行的两个快捷指令"
     }
    ],
-   "what": "输入框上面那排快捷按钮，点一下等于替你把这句话打进去。图示按「一行 4 个」画；ui.py 里那段代码是两行两列（p_row1 / p_row2），按钮一模一样，真要一行 4 个得改 ui.py——本轮不许动它。"
+   "what": "输入框上面那排快捷按钮，点一下等于替你把这句话打进去。只留两条（修改尺寸 / 更换材质），**并排一行**——「增加倒角」「平滑着色」两条已按用户要求去掉。"
   },
   {
    "default_variant": "only",
@@ -501,16 +483,16 @@
      0
     ],
     "icons": [
-     "TEXT"
+     "PLAY"
     ],
     "items": [
-     "输入建模指令:"
+     "发送指令"
     ],
     "kind": "composer",
-    "textbox": "用自然语言描述要建模什么，可多行"
+    "textbox": "用自然语言描述要建模什么，可多行",
+    "trailing": true
    },
    "editable": [
-    "标签文字",
     "占位提示",
     "按钮文字"
    ],
@@ -518,12 +500,6 @@
    "key": "chat_composer",
    "label": "对话输入区",
    "slots": [
-    {
-     "label": "标签文字",
-     "literal": "\"输入建模指令:\"",
-     "name": "label",
-     "text": "输入建模指令:"
-    },
     {
      "label": "占位提示",
      "literal": "\"用自然语言描述要建模什么，可多行\"",
@@ -538,7 +514,7 @@
     }
    ],
    "tab": "chat",
-   "ui_py": "cbox = layout.box()\ncbox.label(text=\"输入建模指令:\", icon='TEXT')\ncbox.textbox(state, \"prompt\", initial_visible_lines=state.prompt_lines,\n             placeholder=\"用自然语言描述要建模什么，可多行\")\n\nbrow = cbox.row(align=True)\nbrow.scale_y = 1.3\nif not busy:\n    brow.operator(\"deepseek.run_prompt\", text=\"发送指令\", icon='PLAY')\nelse:\n    brow.operator(\"deepseek.stop\", text=\"终止任务\", icon='CANCEL')",
+   "ui_py": "cbox = layout.box()\ncbox.textbox(state, \"prompt\", initial_visible_lines=state.prompt_lines,\n             placeholder=\"用自然语言描述要建模什么，可多行\")\n\nbrow = cbox.row(align=True)\nbrow.scale_y = 1.3\nif not busy:\n    brow.operator(\"deepseek.run_prompt\", text=\"发送指令\", icon='PLAY')\nelse:\n    brow.operator(\"deepseek.stop\", text=\"终止任务\", icon='CANCEL')",
    "variants": [
     {
      "demo": {
@@ -546,22 +522,23 @@
        0
       ],
       "icons": [
-       "TEXT"
+       "PLAY"
       ],
       "items": [
-       "输入建模指令:"
+       "发送指令"
       ],
       "kind": "composer",
-      "textbox": "用自然语言描述要建模什么，可多行"
+      "textbox": "用自然语言描述要建模什么，可多行",
+      "trailing": true
      },
      "key": "only",
      "label": "输入区",
      "rewrites": [],
-     "ui_py": "cbox = layout.box()\ncbox.label(text=\"输入建模指令:\", icon='TEXT')\ncbox.textbox(state, \"prompt\", initial_visible_lines=state.prompt_lines,\n             placeholder=\"用自然语言描述要建模什么，可多行\")\n\nbrow = cbox.row(align=True)\nbrow.scale_y = 1.3\nif not busy:\n    brow.operator(\"deepseek.run_prompt\", text=\"发送指令\", icon='PLAY')\nelse:\n    brow.operator(\"deepseek.stop\", text=\"终止任务\", icon='CANCEL')",
+     "ui_py": "cbox = layout.box()\ncbox.textbox(state, \"prompt\", initial_visible_lines=state.prompt_lines,\n             placeholder=\"用自然语言描述要建模什么，可多行\")\n\nbrow = cbox.row(align=True)\nbrow.scale_y = 1.3\nif not busy:\n    brow.operator(\"deepseek.run_prompt\", text=\"发送指令\", icon='PLAY')\nelse:\n    brow.operator(\"deepseek.stop\", text=\"终止任务\", icon='CANCEL')",
      "what": "多行输入框 + 发送或终止"
     }
    ],
-   "what": "面板最下面那块：**标签与输入框合成一处**——「输入建模指令:」直接压在输入框上面，同属一个盒，盒宽摊满（没有「高度 3」那个滑块，高度由输入框自己的多行决定）；输入框那一行有上边线隔开；下面才是发送/终止。"
+   "what": "面板最下面那块：**一个多行输入框 + 下面的发送/终止**，盒宽摊满。「输入建模指令:」那一栏已经删掉（placeholder 说明这里能干什么），「高度 N」滑块也没有了——高度由输入框自己的多行与右下角拖拽角决定。"
   },
   {
    "default_variant": "only",
@@ -1011,14 +988,16 @@
    "# Blender 的控件，导出后也对不上任何真实 API。",
    "# open_default 是积木上「展开 / 收起」那个状态带过来的，",
    "# 不是写死的：在工作台里点开过之后导出的那一份会写成 True。",
+   "# 正文左对齐，从左边起空两个字符（每行都缩进，不只第一行）：",
+   "# 提示词读起来是「自己的话」，右对齐会读成倒着写。",
    "def _uw_msg_panel(layout, idname, text, open_default=False):",
    "    p = layout.panel(idname, default_closed=not open_default)",
    "    head = text[:20] + (\"…\" if len(text) > 20 else \"\")",
    "    p.label(text=head)",
    "    for ln in wrap_text(text, max_chars=18):",
    "        r = p.row()",
-   "        r.alignment = 'RIGHT'",
-   "        r.label(text=ln)",
+   "        r.alignment = 'LEFT'",
+   "        r.label(text=\"  \" + ln)",
    "    return p"
   ],
   "why": "这一段是 ui.py 里没有的新增代码：长消息折叠在插件里还没有现成写法可抄，所以它不进任何块的 ui_py（那边只许放 ui.py 里逐字存在的代码），单独立这张表随导出一起带走。"

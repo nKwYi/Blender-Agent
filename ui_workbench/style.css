@@ -457,6 +457,9 @@ body.uw-shot-canvas #block-cards { display: none; }
 .demo.d-msgtxt .d-msgtext {
   flex: 1 1 auto; min-width: 0; color: var(--text); font-size: 11px;
   line-height: 1.5; padding: 2px 4px;
+  /* 左对齐 + 从左边空两个字符。缩进用 padding 而不是 text-indent：
+     text-indent 只推第一行，多行的话第二行起就贴回左边了。 */
+  text-align: left; padding-left: 2em;
 }
 /* 盒宽 = 面板宽：这一格**不给宽度**，由 .demo 跟着预览容器走，文字按盒内
    宽度折行。把面板拉宽，每行的字就变多——所以这里不写 max-width、不做
@@ -497,11 +500,15 @@ body.uw-shot-canvas #block-cards { display: none; }
      右边两组直接被裁掉——双层盒变成「双层横排」，正是这一条要消掉的错。 */
   flex-direction: column;
 }
+/* 规格段：**整段一个盒**。.d-group 只是「一个细节 = 标题 + 一串按钮」的
+   分组容器，它自己不再带边框、不再带底色——此前那层框让用户看到的是
+   「外盒 + 每个细节各自一个内盒」的碎块。颜色一个没加，用的还是上面
+   那些变量。 */
 .demo .d-group {
   display: flex; flex-direction: column; gap: 2px;
-  flex: 1 1 auto; min-height: 0; margin: 1px;
-  background: var(--inner); border: 1px solid var(--border);
-  border-radius: 4px; padding: 2px;
+  flex: 0 0 auto; min-height: 0; margin: 0;
+  background: transparent; border: 0;
+  border-radius: 0; padding: 0;
 }
 .demo .d-gtitle {
   display: flex; align-items: center; color: var(--text); font-size: 11px;
@@ -525,6 +532,8 @@ body.uw-shot-canvas #block-cards { display: none; }
 .demo .d-group[data-dflow="wrap"] .d-it {
   flex: 1 1 0; min-width: 5em;
 }
+/* 选项永远横排（data-dflow 恒为 wrap）；col 那条规则留着是为了
+   数据里若真写了别的 flow 仍有个明确落点，不至于散着排。 */
 .demo .d-group[data-dflow="col"] .d-it { flex: 1 1 auto; }
 /* 分隔线与留白没有小方块，画的是一根线 / 一条空隙。
    align-items:center 是必须的：.demo 是 align-items:stretch 的行容器，

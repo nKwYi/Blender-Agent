@@ -1264,15 +1264,16 @@ function renderDemo(w) {
   items.forEach(function (t, i) {
     box.appendChild(demoItem(t, kind, icons[i], left, cols, i, bare.indexOf(i) >= 0));
   });
-  /* 双层盒：每组细节自己再一个盒，标题 + 那一串按钮都装在里面。
-     外面那个盒已经由 kind 画出来了（这里是 box），所以这里只补里层。
-     按钮**字少就横排并排**（详见 demoGroup 的注释），超过 OPT_WRAP_MAX 个
-     才退回竖排——预览能量宽度，Blender 那边量不了，所以这个折中由预览替它做。 */
+  /* 规格段整段一个盒：引子是盒的正文，三个细节紧跟着它排在同一个盒里。
+     细节那一格不再自己带框（.d-group 的边框/底色在 style.css 里撤掉了），
+     数据形状不变——所以「引子在盒里」「三个细节」「横排」这些读数照旧成立。
+     按钮**永远横排并排**：Blender 那边量不到像素，但它也定了永远横排，
+     面板可以拉宽、截断无所谓，纵向空间才是真约束。 */
   (d.groups || []).forEach(function (g) {
     var gb = document.createElement("div");
     gb.className = "d-group";
     gb.dataset.dgtitle = g.title || "";
-    gb.dataset.dflow = ((g.items || []).length > OPT_WRAP_MAX) ? "col" : "wrap";
+    gb.dataset.dflow = "wrap";
     var gt = document.createElement("i");
     gt.className = "d-gtitle";
     if (g.icon) {
@@ -1313,13 +1314,10 @@ function renderDemo(w) {
    不是默认藏起来）；收起时只剩一行标题（首句摘要 + 总字数），展开/收起
    按钮在**右下角**（Blender 那边是 layout.panel 的标题行 + 原生箭头）。 */
 var FOLD_CHARS = 20;
-/* 一组细节里的选项超过这么多个才退回一个一行。选项字通常很短
-   （「选择：经典直筒微收口（推荐）」这种），一个占满一整行会把面板拉长；
-   但数量一多就并排不下了，所以留这道闸。
-   插件那边（ui.py 的 too_wide）用的是「>3 个或标签总字数 >22 就竖排」——
-   它量不到像素只能估，这里量得到，所以只看个数。真要两边完全一致，
-   把这个数改成 3 就与 ui.py 对齐了。 */
-var OPT_WRAP_MAX = 3;
+/* 一组细节里的选项**永远横排并排**（用户第 2 条）。以前这里有个
+   OPT_WRAP_MAX，超过就退回一个一行；现在那道闸删掉了：Blender 那边
+   已经改成永远横排，预览再按字数退回竖排，两边就不一样了。文字截断
+   不影响——面板可以拉宽，面板不够宽时由 CSS 的 flex-wrap 自然折行。 */
 
 /* 收起时留在标题行里的摘要：首句 + 总字数。没有句号就切不出首句，
    这时退回「前 FOLD_CHARS 个字 + 省略号」。两种情况都带总字数——
@@ -1362,7 +1360,12 @@ function renderMsgBox(box, d, w) {
    按用户要求删掉（高度由输入框自己的多行决定），标签于是直接压在输入框上面，
    两者同属一个盒、输入框摊满盒宽——不再有那条只为放数字而存在的行。 */
 function renderComposer(box, d, icons, left) {
-  (d.items || []).forEach(function (t, i) {
+  /* trailing：那一格画在输入框**下面**（发送/终止按钮的真实位置）。
+     默认仍是「标签压在输入框上面」的老位置，但「输入建模指令:」那一栏
+     已按用户要求删掉，现在留在数据里的是发送按钮，所以要排到后面。 */
+  var before = d.trailing ? [] : (d.items || []);
+  var after = d.trailing ? (d.items || []) : [];
+  before.forEach(function (t, i) {
     box.appendChild(demoItem(t, "prop", icons[i], left, 0, i, true));
   });
   var tb = document.createElement("div");
@@ -1370,6 +1373,9 @@ function renderComposer(box, d, icons, left) {
   tb.dataset.dtextbox = "1";
   tb.textContent = d.textbox || "";
   box.appendChild(tb);
+  after.forEach(function (t, i) {
+    box.appendChild(demoItem(t, "btn", icons[i], left, 0, i, true));
+  });
   return box;
 }
 
