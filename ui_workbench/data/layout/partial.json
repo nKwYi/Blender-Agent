@@ -100,11 +100,11 @@
           "active": false,
           "enabled": true,
           "scale_y": 1.0,
-          "alignment": "RIGHT",
+          "alignment": "EXPAND",
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "做一个精致的中式紫砂茶杯，"
+            "　　做一个精致的中式紫砂茶杯，"
           ],
           "icons": [
             "NONE"
@@ -120,11 +120,11 @@
           "active": false,
           "enabled": true,
           "scale_y": 1.0,
-          "alignment": "RIGHT",
+          "alignment": "EXPAND",
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "杯身要能看出砂颗粒的质感"
+            "　　杯身要能看出砂颗粒的质感"
           ],
           "icons": [
             "NONE"
@@ -251,44 +251,6 @@
           ],
           "props": [],
           "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "增加倒角",
-            "平滑着色"
-          ],
-          "icons": [],
-          "ops": [
-            {
-              "id": "deepseek.quick_pill",
-              "text": "增加倒角",
-              "icon": "NONE",
-              "kwargs": {},
-              "assigned": {
-                "action": "增加倒角"
-              }
-            },
-            {
-              "id": "deepseek.quick_pill",
-              "text": "平滑着色",
-              "icon": "NONE",
-              "kwargs": {},
-              "assigned": {
-                "action": "平滑着色"
-              }
-            }
-          ],
-          "props": [],
-          "children": []
         }
       ]
     },
@@ -302,12 +264,8 @@
       "alignment": "EXPAND",
       "use_property_split": false,
       "emboss": "NONE",
-      "texts": [
-        "输入建模指令:"
-      ],
-      "icons": [
-        "TEXT"
-      ],
+      "texts": [],
+      "icons": [],
       "ops": [],
       "props": [
         {

@@ -49,7 +49,7 @@
       "use_property_split": false,
       "emboss": "NONE",
       "texts": [
-        "欢迎使用 DeepSeek 建模助手",
+        "欢迎使用建模助手",
         "描述想创建的模型，或选择快捷标签："
       ],
       "icons": [
@@ -70,12 +70,8 @@
       "alignment": "EXPAND",
       "use_property_split": false,
       "emboss": "NONE",
-      "texts": [
-        "输入建模指令:"
-      ],
-      "icons": [
-        "TEXT"
-      ],
+      "texts": [],
+      "icons": [],
       "ops": [],
       "props": [
         {

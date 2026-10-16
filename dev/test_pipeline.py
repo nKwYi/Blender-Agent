@@ -145,15 +145,30 @@ def p_tree_ids_registered(tree, registry):
 
 
 def p_dup_ids_exist(layouts):
-    """这个风险必须真的存在，否则后面所有「键唯一」的断言都是空转。
+    """真实数据里还有没有重复 element_id。规格段合并成单个盒之后没有了。
 
-    options 树里有 3 个 chat.options；如果哪天埋点规则改了，这里会红，
-    提醒同步改标注键的守门断言。"""
+    留着是为了报告现状，不是为了守门 —— 键唯一由下面 path_in_akey 守。
+    """
     for state, tree in layouts.items():
         ids = collect_ids(tree)
         if len(ids) != len(set(ids)):
             return True
     return False
+
+
+def p_path_in_akey(js):
+    """键公式里必须带 DFS path 那一段。
+
+    这是标注不串台真正的护栏：两个节点哪怕 element_id 相同，只要路径不同，
+    键就不同。规格段从「每个细节一个 chat.options」合并成「整段一个」之后，
+    数据里不再有重复 ID，靠真实数据已经测不出任何东西 —— 真正要防的回归是
+    **path 从公式里消失**，那时同 ID 的节点会立刻撞成一个标注槽。
+
+    所以这里直接验公式里有 path，而不是等数据里出现重复。数据驱动的守门在
+    数据变干净之后必然空转，公式驱动的守门不会。
+    """
+    tpl = js_akey_template(js)
+    return bool(tpl) and "path" in tpl
 
 
 def js_akey_template(js):
@@ -395,8 +410,13 @@ def main():
         ck("layout_ids_registered_%s" % s, p_tree_ids_registered(tree, registry),
            "未注册的 ID：%s" % sorted(set(ids) - registry))
 
-    ck("dup_ids_exist", p_dup_ids_exist(layouts),
-       "没有任何状态出现重复 element_id——重复 ID 风险消失，后续标注键守门断言需重新评估")
+    ck("dup_ids_absent", not p_dup_ids_exist(layouts),
+       "有状态出现了重复 element_id：%s"
+       % [s for s, t in layouts.items()
+          if len(collect_ids(t)) != len(set(collect_ids(t)))])
+    ck("path_in_akey", p_path_in_akey(js),
+       "app.js 的 akey 公式里必须有 DFS path 那一段——同 ID 的节点靠路径"
+       "才不会撞成一个标注槽。公式=%r" % js_akey_template(js))
     ck("js_akeys_unique", p_js_akeys_unique(js, layouts),
        "按 app.js 的键公式算出的标注键有重复，标注会串台（键公式=%r）"
        % js_akey_template(js))

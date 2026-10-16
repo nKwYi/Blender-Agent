@@ -8,26 +8,9 @@
   "alignment": "EXPAND",
   "use_property_split": false,
   "emboss": "NONE",
-  "texts": [
-    "为了更贴近你想要的样子，先确认三个规格：",
-    "按推荐参数开始建模",
-    "确认无误的话，我就开始车削。"
-  ],
-  "icons": [
-    "NONE",
-    "NONE"
-  ],
-  "ops": [
-    {
-      "id": "deepseek.submit_selection",
-      "text": "按推荐参数开始建模",
-      "icon": "PLAY",
-      "kwargs": {},
-      "assigned": {
-        "custom_prompt": "按推荐参数建模：经典直筒微收口，短嘴，竹节缠绕"
-      }
-    }
-  ],
+  "texts": [],
+  "icons": [],
+  "ops": [],
   "props": [],
   "children": [
     {
@@ -77,11 +60,11 @@
           "active": false,
           "enabled": true,
           "scale_y": 1.0,
-          "alignment": "RIGHT",
+          "alignment": "EXPAND",
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "做一个精致的中式紫砂茶杯，"
+            "　　做一个精致的中式紫砂茶杯，"
           ],
           "icons": [
             "NONE"
@@ -97,11 +80,11 @@
           "active": false,
           "enabled": true,
           "scale_y": 1.0,
-          "alignment": "RIGHT",
+          "alignment": "EXPAND",
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "杯身要能看出砂颗粒的质感"
+            "　　杯身要能看出砂颗粒的质感"
           ],
           "icons": [
             "NONE"
@@ -123,12 +106,31 @@
       "use_property_split": false,
       "emboss": "NONE",
       "texts": [
-        "细节 1：1. 杯型风格"
+        "为了更贴近你想要的样子，先确认三个规格：",
+        "细节 1：杯型风格",
+        "细节 2：壶嘴",
+        "细节 3：把手材质",
+        "按推荐参数开始建模",
+        "确认无误的话，我就开始车削。"
       ],
       "icons": [
-        "QUESTION"
+        "NONE",
+        "MENU_PANEL",
+        "MENU_PANEL",
+        "MENU_PANEL",
+        "NONE"
       ],
-      "ops": [],
+      "ops": [
+        {
+          "id": "deepseek.submit_selection",
+          "text": "按推荐参数开始建模",
+          "icon": "PLAY",
+          "kwargs": {},
+          "assigned": {
+            "custom_prompt": "按推荐参数建模：经典直筒微收口，短嘴，竹节缠绕"
+          }
+        }
+      ],
       "props": [],
       "children": [
         {
@@ -154,7 +156,7 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「1. 杯型风格」，我选择：经典直筒微收口"
+                "custom_prompt": "针对「杯型风格」，我选择：经典直筒微收口"
               }
             },
             {
@@ -163,7 +165,7 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「1. 杯型风格」，我选择：鼓腹圆润"
+                "custom_prompt": "针对「杯型风格」，我选择：鼓腹圆润"
               }
             },
             {
@@ -172,34 +174,13 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「1. 杯型风格」，我选择：手作厚壁窑变"
+                "custom_prompt": "针对「杯型风格」，我选择：手作厚壁窑变"
               }
             }
           ],
           "props": [],
           "children": []
-        }
-      ]
-    },
-    {
-      "kind": "box",
-      "element_id": "chat.options",
-      "alert": false,
-      "active": false,
-      "enabled": true,
-      "scale_y": 1.0,
-      "alignment": "EXPAND",
-      "use_property_split": false,
-      "emboss": "NONE",
-      "texts": [
-        "细节 2：2. 壶嘴"
-      ],
-      "icons": [
-        "QUESTION"
-      ],
-      "ops": [],
-      "props": [],
-      "children": [
+        },
         {
           "kind": "row",
           "element_id": null,
@@ -223,7 +204,7 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「2. 壶嘴」，我选择：短嘴"
+                "custom_prompt": "针对「壶嘴」，我选择：短嘴"
               }
             },
             {
@@ -232,7 +213,7 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「2. 壶嘴」，我选择：长嘴"
+                "custom_prompt": "针对「壶嘴」，我选择：长嘴"
               }
             },
             {
@@ -241,34 +222,13 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「2. 壶嘴」，我选择：无嘴"
+                "custom_prompt": "针对「壶嘴」，我选择：无嘴"
               }
             }
           ],
           "props": [],
           "children": []
-        }
-      ]
-    },
-    {
-      "kind": "box",
-      "element_id": "chat.options",
-      "alert": false,
-      "active": false,
-      "enabled": true,
-      "scale_y": 1.0,
-      "alignment": "EXPAND",
-      "use_property_split": false,
-      "emboss": "NONE",
-      "texts": [
-        "细节 3：3. 把手材质"
-      ],
-      "icons": [
-        "QUESTION"
-      ],
-      "ops": [],
-      "props": [],
-      "children": [
+        },
         {
           "kind": "row",
           "element_id": null,
@@ -292,7 +252,7 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「3. 把手材质」，我选择：紫砂一体"
+                "custom_prompt": "针对「把手材质」，我选择：紫砂一体"
               }
             },
             {
@@ -301,7 +261,7 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「3. 把手材质」，我选择：竹节缠绕"
+                "custom_prompt": "针对「把手材质」，我选择：竹节缠绕"
               }
             },
             {
@@ -310,7 +270,7 @@
               "icon": "CHECKBOX_DEHLT",
               "kwargs": {},
               "assigned": {
-                "custom_prompt": "针对「3. 把手材质」，我选择：无把手"
+                "custom_prompt": "针对「把手材质」，我选择：无把手"
               }
             }
           ],
@@ -371,44 +331,6 @@
           ],
           "props": [],
           "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "增加倒角",
-            "平滑着色"
-          ],
-          "icons": [],
-          "ops": [
-            {
-              "id": "deepseek.quick_pill",
-              "text": "增加倒角",
-              "icon": "NONE",
-              "kwargs": {},
-              "assigned": {
-                "action": "增加倒角"
-              }
-            },
-            {
-              "id": "deepseek.quick_pill",
-              "text": "平滑着色",
-              "icon": "NONE",
-              "kwargs": {},
-              "assigned": {
-                "action": "平滑着色"
-              }
-            }
-          ],
-          "props": [],
-          "children": []
         }
       ]
     },
@@ -422,12 +344,8 @@
       "alignment": "EXPAND",
       "use_property_split": false,
       "emboss": "NONE",
-      "texts": [
-        "输入建模指令:"
-      ],
-      "icons": [
-        "TEXT"
-      ],
+      "texts": [],
+      "icons": [],
       "ops": [],
       "props": [
         {

@@ -27,7 +27,7 @@ STATES = ["idle", "clarify", "options", "running", "done", "partial", "failed"]
 # （这块之前是定义了从不渲染的死 ID，ui.py 整改时才真正挂上）。
 # 数字变了要回来改这里 —— 这正是这张表该干的事：任何 ID 数量的意外漂移
 # 都会先红在这儿，而不是安静地过去。
-EXPECT_ID_COUNTS = {"idle": 5, "clarify": 5, "options": 8, "running": 6,
+EXPECT_ID_COUNTS = {"idle": 5, "clarify": 5, "options": 6, "running": 6,
                     "done": 5, "partial": 5, "failed": 5}
 
 FAILS = []
@@ -123,9 +123,11 @@ def main():
                 want = ["constraints"] + ["layout/" + s for s in STATES]
                 missing = [k for k in want if k not in payload]
                 ck("data_js_keys", not missing, "data.js 缺键：%s" % missing)
+                # 规格段合并成**一个**盒之后，chat.options 标的是整段而不是
+                # 每张卡各标一个。原来这里是 3，现在是 1。
                 ck("layout_options_cards",
-                   _count_id(payload.get("layout/options"), "chat.options") == 3,
-                   "options 树的 chat.options 应为 3 张卡，实际 %d"
+                   _count_id(payload.get("layout/options"), "chat.options") == 1,
+                   "options 树的 chat.options 应整段 1 个，实际 %d"
                    % _count_id(payload.get("layout/options"), "chat.options"))
 
     # 配色铁律：style.css 的每个色值都必须来自 native_api.json 实测主题色
@@ -252,13 +254,14 @@ def dom_key_check():
         except (OSError, subprocess.SubprocessError) as exc:
             ck("dom_options_card_keys", False, "浏览器调用失败：%s" % exc)
             return
-        ck("dom_options_card_keys", len(card_keys) == 3,
-           "三张规格卡应产出 3 个键，实际 %d：%s" % (len(card_keys), card_keys))
+        ck("dom_options_card_keys", len(card_keys) == 1,
+           "规格段现在是整段一个盒，应产出 1 个 chat.options 键，实际 %d：%s"
+           % (len(card_keys), card_keys))
         ck("dom_options_cards_distinct", len(set(card_keys)) == len(card_keys),
-           "三张规格卡共用了同一个标注键：%s" % card_keys)
+           "chat.options 的标注键重复：%s" % card_keys)
         ck("dom_options_cards_have_path",
            all("@" in k for k in card_keys),
-           "规格卡键里没有路径，无法区分同名节点：%s" % card_keys)
+           "规格段键里没有路径，无法区分同名节点：%s" % card_keys)
     finally:
         shutil.rmtree(profile, ignore_errors=True)
 

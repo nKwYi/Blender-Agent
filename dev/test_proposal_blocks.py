@@ -199,13 +199,18 @@ def data_checks(doc):
        "你说的话默认应展开（open_default=True），实际 ui_py=%r"
        % by_key["chat_bubble"]["ui_py"][:120])
 
-    # 第 3 条：底部常用操作一行 4 个。数据上是 cols=4 + 四个条目；
-    # 真的排成一行由 DOM 那侧的 pills 读数量（数据写 4 而 CSS 没跟上会红）。
+    # 第 7 条：底部常用操作只留「修改尺寸」「更换材质」两条，并排一行。
+    # 真的排成一行由 DOM 那侧的 pills 读数量（数据写 2 而 CSS 没跟上会红）。
     pills = by_key["chat_pills"]["demo"]
-    ck("blocks_pills_four_in_one_row",
-       pills.get("cols") == 4 and len(pills.get("items") or []) == 4,
-       "快捷指令应是 cols=4 的四个，实际 cols=%s items=%s"
+    ck("blocks_pills_two_in_one_row",
+       pills.get("cols") == 2 and len(pills.get("items") or []) == 2,
+       "快捷指令应是 cols=2 的两条，实际 cols=%s items=%s"
        % (pills.get("cols"), len(pills.get("items") or [])))
+    ck("blocks_pills_drops_bevel_smooth",
+       not any(k in str(pills.get("items"))
+               for k in ("增加倒角", "平滑着色")),
+       "第 7 条要求删掉「增加倒角」「平滑着色」，实际 items=%s"
+       % (pills.get("items"),))
 
     # 第 2 + 第 5 条：规格那块双层盒——外层一个盒装引子，里面每个细节
     # 自己一个盒，标题与那一串选择按钮同盒。判据落在数据形状上，
@@ -835,12 +840,13 @@ def dom_checks(doc):
                "窄面板那次量到的宽度不是窄的：宽 %s / 窄 %s"
                % (it.get("wide-panel"), it.get("narrow-panel")))
             # 「一共有几个图标」这条单独钉死两个具体数：页签条 3 个、快捷
-            # 指令 4 个。只比 shown == total 的话，一处都不画（total=0、
-            # shown=0）也会照样成立——M17 那个变异就是这么钻过去的。
+            # 指令 2 个（第 7 条把「增加倒角」「平滑着色」删了之后）。
+            # 只比 shown == total 的话，一处都不画（total=0、shown=0）
+            # 也会照样成立——M17 那个变异就是这么钻过去的。
             pills_ico = (it.get("pills") or "").split(":")
             ck("dom_icons_rendered_per_card",
-               len(pills_ico) >= 4 and pills_ico[3] == "4",
-               "快捷指令那张卡应有 4 个图标角标，读到 %s"
+               len(pills_ico) >= 4 and pills_ico[3] == "2",
+               "快捷指令那张卡应有 2 个图标角标，读到 %s"
                % (pills_ico[3] if len(pills_ico) > 3 else "?",))
             qs_ico = (it.get("qs") or "").split(":")
             ck("dom_icons_in_question_groups",
@@ -850,11 +856,11 @@ def dom_checks(doc):
             # 第 1 条：页签上不许再有「AI」。
             ck("dom_tabs_dropped_ai", it.get("tabs") == "对话|详情|设置",
                "页签条卡片上读到的页签是：%r" % it.get("tabs"))
-            # 第 3 条：四个方块同一行（distinct top == 1）。
+            # 第 7 条：两个方块同一行（distinct top == 1）。
             pills = (it.get("pills") or "").split(":")
             ck("dom_pills_single_row",
-               len(pills) >= 2 and pills[0] == "4" and pills[1] == "1",
-               "快捷指令应是四个排在同一行，读到 %s 个方块 / %s 行"
+               len(pills) >= 2 and pills[0] == "2" and pills[1] == "1",
+               "快捷指令应是两个排在同一行，读到 %s 个方块 / %s 行"
                % (pills[0] if pills else "?", pills[1] if len(pills) > 1 else "?"))
             # 第 2 + 第 5 条：外层一个盒（kind=box，引子是这个盒的**直接**
             # 孩子），里面三个细节各自成盒、每个盒里三个按钮——而且那几个
@@ -904,19 +910,22 @@ def dom_checks(doc):
                "你说的话应是一个带边框的盒 + 一段没有边框的文字，读到 %r"
                % (it.get("msg"),))
 
-            # 第 6 条（标签与输入框合成一处、去掉「高度 3」）：.d-textbox 与
-            # 那个标签都是这个盒的**直接**孩子，输入框摊满、在标签下面，
-            # 且盒里不再有「高度 N」那类滑块。
-            # （上一版这里量的是 .d-crow 那条标签行，标签行本身已按用户要求
-            #   删掉，判据随之改成「标签直接压在输入框上面」——不是放松：
-            #   边界的 sibling / 摊满 / 在下面三格都还在，另加一格查滑块。）
+            # 第 7 条：「输入建模指令:」那一栏已删，输入区只剩输入框和
+            # 发送按钮。所以 merged/loose 这对判据失去了参照物——它本来
+            # 比的是「输入框 vs 标签行」的宽和高，现在没有标签行了。
+            # 改成钉真正还成立的三件事：输入框在、只有一格（= 没有标签行）、
+            # 盒里查不到「高度 N」那类滑块。
             cp = (it.get("composer") or "").split(":")
             ck("dom_composer_textbox_own_row",
-               len(cp) >= 6 and cp[0] == "composer" and cp[1] == "1" and
-               cp[2] == "1" and cp[3] == "sibling" and cp[4] == "merged" and
+               len(cp) >= 6 and cp[0] == "composer" and cp[2] == "1" and
                cp[5] == "0",
-               "输入区应是标签与输入框合成一处（平级、摊满、在标签下面、无高度"
-               "滑块），读到 %r" % (it.get("composer"),))
+               "输入区应只剩输入框、没有『输入建模指令:』标签行、没有高度"
+               "滑块，读到 %r" % (it.get("composer"),))
+            ck("dom_composer_single_item",
+               len(cp) >= 2 and cp[1] == "1",
+               "输入区应当只剩 1 格（输入框本身），读到 %s 格 —— 多出来"
+               "的就是没删干净的标签行"
+               % (cp[1] if len(cp) > 1 else "?",))
 
         # --- 长消息的折叠 / 展开两态（#biz-msg）---
         mp = dump(exe, url + "#biz-msg", profile)
