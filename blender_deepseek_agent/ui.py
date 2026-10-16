@@ -28,16 +28,47 @@ PHASE_VIEW = {
 
 SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-# 用户气泡的盒宽 = 面板宽：layout.box() 原生铺满就是想要的，文字按盒内宽度
-# 折行，面板拉宽行就变长。原生 UILayout 没有 margin 概念，也不额外切 split 栏。
-USER_BUBBLE_FULL_WIDTH = True
+# 用户气泡不再铺满：layout.box() 原生就是整幅宽，要留边距只能用
+# layout.split(factor=...)，盒画在 split 返回的那一列里。
+#
+# 实测结论（Blender 5.2.1：临时探针面板 + 截图逐像素量盒子的 x 范围，
+# 以及 headless 下 blf.dimensions 量字宽；探针脚本未入库）：
+#   * split() 返回的永远是**左边**那一列，宽 = factor × 内容宽；
+#   * align 是 bool（传 'LEFT'/'RIGHT' 直接 TypeError），True/False/不传
+#     三者量出来完全一样，**不影响盒子靠哪边**；
+#   * split 留出来的是**右边**的空白，左边留白在原生 UILayout 里做不到；
+#   * layout.box() 加 scale_x 不缩宽，column.alignment='RIGHT' 也不缩不推。
+# 所以这里的 factor 留的是**右侧**边距；左侧的「空一格」由首行缩进实现。
+USER_BUBBLE_SPLIT = 0.80
+
+# 下面三个常量都是实测出来的（UI 单位，1.0 = ui_scale 1.0）：
+#   CJK 字宽：blf.size(font, 11) 下 blf.dimensions('中文') / 字数 = 11.00 px
+#             （英文 5.42 px/字符；折行按中文字宽算，英文会偏保守，不会溢出）
+#   面板左右留白（两侧合计）：region.width 420 → 盒 x24..365 = 342，
+#             即 78 设备 px / ui_scale 1.5 = 52 UI 单位。
+#   盒内文字留白（两侧合计）：盒左沿 24、字左沿 34 = 单侧 10，
+#             两侧 20 设备 px / 1.5 ≈ 13.3 → 取 14 留一点安全余量。
+#
+# 留白一律**取比实测更大**的值：面板留白算多了只是少排一个字，留白算少了
+# 文字会顶出盒外，所以宁可排短也不要溢出。
+PX_PER_CJK = 11.0
+PANEL_PAD_UI = 54.0
+BOX_PAD_UI = 14.0
+
+# 每行字数 = 盒内可用 px / 字宽，夹在 [6, 44]：极窄面板不至于算出 0，
+# 极宽面板不至于算出几百（一行几百字在气泡里没法看）。
+WRAP_CHARS_MIN = 6
+WRAP_CHARS_MAX = 44
+# 拿不到 context.region 时（无头测试、MockLayout）退回这个值，和旧行为一致。
+WRAP_CHARS_FALLBACK = 18
 
 # 布局契约（结构性约束，用 check_layout_contract() 自检，空列表 = 全部通过）：
 #   1. 页签条排在状态提示条上面 —— DEEPSEEK_PT_chat.draw 先画页签条再调
 #      draw_chat_content，UILayout 按源码顺序渲染，天然成立；
 #   2. 状态提示条只有一层盒 —— draw_chat_content 的 busy 分支不再 box() 套内层；
 #   3. 长提示词用原生 layout.panel() 折叠，idname 稳定、默认展开；
-#   4. 用户气泡盒铺满整幅，文字按盒宽折行（不用 split 切窄栏）；
+#   4. 用户气泡盒走 layout.split(factor) 切出边距，文字按**实际盒宽**折行
+#      （首行缩进两格，续行顶格）；
 #   5. 规格选项横排，过多或过长时降级竖排；
 #   6. 输入框不再有「高度 N」滑块，prompt_lines 仅作 textbox 初值。
 LAYOUT_CONTRACT = {
@@ -798,8 +829,12 @@ def ensure_notes(state, count):
 
 
 # ---------------------------------------------------------------- panels
-def wrap_text(text, max_chars=26):
-    """把长文本拆分为适合 Blender N 面板显示的行列表"""
+def wrap_text(text, max_chars=26, first_chars=None):
+    """把长文本拆分为适合 Blender N 面板显示的行列表。
+
+    first_chars：首行单独用更小的字数预算（气泡首行要缩进两格，留出这两格
+    才不会顶出盒宽）。不传时所有行都用 max_chars，行为与原来完全一致。
+    """
     if not text:
         return []
     lines = []
@@ -807,17 +842,20 @@ def wrap_text(text, max_chars=26):
         p = paragraph.strip()
         if not p:
             continue
-        while len(p) > max_chars:
-            cut = max_chars
+        while p:
+            budget = int(first_chars) if (first_chars and not lines) else int(max_chars)
+            budget = max(1, budget)
+            if len(p) <= budget:
+                lines.append(p)
+                break
+            cut = budget
             for sep in (" ", "，", "。", "；", "！", "、", ",", ";"):
-                pos = p[:max_chars].rfind(sep)
-                if pos > max_chars // 2:
+                pos = p[:budget].rfind(sep)
+                if pos > budget // 2:
                     cut = pos + 1
                     break
             lines.append(p[:cut].strip())
             p = p[cut:].strip()
-        if p:
-            lines.append(p)
     return lines
 
 
@@ -835,6 +873,40 @@ def user_msg_summary(text, limit=16):
     if len(first) > limit:
         first = first[:limit] + "…"
     return f"你：{first}（共 {len(flat)} 字）"
+
+
+def bubble_wrap_chars(context, factor=USER_BUBBLE_SPLIT):
+    """从实际面板宽反推气泡每行放得下多少个中文字。
+
+    链路（全部实测，见文件头常量注释）：
+        内容宽 = region.width - 面板留白
+        盒宽   = 内容宽 × split factor
+        文字宽 = 盒宽 - 盒内留白
+        每行字数 = 文字宽 / 中文字宽
+
+    region.width 是**设备像素**（ui_scale 已经乘进去，实测 420 与截图 420 px
+    一致），所以三个留白常量也要乘 ui_scale 才能对齐，最后相除时 ui_scale
+    自然约掉。拿不到 region 就退回固定值，不让面板外调用炸掉。
+    """
+    region = getattr(context, "region", None)
+    try:
+        raw_w = float(getattr(region, "width", 0) or 0)
+    except (TypeError, ValueError):
+        raw_w = 0.0
+    if raw_w <= 0:
+        return WRAP_CHARS_FALLBACK
+    try:
+        scale = float(bpy.context.preferences.system.ui_scale) or 1.0
+    except Exception:
+        scale = 1.0
+    if scale <= 0:
+        scale = 1.0
+    content_px = max(0.0, raw_w - PANEL_PAD_UI * scale)
+    text_px = content_px * float(factor) - BOX_PAD_UI * scale
+    if text_px <= 0:
+        return WRAP_CHARS_MIN
+    chars = int(text_px / (PX_PER_CJK * scale))
+    return max(WRAP_CHARS_MIN, min(WRAP_CHARS_MAX, chars))
 
 
 def draw_chat_content(layout, context, state, run):
@@ -910,14 +982,24 @@ def draw_chat_content(layout, context, state, run):
         for idx in range(start_idx, hist_len):
             item = state.history[idx]
             if item.role == "你":
-                # 人发的：盒子底色 + 文字左对齐、开头空两个全角字符。盒宽 = 面板宽
-                # （layout.box() 原生铺满就是想要的），文字按盒内宽度自然折行，
-                # 面板拉宽行就变长；不额外加 margin，也不动配色。
-                # 缩进不用 alignment + indent_left（原生会把整块推到右边），直接在
-                # 每一行文本前面加前缀——wrap_text 已经把正文按行切开了，逐行加
-                # 前缀才能让换行后的每一条续行都对齐，不会只有首行缩进。
-                ubox = layout.box()
-                if user_msg_is_long(item.text):
+                # 人发的：盒子底色 + 文字左对齐 + **首行**缩进两格。
+                #
+                # 边距用 layout.split(factor)：layout.box() 原生永远是整幅宽，
+                # 要缩窄只能切 split 栏。实测 split 返回的是**左边**那一列，
+                # 留出来的是**右边**空白（左边留白原生做不到，见文件头注释）。
+                #
+                # 折行宽度跟着实际盒宽走：bubble_wrap_chars() 从
+                # context.region.width 反推每行字数，面板拉宽行就变长、拉窄就
+                # 变短——「文字充满盒」就是折行宽度刚好等于盒内可用宽度。
+                chars = bubble_wrap_chars(context)
+                # 老 mock（dev/test_native_ui.py 的 MockLayout.split）返回的是
+                # 2.8 之前的 (a, b) 元组，真实 5.2 只返回一个 UILayout。
+                # 这里两种都能吃，不为了迁就 mock 改写真正的调用。
+                col = layout.split(factor=USER_BUBBLE_SPLIT)
+                if isinstance(col, tuple):
+                    col = col[0]
+                ubox = col.box()
+                if user_msg_is_long(item.text, max_chars=chars):
                     # 长提示词给一个原生折叠箭头（layout.panel 有正确的动效和
                     # 开合状态记忆）。idname 必须对同一个气泡稳定，所以用
                     # push_history 里发的 uid，不用会移位的历史下标。
@@ -925,9 +1007,12 @@ def draw_chat_content(layout, context, state, run):
                     p_id = f"chat.user_msg_{int(getattr(item, 'uid', 0) or 0) or (idx + 1)}"
                     up = ubox.panel(p_id, default_closed=False)
                     up.label(text=user_msg_summary(item.text), icon='USER')
-                for ln in wrap_text(item.text, max_chars=18):
+                # 只给**第一行**加两格缩进，续行顶格。首行预算减 2，
+                # 免得缩进把首行顶出盒宽。
+                for i, ln in enumerate(wrap_text(item.text, max_chars=chars,
+                                                 first_chars=max(2, chars - 2))):
                     urow = ubox.row()
-                    urow.label(text="　　" + ln)
+                    urow.label(text=("　　" + ln) if i == 0 else ln)
             else:
                 # AI 回的：整幅、无框，直接排在对话流里
                 abox = layout
@@ -1466,10 +1551,16 @@ def check_layout_contract():
         bad.append("no_composer_height_slider: prompt_lines 没继续作为 textbox 初值")
     if 'orow_holder' not in content_src:
         bad.append("options_horizontal: 选项仍是一行一个")
-    if 'layout.split' in content_src:
-        bad.append("user_bubble_full_width_box: 不该用 split 切窄栏，气泡盒应铺满")
-    if 'ubox = layout.box()' not in content_src:
-        bad.append("user_bubble_full_width_box: 用户气泡没有用原生 box() 铺满")
+    if 'layout.split(factor=USER_BUBBLE_SPLIT)' not in content_src:
+        bad.append("user_bubble_split_margin: 用户气泡没有用 layout.split(factor) 切边距")
+    if 'ubox = col.box()' not in content_src:
+        bad.append("user_bubble_split_margin: 用户气泡的盒必须画在 split 返回的列里")
+    if 'bubble_wrap_chars(context)' not in content_src:
+        bad.append("wrap_follows_box_width: 折行宽度没有跟着实际盒宽算")
+    if 'max_chars=18' in content_src:
+        bad.append("wrap_follows_box_width: 还有写死 18 字的折行宽度")
+    if 'text=("　　" + ln) if i == 0 else ln' not in content_src:
+        bad.append("indent_first_line_only: 缩进必须只加首行，续行顶格")
     if 'layout.panel' not in content_src:
         bad.append("user_msg_panel_fold: 长提示词没有用原生 layout.panel() 折叠")
     if 'default_closed=False' not in content_src:
