@@ -74,6 +74,18 @@ class MockLayout:
         self.children.append(b)
         return b
 
+    def panel(self, idname, default_closed=False, layout_header=None,
+              layout_body=None):
+        # 真实 UILayout.panel() 返回**单个** layout（头和体是同一个），
+        # 不是二元组，也不是 split() 那样只返回一半。ui.py 的长用户提示词
+        # 折叠用的就是它；桩里少这个方法，测试里塞一条长指令就会
+        # AttributeError，而不是安静地少断言。
+        p = MockLayout("panel", parent=self)
+        p.panel_idname = idname
+        p.panel_default_closed = bool(default_closed)
+        self.children.append(p)
+        return p
+
     def row(self, align=False):
         r = MockLayout("row", parent=self)
         self.children.append(r)

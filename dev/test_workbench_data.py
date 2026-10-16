@@ -21,8 +21,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 WB = os.path.join(ROOT, "ui_workbench")
 STATES = ["idle", "clarify", "options", "running", "done", "partial", "failed"]
-# Task 4 实测的每状态 ID 数（brief Step 1 要求精确匹配）
-EXPECT_ID_COUNTS = {"idle": 5, "clarify": 5, "options": 8, "running": 5,
+# 每状态精确匹配的 ID 数。精确值不是 >=：options 若悄悄把三张卡全丢掉，
+# ID 数会掉到 5，用 >= 就放行了。
+# running 是 6 不是 5：状态提示条在 busy 分支里给忙碌盒挂了 chat.statusbar
+# （这块之前是定义了从不渲染的死 ID，ui.py 整改时才真正挂上）。
+# 数字变了要回来改这里 —— 这正是这张表该干的事：任何 ID 数量的意外漂移
+# 都会先红在这儿，而不是安静地过去。
+EXPECT_ID_COUNTS = {"idle": 5, "clarify": 5, "options": 8, "running": 6,
                     "done": 5, "partial": 5, "failed": 5}
 
 FAILS = []
