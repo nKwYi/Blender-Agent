@@ -204,9 +204,9 @@
    "default_variant": "user",
    "demo": {
     "items": [
-     "帮我做一个马克杯"
+     "帮我做一个马克杯，杯口直径 8 厘米、杯身高 9 厘米，杯壁厚 3 毫米，加一个半径 4 厘米的把手，把手和杯身要连成一体，表面做成磨砂的"
     ],
-    "kind": "box"
+    "kind": "msgtxt"
    },
    "editable": [
     "小标题文字"
@@ -223,20 +223,26 @@
     }
    ],
    "tab": "chat",
-   "ui_py": "ubox = layout.box()\nfor ln in wrap_text(item.text, max_chars=18):\n    urow = ubox.row()\n    urow.alignment = 'RIGHT'\n    urow.label(text=ln)",
+   "ui_py": "ubox = _uw_msg_panel(layout, \"chat.user_msg\", item.text, open_default=False)",
    "variants": [
     {
      "demo": {
       "items": [
-       "帮我做一个马克杯"
+       "帮我做一个马克杯，杯口直径 8 厘米、杯身高 9 厘米，杯壁厚 3 毫米，加一个半径 4 厘米的把手，把手和杯身要连成一体，表面做成磨砂的"
       ],
-      "kind": "box"
+      "kind": "msgtxt"
      },
      "key": "user",
      "label": "你说的话",
-     "rewrites": [],
-     "ui_py": "ubox = layout.box()\nfor ln in wrap_text(item.text, max_chars=18):\n    urow = ubox.row()\n    urow.alignment = 'RIGHT'\n    urow.label(text=ln)",
-     "what": "装在盒子里、文字右对齐"
+     "rewrites": [
+      {
+       "from": "ubox = layout.box()",
+       "to": "ubox = _uw_msg_panel(layout, \"chat.user_msg\", item.text, open_default=False)",
+       "why": "ui.py:868 那个 ubox 是个铺满整幅的盒子，几百字的提示词会把侧栏撑爆（Blender 侧栏不能滚动）。改成 _uw_msg_panel（见 py_helper），它内部用 layout.panel(idname, default_closed)——那是真能收起、自带原生箭头的控件。展开/收起的状态跟着积木走，导出时把 open_default 一起带出去。"
+      }
+     ],
+     "ui_py": "ubox = _uw_msg_panel(layout, \"chat.user_msg\", item.text, open_default=False)",
+     "what": "一个盒，右对齐；长消息默认折成一行摘要，点标题展开"
     },
     {
      "demo": {
@@ -270,7 +276,7 @@
      "what": "不装框，带耗时 / 执行步骤 / 新增对象"
     }
    ],
-   "what": "对话流里的一条消息。你说的话装在盒子里右对齐，AI 的话不装框，直接排在流里。"
+   "what": "对话流里的一条消息。你说的话装在盒子里右对齐——**一个盒，盒里不再套盒**；长消息默认折成一行摘要，点标题展开（Blender 侧是 layout.panel，导出里用的是它）。AI 的话不装框，直接排在流里。"
   },
   {
    "default_variant": "only",
@@ -489,10 +495,10 @@
     ],
     "items": [
      "输入建模指令:",
-     "高度 3",
-     "用自然语言描述要建模什么，可多行"
+     "高度 3"
     ],
-    "kind": "prop"
+    "kind": "composer",
+    "textbox": "用自然语言描述要建模什么，可多行"
    },
    "editable": [
     "标签文字",
@@ -527,12 +533,15 @@
    "variants": [
     {
      "demo": {
+      "icons": [
+       "TEXT"
+      ],
       "items": [
        "输入建模指令:",
-       "高度 3",
-       "用自然语言描述要建模什么，可多行"
+       "高度 3"
       ],
-      "kind": "prop"
+      "kind": "composer",
+      "textbox": "用自然语言描述要建模什么，可多行"
      },
      "key": "only",
      "label": "输入区",
@@ -541,7 +550,7 @@
      "what": "多行输入框 + 发送或终止"
     }
    ],
-   "what": "面板最下面那块：一句提示 + 可拖高度的输入框 + 发送/终止。"
+   "what": "面板最下面那块：标签 + 高度滑块一行，**输入框独占下一行**（照 ui.py:947-955），输入框那一行有上边线隔开；下面才是发送/终止。"
   },
   {
    "default_variant": "only",
@@ -976,22 +985,48 @@
   "btn",
   "prop",
   "rule",
-  "gap"
+  "gap",
+  "msgtxt",
+  "composer"
  ],
  "generated_for": "blender_deepseek_agent/ui.py",
+ "py_helper": {
+  "key": "msg_fold",
+  "snippet": [
+   "# ---- 长消息折叠：一条几百字的提示词不该把侧栏撑爆 ----",
+   "# Blender 侧栏不能滚动，所以长消息默认只露一行摘要。",
+   "# 用 layout.panel(idname, default_closed)：它是真的能收起的，",
+   "# 而且自带原生三角箭头——别自己造折叠控件，造出来的那个不是",
+   "# Blender 的控件，导出后也对不上任何真实 API。",
+   "# open_default 是积木上「展开 / 收起」那个状态带过来的，",
+   "# 不是写死的：在工作台里点开过之后导出的那一份会写成 True。",
+   "def _uw_msg_panel(layout, idname, text, open_default=False):",
+   "    p = layout.panel(idname, default_closed=not open_default)",
+   "    head = text[:20] + (\"…\" if len(text) > 20 else \"\")",
+   "    p.label(text=head)",
+   "    for ln in wrap_text(text, max_chars=18):",
+   "        r = p.row()",
+   "        r.alignment = 'RIGHT'",
+   "        r.label(text=ln)",
+   "    return p"
+  ],
+  "why": "这一段是 ui.py 里没有的新增代码：长消息折叠在插件里还没有现成写法可抄，所以它不进任何块的 ui_py（那边只许放 ui.py 里逐字存在的代码），单独立这张表随导出一起带走。"
+ },
  "py_preamble": {
   "key": "responsive_icons",
   "snippet": [
-   "# ---- 响应式图标：面板窄了就只留文字 ----",
+   "# ---- 响应式图标：面板窄了就只留图标 ----",
    "# Blender 没有媒体查询，draw() 里唯一能拿到的宽度就是区域宽度，",
-   "# 所以「宽 / 窄」只能自己判断：够宽给真图标名，不够就 icon='NONE'。",
+   "# 所以「宽 / 窄」只能自己判断：宽的给「图标 + 文字」，",
+   "# 窄的只给图标（text 置空就是只剩图标，不是把 icon 置成 'NONE'——",
+   "# 那会把按钮上唯一认得出来的标志也一起抹掉）。",
    "# ★ 拖动面板边框的过程中 Blender 不会实时重绘 draw()，",
    "#   松手之后才重画一次——所以这个切换是「松手即生效」，",
    "#   不是「拖动过程中实时变」。别把它当成 CSS 那种媒体查询。",
    "_uw_panel_w = bpy.context.region.width",
    "_uw_wide = _uw_panel_w >= 360",
-   "ICON_PLAY = 'PLAY' if _uw_wide else 'NONE'",
-   "ICON_CHECKBOX = 'CHECKBOX_DEHLT' if _uw_wide else 'NONE'"
+   "TXT_SEND = \"发送指令\" if _uw_wide else \"\"",
+   "TXT_STOP = \"终止任务\" if _uw_wide else \"\""
   ],
   "why": "这一段是 ui.py 里没有的新增代码：响应式图标在插件里还没有现成写法可抄，所以它不进任何块的 ui_py（那边只许放 ui.py 里逐字存在的代码），单独立这张表随导出一起带走。"
  },

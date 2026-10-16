@@ -117,6 +117,7 @@ $TESTS = @(
     @{ name = 'test_constraints';    summary = 'PASS [1-9]\d*\s+FAIL 0';              mustMatch = $true; engine = 'py'  },
     @{ name = 'test_recorder';       summary = 'PASS [1-9]\d*\s+FAIL 0';              mustMatch = $true; engine = 'py'  },
     @{ name = 'test_pipeline';       summary = 'PASS [1-9]\d*\s+FAIL 0';              mustMatch = $true; engine = 'py'  },
+    @{ name = 'test_proposal_blocks'; summary = 'PASS [1-9]\d*\s+FAIL 0';             mustMatch = $true; engine = 'py'  },
 
     # The next two each spawn headless Edge 7-8 times (--headless=new --dump-dom)
     # to read the rendered DOM. Measured 4-5s each on this machine; a cold first

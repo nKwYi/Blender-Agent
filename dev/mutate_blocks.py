@@ -102,17 +102,30 @@ MUTS = [
      ("dom_biz_preview_nodes",)),
 
     # ---- Task 20：五条用户意见各自的实现 ----
-    ("M11_图标永远不显示（容器查询里改成藏）",
+    # ---- Task 21：响应式图标的取舍反过来（窄 → 只留图标）----
+    ("M11_图标永远不显示",
      "ui_workbench/style.css",
-     "@container uwpanel (min-width: 360px) {\n  .demo .d-ic { display: inline-block; }\n}",
-     "@container uwpanel (min-width: 360px) {\n  .demo .d-ic { display: none; }\n}",
-     ("dom_icons_wide_default_on",)),
-
-    ("M12_窄了也不藏（默认值从 none 改成露出）",
-     "ui_workbench/style.css",
-     ".demo .d-ic {\n  display: none;",
      ".demo .d-ic {\n  display: inline-block;",
-     ("dom_icons_narrow_all_hidden",)),
+     ".demo .d-ic {\n  display: none;",
+     ("dom_icons_wide_icon_and_text",)),
+
+    ("M12_窄了也不藏文字",
+     "ui_workbench/style.css",
+     "@container uwpanel (max-width: 360px) {\n  .demo .d-tx { display: none; }",
+     "@container uwpanel (max-width: 360px) {\n  .demo .d-tx { display: inline-block; }",
+     ("dom_icons_narrow_icon_only",)),
+
+    ("M12b_容器查询写成最小宽度（等于永远不触发）",
+     "ui_workbench/style.css",
+     "@container uwpanel (max-width: 360px) {",
+     "@container uwpanel (min-width: 361px) {",
+     ("dom_icons_narrow_icon_only",)),
+
+    ("M12c_窄的时候连图标一起藏",
+     "ui_workbench/style.css",
+     "  .demo .d-tx { display: none; }",
+     "  .demo .d-tx { display: none; }\n  .demo .d-ic { display: none; }",
+     ("dom_icons_narrow_icon_only",)),
 
     ("M13_快捷指令退回 2x2",
      "dev/build_blocks.py",
@@ -144,9 +157,9 @@ MUTS = [
      "ui_workbench/app.js",
      "  if (icon) {\n    var ic = document.createElement(\"b\");\n    ic.className = \"d-ic\";",
      "  if (false && icon) {\n    var ic = document.createElement(\"b\");\n    ic.className = \"d-ic\";",
-     # 故意不指望 dom_icons_wide_default_on：那条只比 shown == total，
+     # 故意不指望 dom_icons_wide_icon_and_text：那条只比 shown == total，
      # 而分组标题的图标角标走的是 renderDemo 里另一条创建路径（不进
-     # demoItem），所以这个变异之后 total 仍是 3，那条照样绿。
+     # demoItem），所以这个变异之后 ico/text 的 total 仍不为 0，那条照样绿。
      # 抓住它的是两条逐卡点数的断言。
      ("dom_icons_rendered_per_card", "dom_icons_in_question_groups")),
 
@@ -157,6 +170,49 @@ MUTS = [
      "ui_workbench/blocks.json",
      '"CHECKBOX_DEHLT"', '"MUTATED_FAKE_ICON"',
      ("blocks_demo_icons_are_real",)),
+
+    # ---- Task 21：一个盒 / 长消息折叠 / 输入框独占一行 ----
+    ("M19_你说的话又套了两层盒",
+     # 把那段「没有边框的纯文字」换回带边框的方块：DOM 层级照样只有一个
+     # .d-msgtext，但屏幕上多出来第二重框。抓住它的是量 border 宽度那条。
+     "ui_workbench/app.js",
+     '  txt.className = "d-msgtext";',
+     '  txt.className = "d-it";',
+     # 故意不指望 dom_biz_demo_items：那条只数方块的**个数**（d-it +
+     # d-msgtext 各算一个），把类名从 d-msgtext 换成 d-it 之后个数还是 1，
+     # 它照样绿——它防的是「少画了 / 多画了」，不是「多套了一层框」。
+     # 真正抓住这一条的是量 border 宽度那条断言。
+     ("dom_bubble_user_one_box",)),
+
+    ("M20_折叠态直接把全文给出来",
+     "ui_workbench/app.js",
+     "  var open = !!(w.node && w.node.msgOpen);",
+     "  var open = true;   /* mutated: 不折了 */",
+     ("dom_msg_folded_is_summary",)),
+
+    ("M21_折叠态没有展开指示",
+     "ui_workbench/app.js",
+     "  box.appendChild(tg);\n  return box;\n}",
+     "  /* mutated: 不画展开指示 */\n  return box;\n}",
+     ("dom_msg_folded_shows_toggle",)),
+
+    ("M22_导出丢掉积木上的展开状态",
+     "ui_workbench/app.js",
+     '  if (n.msgOpen) {\n    src = src.replace("open_default=False", "open_default=True");\n  }',
+     "  /* mutated: 状态不带走 */",
+     ("dom_msg_state_reaches_export",)),
+
+    ("M23_导出的折叠自造成一个盒子（不用 layout.panel）",
+     "ui_workbench/app.js",
+     "  if (helper && proposal.length) {",
+     "  if (false && helper && proposal.length) {",
+     ("dom_export_has_msg_fold", "dom_msg_state_reaches_export")),
+
+    ("M24_输入框又挤回标签那一行",
+     "ui_workbench/app.js",
+     '  box.appendChild(tb);\n  return box;\n}',
+     '  crow.appendChild(tb);   /* mutated: 塞回同一行 */\n  return box;\n}',
+     ("dom_composer_textbox_own_row",)),
 ]
 
 

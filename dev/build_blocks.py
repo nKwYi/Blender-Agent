@@ -29,6 +29,10 @@ UI_PY = os.path.join(ROOT, "blender_deepseek_agent", "ui.py")
 OUT = os.path.join(ROOT, "ui_workbench", "blocks.json")
 
 TAB_LABELS = {"chat": "对话", "detail": "详情", "settings": "设置"}
+# 长消息折叠的分界：折叠态只显示前 20 字 + 省略号。
+# 这一条只有一个出处：渲染侧（app.js 的 FOLD_CHARS）与导出侧（py_helper 里的
+# text[:20]）必须说的是同一件事，否则预览折了、Blender 里没折。
+FOLD_CHARS = 20
 
 
 class BlockError(Exception):
@@ -224,11 +228,12 @@ def build():
                   icons=["COMMUNITY", "CONSOLE", "PREFERENCES"]),
     })
 
-    user_box = ["ubox = layout.box()",
-                "for ln in wrap_text(item.text, max_chars=18):",
-                "    urow = ubox.row()",
-                "    urow.alignment = 'RIGHT'",
-                "    urow.label(text=ln)"]
+    # 用户自己发的那条消息：ui.py:868-872 就是一个盒（ubox）+ 右对齐的文字。
+    # Task 21 起这盒改成可收起的可折叠子面板——长提示词会把侧栏撑爆，而
+    # Blender 侧栏不能滚动。写法是 py_helper 里那个 _uw_msg_panel，它内部
+    # 用 layout.panel(idname, default_closed)，那是真能收起、带原生箭头的控件。
+    user_box = ['ubox = _uw_msg_panel(layout, "chat.user_msg", item.text,'
+                " open_default=False)"]
     ai_box = ["if item.duration_str:",
               "    arow = layout.row(align=True)",
               "    arow.alignment = 'LEFT'",
@@ -243,14 +248,32 @@ def build():
               '    res_box.label(text=f"新增对象：{item.added_objects_str}", icon=\'MESH_DATA\')']
     bubble_slots = [{"name": "steps", "label": "小标题文字",
                      "text": "执行的操作：", "literal": pyq("执行的操作：")}]
+    # 故意给一条**长**的：折叠这件事只有长消息才谈得上，短消息折了也没意义。
+    # 20 个字是折与不折的分界（渲染侧按这条切，导出侧也按这条切）。
+    USER_MSG_LONG = ("帮我做一个马克杯，杯口直径 8 厘米、杯身高 9 厘米，"
+                     "杯壁厚 3 毫米，加一个半径 4 厘米的把手，"
+                     "把手和杯身要连成一体，表面做成磨砂的")
+    bubble_demo = D("msgtxt", [USER_MSG_LONG])
     blocks.append({
         "key": "chat_bubble",
         "label": "消息气泡",
         "tab": "chat",
-        "what": "对话流里的一条消息。你说的话装在盒子里右对齐，AI 的话不装框，直接排在流里。",
+        "what": "对话流里的一条消息。你说的话装在盒子里右对齐——**一个盒，"
+                "盒里不再套盒**；长消息默认折成一行摘要，点标题展开（Blender "
+                "侧是 layout.panel，导出里用的是它）。AI 的话不装框，"
+                "直接排在流里。",
         "variants": [
-            V("user", "你说的话", "装在盒子里、文字右对齐", user_box,
-              D("box", ["帮我做一个马克杯"])),
+            V("user", "你说的话",
+              "一个盒，右对齐；长消息默认折成一行摘要，点标题展开",
+              user_box, bubble_demo,
+              rewrites=[{"from": "ubox = layout.box()",
+                         "to": user_box[0],
+                         "why": "ui.py:868 那个 ubox 是个铺满整幅的盒子，几百字的"
+                                "提示词会把侧栏撑爆（Blender 侧栏不能滚动）。"
+                                "改成 _uw_msg_panel（见 py_helper），它内部用"
+                                " layout.panel(idname, default_closed)——那是真能收起、"
+                                "自带原生箭头的控件。展开/收起的状态跟着积木走，"
+                                "导出时把 open_default 一起带出去。"}]),
             V("ai", "AI 回答", "不装框，带耗时 / 执行步骤 / 新增对象", ai_box,
               D("col", ["耗时 12.4s", "执行的操作：", "新增对象：马克杯"],
                 icons=["COMMUNITY", "FILE_SCRIPT", "MESH_DATA"]),
@@ -268,7 +291,7 @@ def build():
         "editable": ["小标题文字"],
         "slots": bubble_slots,
         "element_id": "chat.stream",
-        "demo": D("box", ["帮我做一个马克杯"]),
+        "demo": bubble_demo,
     })
 
     q_lines = ["for q_idx, q in enumerate(questions):",
@@ -381,20 +404,26 @@ def build():
                 "literal": pyq("用自然语言描述要建模什么，可多行")},
                {"name": "send", "label": "按钮文字", "text": "发送指令",
                 "literal": pyq("发送指令")}]
+    # Task 21：输入框**独占一行**。ui.py:947-955 本来就是这样——
+    # crow（标签 + 高度滑块）一行，cbox.textbox 在**下一行**。
+    # 上一版把它画成 kind=prop 的三格一行，等于预览比真实面板多挤了一行，
+    # 三样东西互相抢宽度。这里照 ui.py 原样分行，并给输入框那条加一道上边线，
+    # 一眼看出「从这里开始是我能输入的地方」。
+    c_demo = D("composer", ["输入建模指令:", "高度 3"], icons=["TEXT"],
+               textbox="用自然语言描述要建模什么，可多行")
     blocks.append({
         "key": "chat_composer",
         "label": "对话输入区",
         "tab": "chat",
-        "what": "面板最下面那块：一句提示 + 可拖高度的输入框 + 发送/终止。",
-        "variants": [V("only", "输入区", "多行输入框 + 发送或终止", c_lines,
-                       {"kind": "prop", "items": ["输入建模指令:", "高度 3",
-                                                 "用自然语言描述要建模什么，可多行"]})],
+        "what": "面板最下面那块：标签 + 高度滑块一行，**输入框独占下一行**"
+                "（照 ui.py:947-955），输入框那一行有上边线隔开；"
+                "下面才是发送/终止。",
+        "variants": [V("only", "输入区", "多行输入框 + 发送或终止", c_lines, c_demo)],
         "default_variant": "only",
         "editable": ["标签文字", "占位提示", "按钮文字"],
         "slots": c_slots,
         "element_id": "chat.composer",
-        "demo": D("prop", ["输入建模指令:", "高度 3", "用自然语言描述要建模什么，可多行"],
-                  icons=["TEXT"]),
+        "demo": c_demo,
     })
 
     a_lines = ["arow = layout.row(align=True)",
@@ -600,9 +629,9 @@ def build():
                  "导出时直接用它，不做翻译。"),
         "tab_labels": TAB_LABELS,
         "demo_kinds": ["row", "col", "box", "split", "grid", "panel", "label",
-                       "btn", "prop", "rule", "gap"],
-        # 响应式图标：面板窄了就只留文字。这段**不在 ui.py 里**——它是这次
-        # 明确要往导出里加的一段，所以单独立一张表登记，附上「为什么不逐字
+                       "btn", "prop", "rule", "gap", "msgtxt", "composer"],
+        # 响应式图标：面板**窄了就只留图标**。这一段**不在 ui.py 里**——它是
+        # 这次明确要往导出里加的一段，所以单独立一张表登记，附上「为什么不逐字
         # 来自 ui.py」的理由，而不是混进 blocks_rewrites_declared 那套里
         # （那套的前提是「每一行都能在 ui.py 里找到原句」）。
         "py_preamble": {
@@ -611,16 +640,45 @@ def build():
                    "现成写法可抄，所以它不进任何块的 ui_py（那边只许放 ui.py 里"
                    "逐字存在的代码），单独立这张表随导出一起带走。",
             "snippet": [
-                "# ---- 响应式图标：面板窄了就只留文字 ----",
+                "# ---- 响应式图标：面板窄了就只留图标 ----",
                 "# Blender 没有媒体查询，draw() 里唯一能拿到的宽度就是区域宽度，",
-                "# 所以「宽 / 窄」只能自己判断：够宽给真图标名，不够就 icon='NONE'。",
+                "# 所以「宽 / 窄」只能自己判断：宽的给「图标 + 文字」，",
+                "# 窄的只给图标（text 置空就是只剩图标，不是把 icon 置成 'NONE'——",
+                "# 那会把按钮上唯一认得出来的标志也一起抹掉）。",
                 "# ★ 拖动面板边框的过程中 Blender 不会实时重绘 draw()，",
                 "#   松手之后才重画一次——所以这个切换是「松手即生效」，",
                 "#   不是「拖动过程中实时变」。别把它当成 CSS 那种媒体查询。",
                 "_uw_panel_w = bpy.context.region.width",
                 "_uw_wide = _uw_panel_w >= 360",
-                "ICON_PLAY = 'PLAY' if _uw_wide else 'NONE'",
-                "ICON_CHECKBOX = 'CHECKBOX_DEHLT' if _uw_wide else 'NONE'",
+                'TXT_SEND = "发送指令" if _uw_wide else ""',
+                'TXT_STOP = "终止任务" if _uw_wide else ""',
+            ],
+        },
+        # 第二张新增代码表：长消息折叠。跟 py_preamble 同一个道理——ui.py 里
+        # 没有这段（ui.py 的 ubox 是个铺满整幅的盒子，几百字的提示词会把
+        # 侧栏撑爆），所以也不能塞进块的 ui_py。
+        "py_helper": {
+            "key": "msg_fold",
+            "why": "这一段是 ui.py 里没有的新增代码：长消息折叠在插件里还没有"
+                   "现成写法可抄，所以它不进任何块的 ui_py（那边只许放 ui.py 里"
+                   "逐字存在的代码），单独立这张表随导出一起带走。",
+            "snippet": [
+                "# ---- 长消息折叠：一条几百字的提示词不该把侧栏撑爆 ----",
+                "# Blender 侧栏不能滚动，所以长消息默认只露一行摘要。",
+                "# 用 layout.panel(idname, default_closed)：它是真的能收起的，",
+                "# 而且自带原生三角箭头——别自己造折叠控件，造出来的那个不是",
+                "# Blender 的控件，导出后也对不上任何真实 API。",
+                "# open_default 是积木上「展开 / 收起」那个状态带过来的，",
+                "# 不是写死的：在工作台里点开过之后导出的那一份会写成 True。",
+                "def _uw_msg_panel(layout, idname, text, open_default=False):",
+                '    p = layout.panel(idname, default_closed=not open_default)',
+                '    head = text[:20] + ("…" if len(text) > 20 else "")',
+                "    p.label(text=head)",
+                "    for ln in wrap_text(text, max_chars=18):",
+                "        r = p.row()",
+                "        r.alignment = 'RIGHT'",
+                "        r.label(text=ln)",
+                "    return p",
             ],
         },
         "blocks": blocks,
@@ -643,7 +701,7 @@ def real_icon_names(ui_lines):
 
 
 def check_demo(demo, where, icons):
-    """图示的数据形状。kind/items 之外多两样（icons / groups），各自都要有硬约束。"""
+    """图示的数据形状。kind/items 之外多几样，各自都要有硬约束。"""
     if not isinstance(demo, dict) or not demo.get("kind"):
         raise BlockError("%s 的图示没有 kind" % where)
     items = demo.get("items") or []
@@ -654,6 +712,19 @@ def check_demo(demo, where, icons):
     for ic in ics:
         if ic not in icons:
             raise BlockError("%s 用了实测里没有的图标名 %r" % (where, ic))
+    # composer：输入框独占一行，ui.py:953 的 cbox.textbox 就是这样。
+    # 没有 textbox 字段的话渲染器画不出那一行，预览会退回「三样挤一行」。
+    if demo.get("kind") == "composer":
+        if not str(demo.get("textbox") or "").strip():
+            raise BlockError("%s 是 composer 却没有 textbox 字段（输入框那一行）" % where)
+    if demo.get("kind") == "msgtxt":
+        # 折叠只对长消息有意义：短消息折了和没折一样，这条数据就没有可验的东西。
+        if len(items) != 1 or len(items[0]) <= FOLD_CHARS:
+            raise BlockError(
+                "%s 是 msgtxt，就得正好一条、且长过 %d 字（不然折不断，"
+                "折叠那条就没东西可验）：实际 %d 条、最长 %d 字"
+                % (where, FOLD_CHARS, len(items),
+                   max([len(x) for x in items] or [0])))
     for gi, g in enumerate(demo.get("groups") or []):
         gw = "%s 第 %d 组" % (where, gi + 1)
         if set(g) != {"title", "icon", "items", "item_icons"}:
@@ -669,6 +740,37 @@ def check_demo(demo, where, icons):
                 raise BlockError("%s 用了实测里没有的图标名 %r" % (gw, ic))
 
 
+def _check_new_code_table(tbl, where, ui_stripped, icons, must_have):
+    """「ui.py 之外的新增代码」表的生成期硬门。
+
+    每张表有自己那几条必须写明的承诺（must_have）：字段集、why、承诺的词、
+    每一行都不是从 ui.py 抄来的、图标名实测存在、整段能过 ast.parse。
+    """
+    if set(tbl) != {"key", "why", "snippet"}:
+        raise BlockError("%s 字段集不对：%s" % (where, sorted(tbl)))
+    if not str(tbl.get("why", "")).strip():
+        raise BlockError("%s 没写为什么它是 ui.py 之外的新增代码" % where)
+    body = list(tbl.get("snippet") or [])
+    for must in must_have:
+        if not any(must in ln for ln in body):
+            raise BlockError("%s 里必须写明「%s」（这条是用户点名的注释）"
+                             % (where, must))
+    for ln in body:
+        if ln.startswith("#"):
+            continue
+        if ln.strip() in ui_stripped:
+            raise BlockError("%s 的代码行 %r 与 ui.py 逐字相同，"
+                             "说明这段不该进这张表" % (where, ln))
+    for ic in re.findall(r"'([A-Z][A-Z0-9_]{2,})'", "\n".join(body)):
+        if ic not in icons:
+            raise BlockError("%s 用了实测里没有的图标名 %r" % (where, ic))
+    try:
+        ast.parse("def _pre():\n" + "\n".join(("    " + ln) if ln.strip() else ""
+                                              for ln in body))
+    except SyntaxError as exc:
+        raise BlockError("%s 解析不过：%s\n%s" % (where, exc, "\n".join(body)))
+
+
 def _selfcheck(doc, ui_lines=None):
     """落盘前自检：字段集、ui_py 可解析、槽位真的落在代码里、以及**出处核对**。
 
@@ -679,31 +781,16 @@ def _selfcheck(doc, ui_lines=None):
             ui_lines = fh.read().split("\n")
     ui_stripped = set(ln.strip() for ln in ui_lines)
     icons = real_icon_names(ui_lines)
-    # py_preamble：新增代码，单独立表，所以要单独核对它自己那份承诺。
-    pre = doc.get("py_preamble") or {}
-    if set(pre) != {"key", "why", "snippet"}:
-        raise BlockError("py_preamble 字段集不对：%s" % sorted(pre))
-    if not str(pre.get("why", "")).strip():
-        raise BlockError("py_preamble 没写为什么它是 ui.py 之外的新增代码")
-    body = list(pre.get("snippet") or [])
-    for must in ("context.region.width", "'NONE'", "媒体查询", "松手"):
-        if not any(must in ln for ln in body):
-            raise BlockError("py_preamble 里必须写明「%s」（这条是用户点名的注释）"
-                             % must)
-    for ln in body:
-        if ln.startswith("#"):
-            continue
-        if ln.strip() in ui_stripped:
-            raise BlockError("py_preamble 的代码行 %r 与 ui.py 逐字相同，"
-                             "说明这段不该进这张表" % ln)
-    for ic in re.findall(r"'([A-Z][A-Z0-9_]{2,})'", "\n".join(body)):
-        if ic not in icons:
-            raise BlockError("py_preamble 用了实测里没有的图标名 %r" % ic)
-    try:
-        ast.parse("def _pre():\n" + "\n".join(("    " + ln) if ln.strip() else ""
-                                              for ln in body))
-    except SyntaxError as exc:
-        raise BlockError("py_preamble 解析不过：%s\n%s" % (exc, "\n".join(body)))
+    # py_preamble / py_helper：新增代码，单独立表，所以要单独核对它们各自
+    # 答应过的事。两张表的承诺不一样，所以分开查——共用一条清单的话，
+    # 一张表写对了就能替另一张表顶缸。
+    _check_new_code_table(doc.get("py_preamble") or {}, "py_preamble", ui_stripped,
+                          icons, ("context.region.width", "媒体查询", "松手",
+                                  "_uw_wide", 'else ""', "只给图标"))
+    _check_new_code_table(doc.get("py_helper") or {}, "py_helper", ui_stripped,
+                          icons, ("layout.panel", "default_closed",
+                                  "侧栏", "滚动", "open_default",
+                                  "text[:%d]" % FOLD_CHARS))
     want_block = {"key", "label", "tab", "what", "variants", "default_variant",
                   "editable", "slots", "element_id", "demo", "ui_py"}
     want_var = {"key", "label", "what", "ui_py", "demo", "rewrites"}

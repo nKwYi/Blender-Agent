@@ -36,7 +36,7 @@ EXPECT_TAB_COUNTS = {"chat": 7, "detail": 4, "settings": 5}
 EXPECT_STATUS_VARIANTS = ["busy", "approve", "partial", "failed"]
 # renderDemo 只画这 11 种形状；数据里出现一种它不认的，界面就是一个没样式的空盒子。
 DEMO_KINDS = ["row", "col", "box", "split", "grid", "panel", "label", "btn",
-              "prop", "rule", "gap"]
+              "prop", "rule", "gap", "msgtxt", "composer"]
 
 FAILS = []
 TOTAL = [0]
@@ -225,7 +225,8 @@ def data_checks(doc):
        % sum(1 for b in doc["blocks"] if b["demo"].get("icons")))
 
     # 第 4 条的导出侧：新增的那段代码必须写清三件事——宽度从哪来、
-    # 窄了换成 'NONE'、以及「Blender 没有媒体查询 / 松手才重绘」。
+    # 宽/窄各自给什么（**窄的只给图标 = 文字置空**，不是 icon='NONE'）、
+    # 以及「Blender 没有媒体查询 / 松手才重绘」。
     pre = doc.get("py_preamble") or {}
     body = list(pre.get("snippet") or [])
     ck("blocks_py_preamble_declared",
@@ -233,10 +234,18 @@ def data_checks(doc):
        str(pre.get("why", "")).strip(),
        "响应式图标那段必须带 why 与 snippet（新增代码不能悄悄混进 ui_py）：%s"
        % sorted(pre))
-    miss_phrase = [w for w in ("context.region.width", "'NONE'", "媒体查询", "松手")
+    miss_phrase = [w for w in ("context.region.width", "媒体查询", "松手",
+                               "_uw_wide", 'else ""', "只给图标")
                    if not any(w in ln for ln in body)]
     ck("blocks_py_preamble_says_the_truth", not miss_phrase,
        "响应式图标那段缺这些必须写明的说明：%s" % miss_phrase)
+    # 口径是反的这条本身：宽的给文字，窄的置空。写成 icon='NONE' 会把按钮上
+    # 唯一认得出来的标志也抹掉，那不是「窄了只给图标」，那是「窄了什么都不给」。
+    ck("blocks_py_preamble_narrow_keeps_icon",
+       not any("'NONE'" in ln for ln in body if not ln.lstrip().startswith("#"))
+       and any('if _uw_wide else ""' in ln for ln in body),
+       "响应式图标那段应当把文字置空（icon 照留），不能把 icon 置成 'NONE'：%s"
+       % [ln for ln in body if not ln.lstrip().startswith("#")])
     # 它是 ui.py 之外的新增代码，所以任何一行都不许与 ui.py 逐字相同——
     # 逐字相同就说明它是抄来的，那就不该走这张表。
     ck("blocks_py_preamble_is_new_code",
@@ -247,6 +256,66 @@ def data_checks(doc):
        all(ic in real for ic in re.findall(r"'([A-Z][A-Z0-9_]{2,})'",
                                            "\n".join(body))),
        "py_preamble 里有实测中不存在的图标名")
+
+    # 第 3 条的导出侧：长消息折叠也走单立的 py_helper 表。
+    # 为什么单立：块的 ui_py 只许放 ui.py 里逐字存在的代码，而 layout.panel
+    # 在 ui.py 里没有。塞进去会被 grounded_no_undeclared_lines 当成编造。
+    hlp = doc.get("py_helper") or {}
+    hb = list(hlp.get("snippet") or [])
+    ck("blocks_py_helper_declared",
+       set(hlp) == {"key", "why", "snippet"} and hb and
+       str(hlp.get("why", "")).strip(),
+       "长消息折叠那段必须单立一张表（key/why/snippet）：%s" % sorted(hlp))
+    ck("blocks_py_helper_uses_native_panel",
+       any("layout.panel" in ln and "default_closed" in ln for ln in hb) and
+       any("open_default" in ln for ln in hb),
+       "折叠必须用 layout.panel(idname, default_closed)（真能收起、自带原生箭头），"
+       "不能自造折叠控件：%s" % hb)
+    miss_h = [w for w in ("侧栏", "滚动", "text[:20]")
+              if not any(w in ln for ln in hb)]
+    ck("blocks_py_helper_says_the_truth", not miss_h,
+       "折叠那段缺这些必须写明的说明（为什么要折 / 折成什么样）：%s" % miss_h)
+    ck("blocks_py_helper_is_new_code",
+       all(ln.startswith("#") or ln.strip() not in set(x.strip() for x in ui_lines)
+           for ln in hb),
+       "py_helper 里混进了 ui.py 逐字已有的行（等于假装新增）")
+    try:
+        ast.parse("def _pre():\n" + "\n".join(("    " + ln) if ln.strip() else ""
+                                              for ln in hb))
+        ck("blocks_py_helper_parses", True, "")
+    except SyntaxError as exc:
+        ck("blocks_py_helper_parses", False, "折叠那段解析不过：%s" % exc.msg)
+
+    # 第 1 条：用户自己发的那条消息**一个盒，到此为止**，而且可折叠。
+    bub = [v for v in by_key["chat_bubble"]["variants"]
+           if v["key"] == by_key["chat_bubble"]["default_variant"]][0]
+    ck("blocks_bubble_user_is_one_box",
+       bub["demo"].get("kind") == "msgtxt" and len(bub["demo"].get("items") or []) == 1
+       and not bub["demo"].get("groups"),
+       "你说的话应是一个盒、一条内容、不再套盒（msgtxt），实际 kind=%s items=%d"
+       % (bub["demo"].get("kind"), len(bub["demo"].get("items") or [])))
+    ck("blocks_bubble_user_is_long",
+       len((bub["demo"].get("items") or [""])[0]) > 20,
+       "你说的话给的是一条 %d 字的短消息，折不断，折叠那条就没东西可验"
+       % len((bub["demo"].get("items") or [""])[0]))
+    ck("blocks_bubble_user_uses_panel",
+       "_uw_msg_panel(" in bub["ui_py"] and "open_default=" in bub["ui_py"],
+       "你说的话导出的代码应走 _uw_msg_panel 并带上 open_default，实际 %r"
+       % bub["ui_py"])
+    ck("blocks_bubble_user_rewrite_from_ui_py",
+       any(rw["from"] == "ubox = layout.box()" for rw in bub["rewrites"]),
+       "你说的话那一行的改写必须登记它在 ui.py 里的原句 ubox = layout.box()")
+
+    # 第 4 条：输入框独占一行（照 ui.py:947-955）。
+    cmp_ = by_key["chat_composer"]["demo"]
+    ck("blocks_composer_textbox_own_row",
+       cmp_.get("kind") == "composer" and str(cmp_.get("textbox") or "").strip()
+       and len(cmp_.get("items") or []) == 2,
+       "对话输入区应是「标签 + 高度一行，输入框另起一行」，实际 kind=%s items=%s "
+       "textbox=%r" % (cmp_.get("kind"), cmp_.get("items"), cmp_.get("textbox")))
+    ck("blocks_composer_preview_is_not_prop",
+       cmp_.get("kind") != "prop",
+       "对话输入区退回 prop 就又变成三样东西挤一行了")
 
     # 块级 ui_py 必须与默认变体逐字一致：导出只认块级这一个入口。
     mism = [b["key"] for b in doc["blocks"]
@@ -579,7 +648,10 @@ def dom_checks(doc):
             # 这一条从 Task 20 起改了口径：规格选项组多了一层盒子，
             # 只数顶层会把那 9 个选择按钮全漏掉，于是「里层根本没画出来」
             # 这种错照样绿。口径变了，判据没松——两边仍逐块比对确切个数。
-            n = seg.count('class="d-it"')
+            # Task 21 再加一处：「你说的话」那条消息是一个 .d-msgtext 而不是
+            # .d-it（它不再套盒子），所以数方块时把它一并算进来，
+            # 否则数据说 1 条、DOM 数出 0 条，会平白红一条。
+            n = seg.count('class="d-it"') + seg.count('class="d-msgtext"')
             want = demo_item_count(b["demo"])
             if n != want:
                 bad_items.append((b["key"], n, want))
@@ -665,14 +737,21 @@ def dom_checks(doc):
                "导出的代码块没有「自动生成」的块头注释")
             ck("dom_export_todo_section", "落笔前必须人工处理的" in src,
                "导出缺文末的「必须人工处理」汇总")
-            # 第 4 条的导出侧：响应式图标那段必须真的随导出走一段。
-            # 少它一条，Blender 侧就没有「窄了不画图标」的可行写法。
+            # 第 1 条（响应式图标）的导出侧：那段必须真的随导出走一段。
+            # 少它一条，Blender 侧就没有「窄了只留图标」的可行写法。
             ck("dom_export_has_responsive_icons",
-               "bpy.context.region.width" in src and "'NONE'" in src and
-               "媒体查询" in src and "松手" in src and
-               ("_uw_wide = " in src),
+               "bpy.context.region.width" in src and "媒体查询" in src and
+               "松手" in src and "_uw_wide" in src and
+               'if _uw_wide else ""' in src,
                "导出的 ui.py 里没有那段响应式图标写法"
-               "（应有 region.width / 'NONE' / 媒体查询 / 松手 / _uw_wide）")
+               "（应有 region.width / 媒体查询 / 松手 / _uw_wide / 窄时置空文字）")
+            # 第 3 条（长消息折叠）的导出侧：折叠必须落在 layout.panel 上，
+            # 并且 default_closed 真的跟着积木上的状态走。
+            ck("dom_export_has_msg_fold",
+               "layout.panel" in src and "default_closed" in src and
+               "open_default=" in src,
+               "导出的 ui.py 里没有那段长消息折叠写法"
+               "（应有 layout.panel / default_closed / open_default=）")
 
         # --- 本轮五条意见在浏览器里的真形状（#biz-icons）---
         ip = dump(exe, url + "#biz-icons", profile)
@@ -683,16 +762,27 @@ def dom_checks(doc):
             # 第 4 条：默认（宽）面板下图标在，压到 280px 之后全部消失。
             # 两读都取自 getComputedStyle：宽面板下 shown 必须等于总数，
             # 窄面板下必须一个不剩，且两次量到的元素个数是同一批。
-            ck("dom_icons_wide_default_on",
-               int(it.get("wide-shown", "0")) == int(it.get("wide-total", "0"))
-               and int(it.get("wide-total", "0")) > 0,
-               "默认（宽）面板下图标应全部显示：共 %s 个，显示 %s 个"
-               % (it.get("wide-total"), it.get("wide-shown")))
-            ck("dom_icons_narrow_all_hidden",
-               it.get("narrow-shown") == "0" and
-               it.get("narrow-total") == it.get("wide-total"),
-               "压到 280px 后图标应一个不留：元素 %s 个，仍显示 %s 个"
-               % (it.get("narrow-total"), it.get("narrow-shown")))
+            ck("dom_icons_wide_icon_and_text",
+               int(it.get("wide-ico-shown", "0")) == int(it.get("wide-ico-total", "0"))
+               and int(it.get("wide-ico-total", "0")) > 0 and
+               int(it.get("wide-text-shown", "0")) == int(it.get("wide-text-total", "0"))
+               and int(it.get("wide-text-total", "0")) > 0,
+               "默认（宽）面板下应是「图标 + 文字」：图标 %s/%s、文字 %s/%s"
+               % (it.get("wide-ico-shown"), it.get("wide-ico-total"),
+                  it.get("wide-text-shown"), it.get("wide-text-total")))
+            ck("dom_icons_narrow_icon_only",
+               it.get("narrow-text-shown") == "0" and
+               int(it.get("narrow-ico-total", "0")) > 0 and
+               it.get("narrow-ico-shown") == it.get("narrow-ico-total"),
+               "压到 280px 后应只剩图标：图标 %s/%s、文字还有 %s/%s 个"
+               % (it.get("narrow-ico-shown"), it.get("narrow-ico-total"),
+                  it.get("narrow-text-shown"), it.get("narrow-text-total")))
+            ck("dom_icons_same_elements_both_ways",
+               it.get("narrow-ico-total") == it.get("wide-ico-total") and
+               it.get("narrow-text-total") == it.get("wide-text-total"),
+               "两次读的图标数 %s/%s、文字数 %s/%s 对不上"
+               % (it.get("narrow-ico-total"), it.get("wide-ico-total"),
+                  it.get("narrow-text-total"), it.get("wide-text-total")))
             ck("dom_icons_narrow_really_narrower",
                int(it.get("narrow-panel", "9999")) <
                int(it.get("wide-panel", "0")) and
@@ -739,6 +829,58 @@ def dom_checks(doc):
                "细节 3：" in qs[4],
                "里层三个盒的标题不是「细节 N：…」，读到 %r"
                % (qs[4] if len(qs) > 4 else "",))
+
+            # 第 2 条（一个盒，到此为止）：外层气泡盒有边框，里面那段文字
+            # 没有边框，也没有内层分组盒。看的是浏览器算出来的 border 宽度，
+            # 不是 DOM 层级——层级对了但画了第二个框，一样是两重盒。
+            sh = (it.get("msg") or "").split(":")
+            ck("dom_bubble_user_one_box",
+               len(sh) >= 4 and sh[0] == "msgtxt" and sh[1] == "boxed" and
+               sh[2] == "plain" and sh[3] == "0",
+               "你说的话应是一个带边框的盒 + 一段没有边框的文字，读到 %r"
+               % (it.get("msg"),))
+
+            # 第 4 条（输入框独占一行）：.d-textbox 得是 .d-crow 的**兄弟**
+            # 而不是孩子，宽度摊满，而且真的排在那一行的下面。
+            cp = (it.get("composer") or "").split(":")
+            ck("dom_composer_textbox_own_row",
+               len(cp) >= 6 and cp[0] == "composer" and cp[1] == "2" and
+               cp[2] == "1" and cp[3] == "sibling" and cp[4] == "ownrow",
+               "输入框应独占一行（与标签那行平级、摊满宽度、在它下面），读到 %r"
+               % (it.get("composer"),))
+
+        # --- 长消息的折叠 / 展开两态（#biz-msg）---
+        mp = dump(exe, url + "#biz-msg", profile)
+        mt = attrs_of(mp, "biz-msg")
+        ck("dom_msg_report_ran", bool(mt),
+           "没拿到长消息折叠的读数：#biz-msg 没跑起来")
+        if mt:
+            ck("dom_msg_folded_is_summary",
+               mt.get("folded-trunc") == "1" and mt.get("folded-dots") == "1"
+               and len(mt.get("folded-text") or "") <= 21,
+               "折叠态应只显示前 20 字 + 省略号，读到 %r"
+               % mt.get("folded-text"))
+            # 「这是一条长消息」要看得见：省略号之外还得有一个展开指示，
+            # 而且不许只靠一个光看不知道什么意思的小三角。
+            ck("dom_msg_folded_shows_toggle",
+               mt.get("folded-toggle") and "展开" in mt.get("folded-toggle", ""),
+               "折叠态没有看得见的展开指示：%r" % mt.get("folded-toggle"))
+            ck("dom_msg_expanded_shows_all",
+               mt.get("open-trunc") == "0" and mt.get("open-dots") == "0" and
+               len(mt.get("open-text") or "") > 20 and
+               "收起" in mt.get("open-toggle", ""),
+               "展开态应显示全文并换成收起指示，读到 %r / %r"
+               % (mt.get("open-text"), mt.get("open-toggle")))
+            # 状态存在积木上，导出时不许丢：折着导 → open_default=False，
+            # 展开着导 → open_default=True。两条都在同一次运行里量。
+            ck("dom_msg_state_reaches_export",
+               mt.get("py-closed") == "1" and mt.get("py-open") == "1"
+               and mt.get("py-has-panel") == "1" and
+               mt.get("py-has-default-closed") == "1",
+               "展开/收起的状态没跟着导出走（折着 %s / 展开 %s / panel %s / "
+               "default_closed %s）" % (mt.get("py-closed"), mt.get("py-open"),
+                                       mt.get("py-has-panel"),
+                                       mt.get("py-has-default-closed")))
 
         # --- 16 块全点一遍 ---
         allp = dump(exe, url + "#biz-all", profile)

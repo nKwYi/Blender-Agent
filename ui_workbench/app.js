@@ -1258,6 +1258,8 @@ function renderDemo(w) {
   }
   if (d.groups) { box.dataset.dgroups = String(d.groups.length); }
   var left = Math.round((Number(d.factor) || 0.5) * 100);
+  if (kind === "msgtxt") { return renderMsgBox(box, d, w); }
+  if (kind === "composer") { return renderComposer(box, d, icons, left); }
   items.forEach(function (t, i) {
     box.appendChild(demoItem(t, kind, icons[i], left, cols, i));
   });
@@ -1277,7 +1279,10 @@ function renderDemo(w) {
       gi.textContent = g.icon;
       gt.appendChild(gi);
     }
-    gt.appendChild(document.createTextNode(g.title || ""));
+    var gtx = document.createElement("span");
+    gtx.className = "d-tx";
+    gtx.textContent = g.title || "";
+    gt.appendChild(gtx);
     gb.appendChild(gt);
     (g.items || []).forEach(function (t, i) {
       gb.appendChild(demoItem(t, "btn", (g.item_icons || [])[i], 0, 0, i));
@@ -1293,9 +1298,66 @@ function renderDemo(w) {
   return box;
 }
 
-/* 一个条目方块。图标名照样照印（离线没有图标资源），但它**默认是藏起来的**：
-   面板窄的时候 Blender 那边是 icon='NONE'，预览跟着藏，两边讲同一个故事。
-   露出与否交给 style.css 的容器查询（见 .d-ic 那段）。 */
+/* ---- 你说的话：一个盒 + 可折叠 ----
+   .demo 自己就是那个气泡盒，所以里面**不再套盒子**：文字是一个没有边框的
+   .d-msgtext。上一版走 d-box，盒里又出来一个带边框的方块，两层框套着——
+   用户点名说「一个盒，到此为止」。
+
+   折叠态只露前 FOLD_CHARS 个字 + 省略号，并配一个**看得见的**展开指示
+   （虚线小标签「展开全文」，不是一个光看不知道什么意思的小三角）。 */
+var FOLD_CHARS = 20;
+function renderMsgBox(box, d, w) {
+  var full = String((d.items || [])[0] || "");
+  var open = !!(w.node && w.node.msgOpen);
+  var txt = document.createElement("i");
+  txt.className = "d-msgtext";
+  txt.dataset.dmsglen = String(full.length);
+  if (open) {
+    txt.textContent = full;
+  } else {
+    txt.textContent = (full.length > FOLD_CHARS
+      ? full.slice(0, FOLD_CHARS) + "…" : full);
+  }
+  box.appendChild(txt);
+  if (full.length <= FOLD_CHARS) { return box; }
+  var tg = document.createElement("i");
+  tg.className = "d-msgfold" + (open ? " open" : "");
+  tg.dataset.dmsgfold = open ? "1" : "0";
+  tg.textContent = open ? "▾ 收起" : "展开全文 ▸";
+  /* 状态存在积木上（node.msgOpen），不是存在这个元素上：重画一次就没了，
+     导出时也要跟着它走（见 pyBizLines 的 open_default）。 */
+  tg.addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    if (!w.node) { return; }
+    w.node.msgOpen = !w.node.msgOpen;
+    renderCanvas();
+  });
+  box.appendChild(tg);
+  return box;
+}
+
+/* ---- 对话输入区：输入框独占一行 ----
+   ui.py:947-955 本来就是这样：crow（标签 + 高度滑块）一行，cbox.textbox 在
+   下一行。预览照抄。上一版用 kind=prop 把三样东西塞进一行，于是
+   「输入建模指令:」「高度 3」「用自然语言描述要建模什么，」挤成一条。 */
+function renderComposer(box, d, icons, left) {
+  var crow = document.createElement("div");
+  crow.className = "d-crow";
+  (d.items || []).forEach(function (t, i) {
+    crow.appendChild(demoItem(t, "prop", icons[i], left, 0, i));
+  });
+  box.appendChild(crow);
+  var tb = document.createElement("div");
+  tb.className = "d-textbox";
+  tb.dataset.dtextbox = "1";
+  tb.textContent = d.textbox || "";
+  box.appendChild(tb);
+  return box;
+}
+
+/* 一个条目方块。图标名照样照印（离线没有图标资源），而且**永远在**——
+   面板窄的时候 Blender 那边只剩图标，文字那边藏起来（style.css 的容器查询）。
+   文字自己包一层 .d-tx：窄面板要 display:none 的是**文字**，图标得留着。 */
 function demoItem(t, kind, icon, left, cols, i) {
   var it = document.createElement("i");
   it.className = "d-it";
@@ -1305,7 +1367,10 @@ function demoItem(t, kind, icon, left, cols, i) {
     ic.textContent = icon;
     it.appendChild(ic);
   }
-  it.appendChild(document.createTextNode(t));
+  var tx = document.createElement("span");
+  tx.className = "d-tx";
+  tx.textContent = t;
+  it.appendChild(tx);
   // 分栏与网格靠内联宽度画出来：比例是数据给的，代码只负责把它变成宽度。
   // 这里不写颜色，色值由 style.css 的变量统一管。
   if (kind === "split") {
@@ -3017,7 +3082,7 @@ function pvBiz(n) {
   var head = pvEl("pv-bizname", "bizname");
   head.textContent = n.label;
   wrap.appendChild(head);
-  wrap.appendChild(renderDemo({ key: n.bkey, demo: demo }));
+  wrap.appendChild(renderDemo({ key: n.bkey, demo: demo, node: n }));
   return wrap;
 }
 
@@ -3695,6 +3760,12 @@ function pyBizLines(out, todo, n, ind) {
   out.push(ind + "#   出处：blender_deepseek_agent/ui.py 里「" + v.label +
     "」这一段，原样抄来（不是翻译出来的）");
   var src = applyBizTexts(String(v.ui_py), b, n);
+  /* 展开/收起的状态存在积木上（node.msgOpen），导出时**不许丢**：用户在
+     工作台里把这条长消息点开了，导出的 default_closed 就得跟着变成 False，
+     否则预览里展开着、Blender 里一装上还是折着的，两边讲两个版本的故事。 */
+  if (n.msgOpen) {
+    src = src.replace("open_default=False", "open_default=True");
+  }
   var lines = src.split("\n");
   for (var i = 0; i < lines.length; i++) {
     out.push(lines[i].length ? (ind + lines[i]) : "");
@@ -3916,10 +3987,11 @@ function buildPy() {
   out.push("");
   out.push("def draw_" + activeTab + "_content(layout, state):");
   out.push('    """「' + TAB_LABELS[activeTab] + '」界面。' + UNVERIFIED_NOTICE + '"""');
-  /* 响应式图标那一小段：它是 blocks.json 里 py_preamble 登记的新增代码，
-     ui.py 里没有这一段（所以它不像别的行那样「原样抄来」）。少发这一段，
-     用户在 Blender 里就没有「窄了不画图标」这个可行写法可抄。 */
+  /* 响应式图标、长消息折叠这两小段：它们是 blocks.json 里 py_preamble /
+     py_helper 登记的新增代码，ui.py 里没有（所以它们不像别的行那样
+     「原样抄来」）。少发其中一段，用户在 Blender 里就没有那个可行写法可抄。 */
   var pre = (blocksDoc && blocksDoc.py_preamble) || null;
+  var helper = (blocksDoc && blocksDoc.py_helper) || null;
   if (pre && proposal.length) {
     /* why 按句号断行导出：它是一整段中文，塞成一行会顶穿一屏代码，
        而「这是 ui.py 之外的新增代码」这句话必须跟着代码走。 */
@@ -3928,6 +4000,16 @@ function buildPy() {
       if (t) { out.push("    # " + t + "。"); }
     });
     (pre.snippet || []).forEach(function (ln) {
+      out.push(ln.trim() ? ("    " + ln) : "");
+    });
+  }
+  if (helper && proposal.length) {
+    out.push("");
+    String(helper.why || "").split("。").forEach(function (s) {
+      var t2 = s.trim();
+      if (t2) { out.push("    # " + t2 + "。"); }
+    });
+    (helper.snippet || []).forEach(function (ln) {
       out.push(ln.trim() ? ("    " + ln) : "");
     });
   }
@@ -4720,6 +4802,9 @@ function runBizHook(hash) {
       return;
     }
     if (kind === "icons") { insertBizDemo(); bizIconReport(narrow); return; }
+    if (kind === "msg") { insertBizDemo(); bizMsgReport(null); return; }
+    if (kind === "msg-folded") { insertBizDemo(); bizMsgReport(false); return; }
+    if (kind === "msg-open") { insertBizDemo(); bizMsgReport(true); return; }
     if (kind === "demo") { insertBizDemo(); return; }
     if (kind === "report") { insertBizDemo(); bizReport(); return; }
     if (kind === "export") { insertBizDemo(); bizExportReport(); return; }
@@ -4744,14 +4829,19 @@ function bizIconReport(narrow) {
   if (narrow) { setNarrowPanel(true); }
   var host = el("preview");
   function readState() {
-    var ics = host.querySelectorAll(".d-ic");
-    var shown = 0;
-    for (var i = 0; i < ics.length; i++) {
-      var cs = host.ownerDocument.defaultView.getComputedStyle(ics[i]);
-      if (cs.display !== "none" && cs.visibility !== "hidden") { shown++; }
+    function visible(sel) {
+      var xs = host.querySelectorAll(sel);
+      var shown = 0;
+      for (var i = 0; i < xs.length; i++) {
+        var cs = host.ownerDocument.defaultView.getComputedStyle(xs[i]);
+        if (cs.display !== "none" && cs.visibility !== "hidden") { shown++; }
+      }
+      return { total: xs.length, shown: shown };
     }
-    return { total: ics.length, shown: shown,
-             panel: Math.round(host.getBoundingClientRect().width) };
+    return {
+      ico: visible(".d-ic"), tx: visible(".d-tx"),
+      panel: Math.round(host.getBoundingClientRect().width)
+    };
   }
   var wide = readState();
   /* 压窄 → 同一批元素重新算样式 → 再读一遍。两读都必须来自真实布局，
@@ -4761,18 +4851,67 @@ function bizIconReport(narrow) {
   setNarrowPanel(!!narrow);
   /* dataset 的键不许带横线：写 "wide-total" 会直接抛 TypeError
      （DOMStringMap 不是普通对象），整条钩子就哑了。落到 DOM 上是
-     data-wide-total，Python 那边按横线读回来。 */
+     data-wide-ico-total，Python 那边按横线读回来。 */
   appendReport("biz-icons", {
-    "wideTotal": String(wide.total),
-    "wideShown": String(wide.shown),
+    "wideIcoTotal": String(wide.ico.total),
+    "wideIcoShown": String(wide.ico.shown),
+    "wideTextTotal": String(wide.tx.total),
+    "wideTextShown": String(wide.tx.shown),
     "widePanel": String(wide.panel),
-    "narrowTotal": String(thin.total),
-    "narrowShown": String(thin.shown),
+    "narrowIcoTotal": String(thin.ico.total),
+    "narrowIcoShown": String(thin.ico.shown),
+    "narrowTextTotal": String(thin.tx.total),
+    "narrowTextShown": String(thin.tx.shown),
     "narrowPanel": String(thin.panel),
     "tabs": tabsReading(),
     "pills": pillsReading(),
-    "qs": qsReading()
+    "qs": qsReading(),
+    "composer": composerReading(),
+    "msg": msgShapeReading()
   });
+}
+
+/* 对话输入区：ui.py:947-955 里 textbox 独占一行，所以图示里它也必须独占一行
+   ——是 .d-crow 的**兄弟**而不是孩子，宽度摊满，并且真的排在那一行的下面。
+   只查「有一个 .d-textbox」是不够的：把它挪回 .d-crow 里照样成立。 */
+function composerReading() {
+  var card = document.querySelector('.bcard[data-bcard-for="chat_composer"] .demo');
+  if (!card) { return ""; }
+  var box = card.querySelector(".d-textbox");
+  var crow = card.querySelector(".d-crow");
+  var n = crow ? crow.querySelectorAll(".d-it").length : 0;
+  if (!box || !crow) {
+    return [card.dataset.dkind, String(n), box ? "1" : "0",
+            "none", "none", "0"].join(":");
+  }
+  var br = box.getBoundingClientRect();
+  var cr = crow.getBoundingClientRect();
+  var sibling = (box.parentNode === card && crow.parentNode === card);
+  var span = (br.width >= cr.width - 1);
+  var below = (br.top >= cr.bottom - 1);
+  return [card.dataset.dkind, String(n), "1",
+          sibling ? "sibling" : "inside",
+          (span && below) ? "ownrow" : "same", String(Math.round(br.height))]
+    .join(":");
+}
+
+/* 你说的话：一个盒，到此为止。量的是浏览器算出来的边框宽度——
+   外层气泡盒有边框，里面那段文字没有边框。有没有第二个带边框的盒子，
+   不看 DOM 结构（.d-msgtext 本来就只有一个），看它自己画没画边框。 */
+function msgShapeReading() {
+  var demo = el("preview").querySelector(".demo.d-msgtxt");
+  if (!demo) { return ""; }
+  var cs = hostCs(demo);
+  var txt = demo.querySelector(".d-msgtext");
+  var ts = txt ? hostCs(txt) : null;
+  return [demo.dataset.dkind,
+          (cs.borderTopWidth !== "0px") ? "boxed" : "bare",
+          (ts && ts.borderTopWidth === "0px") ? "plain" : "boxed",
+          String(demo.querySelectorAll(".d-group").length)].join(":");
+}
+
+function hostCs(e) {
+  return e.ownerDocument.defaultView.getComputedStyle(e);
 }
 
 /* 页签条那个卡片：三个页签到底写着什么。这条只量文字本身，
@@ -4843,6 +4982,73 @@ function insertBizDemo() {
     if (b) { addBizBlock(b); }
   });
   setStatus("BIZ 已插入 " + proposal.length + " 块（对话面板）");
+}
+
+/* 长消息折叠的无头验收 + 截图入口。
+
+   先折着读一遍、再展开读一遍，两遍都读**浏览器算出来的东西**：
+   折叠态要看得见省略号、也要看得见展开指示（不是一个光看不知道什么意思的
+   小三角）；展开态要真的多出全文。导出那一遍同时验「状态存在积木上、
+   导出时没丢」——用户在预览里点开了，导出里的 open_default 就得是 True。
+
+   shotState 为 null 时只读数（测试用）；true / false 时把画布停在那个状态
+   并收起控件架，供无头截图用。 */
+function bizMsgReport(shotState) {
+  var node = proposal.filter(function (n) { return n.bkey === "chat_bubble"; })[0];
+  if (!node) { setStatus("BIZ msg 没插进 chat_bubble"); return; }
+  node.msgOpen = false;
+  renderCanvas();
+  var folded = msgProbe();
+  var pyClosed = buildPy();
+  node.msgOpen = true;
+  renderCanvas();
+  var open = msgProbe();
+  var pyOpen = buildPy();
+  appendReport("biz-msg", {
+    "foldedText": folded.text,
+    "foldedDots": folded.dots,
+    "foldedTrunc": folded.trunc,
+    "foldedToggle": folded.toggle,
+    "openText": open.text,
+    "openDots": open.dots,
+    "openTrunc": open.trunc,
+    "openToggle": open.toggle,
+    "shape": msgShapeReading(),
+    "pyClosed": (pyClosed.indexOf("open_default=False") >= 0) ? "1" : "0",
+    "pyOpen": (pyOpen.indexOf("open_default=True") >= 0) ? "1" : "0",
+    "pyHasPanel": (pyOpen.indexOf("layout.panel") >= 0) ? "1" : "0",
+    "pyHasDefaultClosed": (pyOpen.indexOf("default_closed") >= 0) ? "1" : "0",
+    "pyLines": String(pyOpen.split("\n").length)
+  });
+  if (shotState !== null) {
+    node.msgOpen = !!shotState;
+    renderCanvas();
+    document.body.classList.add("uw-shot-canvas");
+    if (window.scrollTo) { window.scrollTo(0, 0); }
+    setStatus("BIZ msg " + (shotState ? "展开态" : "折叠态"));
+    return;
+  }
+  setStatus("BIZ msg 折叠/展开两态都读完了");
+}
+
+/* 折叠态长什么样：text 是显示出来的那段，dots 是有没有省略号，
+   trunc 是「原文比显示的长」（也就是确实被折了），toggle 是展开指示的文字。
+   trunc 比 dots 强：省略号可以由别处带来，trunc 比的是原文长度。 */
+function msgProbe() {
+  var demo = el("preview").querySelector(".demo.d-msgtxt");
+  if (!demo) {
+    return { text: "", dots: "0", trunc: "0", toggle: "" };
+  }
+  var t = demo.querySelector(".d-msgtext");
+  var g = demo.querySelector(".d-msgfold");
+  var txt = t ? t.textContent : "";
+  var full = t ? Number(t.dataset.dmsglen || 0) : 0;
+  return {
+    text: txt,
+    dots: (txt.indexOf("…") >= 0) ? "1" : "0",
+    trunc: (full > txt.length) ? "1" : "0",
+    toggle: g ? g.textContent : ""
+  };
 }
 
 function bizReport() {

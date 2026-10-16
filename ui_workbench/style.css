@@ -229,14 +229,20 @@ button.chip {
 .canvas-split { display: flex; gap: 12px; padding: 0 12px 8px; align-items: flex-start; }
 .preview-pane { flex: 0 0 420px; position: sticky; top: 8px; }
 .block-pane { flex: 1 1 auto; min-width: 420px; }
-/* 响应式图标的判据是**这一块的宽度**，不是浏览器窗口：Blender 的面板宽度
-   与工作台窗口宽度没有任何关系，用视口媒体查询去判必然判错对象。
-   所以 #preview 自己是容器，.d-ic 按容器的 inline-size 决定露不露。 */
+/* 响应式图标：判据是**预览面板自己的宽度**（#preview 自己是容器），
+   不是浏览器窗口——Blender 的面板宽度与工作台窗口宽度没有任何关系，
+   用视口媒体查询去判必然判错对象。
+   ★ 取舍是反过来的：**窄面板只给图标，宽面板才给「图标 + 文字」**。
+     窄的时候文字整个不画——顺带把「4 个并排把『修改法线』截成『修改尺』」
+     那类截字彻底消掉：窄的时候压根没有文字可截。
+   ★ Blender 没有媒体查询：它只能在 draw() 里读 context.region.width 自己
+     判断，而拖动面板边框的过程中不会实时重绘，松手才重画一次。所以「响应式」
+     在导出代码里的形状是「松手即生效」，不是「拖动时实时变」。 */
 #preview {
   container-type: inline-size; container-name: uwpanel;
 }
 /* 压窄模式（只给 #biz-*-narrow 这条无头钩子与截图用）：预览收到 280px，
-   刚好越过 360px 那道线，于是图标全部消失、文字留下。 */
+   刚好越过 360px 那道线，于是文字全部消失、只剩图标。 */
 body.uw-narrow-panel .preview-pane { flex: 0 0 280px; }
 body.uw-narrow-panel .block-pane { min-width: 280px; }
 .pane-cap { color: var(--text-dim); font-size: 11px; margin: 6px 0 4px; }
@@ -403,23 +409,61 @@ body.uw-shot-canvas #block-cards { display: none; }
 .demo.d-prop .d-it:first-child { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
 .demo.d-prop .d-it + .d-it { flex: 0 0 28%; }
 
-/* ---- 图示里的图标名角标 + 响应式 ----
-   图标名照印（离线没有图标资源），但**默认藏起来**：Blender 那边窄面板是
-   icon='NONE'，预览跟着藏，两边讲同一个故事。露出与否由容器查询决定，
+/* ---- 图标名角标 + 响应式 ----
+   图标名照印（离线没有图标资源），并且**永远在**——Blender 那边窄面板就是
+   只剩一个图标。藏起来的是**文字**：宽的时候 .d-tx 跟着出来，窄的时候
+   （@container max-width: 360px）文字整个 display:none。
    判据是预览容器自己的宽度（不是浏览器窗口——面板宽度与窗口宽度无关）。
 
    ★ Blender 没有媒体查询：它只能在 draw() 里读 context.region.width 自己
    判断，而拖动面板边框的过程中不会实时重绘，松手才重画一次。所以「响应式」
    在导出代码里的形状是「松手即生效」，不是「拖动时实时变」。 */
 .demo .d-ic {
-  display: none;
+  display: inline-block;
   color: var(--text-dim); font-family: Consolas, monospace; font-size: 8px;
   font-weight: normal; line-height: 1.4; letter-spacing: .02em;
   border: 1px solid var(--border); border-radius: 3px; padding: 0 2px;
   margin-right: 2px; vertical-align: middle; white-space: nowrap;
 }
-@container uwpanel (min-width: 360px) {
-  .demo .d-ic { display: inline-block; }
+.demo .d-tx { display: inline-block; vertical-align: middle; }
+@container uwpanel (max-width: 360px) {
+  .demo .d-tx { display: none; }
+  /* 窄面板里方块只剩图标，格子收窄一点，否则四个并排还是会把图标挤扁。 */
+  .demo .d-it { padding: 0 3px; }
+}
+/* ---- 你说的话：一个盒，到此为止 ----
+   .demo 本身就是那个气泡盒，所以里面的文字**不再套一个带边框的方块**——
+   .demo.d-msgtxt 的直接孩子 .d-msgtext 没有边框也没有底色，读起来就是
+   「盒子里的一段话」。把它当 d-box 画的话盒里又出来一个带边框的方块，
+   两层框套着，看着像两个东西。（规格那块的双层盒是用户要的，走 .d-group，
+   两种形状不许混为一谈。） */
+.demo.d-msgtxt { background: var(--inner); }
+.demo.d-msgtxt .d-msgtext {
+  flex: 1 1 auto; min-width: 0; color: var(--text); font-size: 11px;
+  line-height: 1.5; padding: 2px 4px; text-align: right;
+}
+.demo.d-msgtxt .d-msgfold {
+  flex: 0 0 auto; cursor: pointer; color: var(--text-dim); font-size: 10px;
+  white-space: nowrap; margin: 1px; padding: 0 3px; align-self: flex-start;
+  border: 1px dashed var(--text-dim); border-radius: 3px;
+}
+.demo.d-msgtxt .d-msgfold.open { border-style: solid; }
+/* ---- 对话输入区：输入框独占一行 ----
+   ui.py:947-955 本来就是这样：crow（标签 + 高度滑块）一行，cbox.textbox 在
+   下一行。预览照抄，并给输入框那一行加一道上边线 + 一点留白，让人一眼看出
+   「从这里开始是我能输入的地方」——上面那些是只读的说明，这块才是入口。 */
+.demo.d-composer { flex-direction: column; height: auto; min-height: 56px; }
+.demo.d-composer .d-crow {
+  display: flex; flex-direction: row; gap: 4px; align-items: stretch;
+}
+.demo.d-composer .d-crow .d-it:first-child {
+  flex: 1 1 auto; justify-content: flex-start; padding-left: 6px;
+}
+.demo.d-composer .d-crow .d-it + .d-it { flex: 0 0 28%; }
+.demo.d-composer .d-textbox {
+  width: 100%; background: var(--field); color: var(--text-dim);
+  border: 1px solid var(--border); border-top: 1px solid var(--text-dim);
+  border-radius: 4px; margin-top: 6px; padding: 4px; font-size: 11px;
 }
 /* ---- 双层盒 ----
    外层是 kind 画出来的那个盒（规格选项组那里是 box），每组细节自己再一个
