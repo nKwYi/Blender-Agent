@@ -900,15 +900,37 @@ def dom_checks(doc):
                "状态提示条应是一个盒、内容直接在里面（第 1 格无边框、第 2 格是"
                "按钮），读到 %r" % (it.get("status"),))
 
-            # 第 2 条（一个盒，到此为止）：外层气泡盒有边框，里面那段文字
-            # 没有边框，也没有内层分组盒。看的是浏览器算出来的 border 宽度，
-            # 不是 DOM 层级——层级对了但画了第二个框，一样是两重盒。
+            # 第 2 条（连盒都没有）：你说的话**不该有气泡盒**——用户原话是
+            # 「不要用户消息的盒框」。看的是浏览器算出来的 border 宽度，
+            # 不是 DOM 层级：层级对了但 CSS 还给它画了框，一样红。
+            # （这一条上一版钉的是「有边框」，编码的是已被推翻的旧要求。）
             sh = (it.get("msg") or "").split(":")
             ck("dom_bubble_user_one_box",
-               len(sh) >= 4 and sh[0] == "msgtxt" and sh[1] == "boxed" and
+               len(sh) >= 4 and sh[0] == "msgtxt" and sh[1] == "bare" and
                sh[2] == "plain" and sh[3] == "0",
-               "你说的话应是一个带边框的盒 + 一段没有边框的文字，读到 %r"
-               % (it.get("msg"),))
+               "你说的话应是无框的一段文字：气泡盒自己没边框、里面那段也没"
+               "边框、更没有内层分组盒，读到 %r" % (it.get("msg"),))
+
+            # 「只缩首行、续行顶格」：量的是浏览器真排出来的两行左边界之差。
+            # text-indent 只推首行 → 差值≈两格；padding-left 两行一起推 →
+            # 差值 0。所以这一条对「把 text-indent 换成 padding-left」是
+            # 致命的（那样每一行都缩，根本不是缩进），对「干脆不缩」也是。
+            ind = (it.get("indent") or "").strip()
+            ck("dom_msg_only_first_line_indented",
+               bool(ind) and int(ind) >= 12,
+               "你说的话应只缩首行、续行顶格（首行左边界应比续行右移两格"
+               "以上）；读不到两行，或读出首行缩进 %r px" % (ind or "无",))
+
+            # AI 那个盒右边真的空出了一栏：量盒的右边界与所在容器的右边界
+            # 之差，按容器宽定比例——面板拉宽时留白本来就跟着变大，钉死
+            # 像素会假红。inset 写的是 0.22，所以下限取 10%（留一倍余量）。
+            air = (it.get("airight") or "").split(":")
+            ck("dom_ai_box_leaves_right_gap",
+               len(air) >= 2 and int(air[1]) > 0 and
+               float(air[0]) / float(air[1]) >= 0.10,
+               "AI 那个整段盒的右边应空出一栏留白（至少容器宽的 10%%）；"
+               "读到右边留白 %r px / 容器 %r px"
+               % (air[0] if air else "?", air[1] if len(air) > 1 else "?"))
 
             # 第 7 条：「输入建模指令:」那一栏已删，输入区只剩输入框和
             # 发送按钮。所以 merged/loose 这对判据失去了参照物——它本来

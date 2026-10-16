@@ -1309,10 +1309,11 @@ function renderDemo(w) {
   return box;
 }
 
-/* ---- 你说的话：一个盒 + 可折叠 ----
-   .demo 自己就是那个气泡盒，所以里面**不再套盒子**：文字是一个没有边框的
-   .d-msgtext。上一版走 d-box，盒里又出来一个带边框的方块，两层框套着——
-   用户点名说「一个盒，到此为止」。
+/* ---- 你说的话：无框的一段文字 + 可折叠 ----
+   .demo 自己不画框也不画底色（用户原话「不要用户消息的盒框」），所以里面
+   **不再套盒子**：文字是一个同样没有边框的 .d-msgtext。上一版走 d-box，盒里
+   又出来一个带边框的方块，两层框套着；再往前是整个气泡都带框——那也是被
+   推翻的旧形态。现在是「连盒都没有」，只剩缩首行的那段文字。
 
    盒宽 = 预览容器的宽度，文字按盒内宽度折行：不给 .demo 写死宽度、不做
    窄栏、不加左右外边距。把面板拉宽，每一行的字就变多——这正是用户要的
@@ -4916,7 +4917,9 @@ function bizIconReport(narrow) {
     "pills": pillsReading(),
     "qs": qsReading(),
     "composer": composerReading(),
-    "msg": msgShapeReading()
+    "msg": msgShapeReading(),
+    "indent": msgIndentReading(narrow),
+    "airight": aiRightGapReading()
   });
 }
 
@@ -4961,9 +4964,10 @@ function statusReading() {
           (bcs.borderTopWidth !== "0px") ? "boxed" : "bare"].join(":");
 }
 
-/* 你说的话：一个盒，到此为止。量的是浏览器算出来的边框宽度——
-   外层气泡盒有边框，里面那段文字没有边框。有没有第二个带边框的盒子，
-   不看 DOM 结构（.d-msgtext 本来就只有一个），看它自己画没画边框。
+/* 你说的话：**连盒都没有**，就一段文字，文字自己也不带框、更没有内层
+   分组盒。量的是浏览器算出来的边框宽度：数据写了 bare 但 CSS 还给它画了
+   框的话，这里照样红（上一版这条钉的是「有边框」，那是已经被用户推翻的
+   旧要求——原话是「你说的话不要盒框」）。
    后三格是盒宽那条：盒子的宽度（应等于容器宽，不许写死）、文字占多宽、
    以及一个固定的行高——「把面板拉宽，每行的字变多」就是拿
    宽面板的每行字数 减去 窄面板的每行字数 来验的。 */
@@ -4996,6 +5000,74 @@ function msgShapeReading() {
           String(demo.querySelectorAll(".d-group").length),
           tr ? String(Math.round(tr.width)) : "0",
           String(Math.round((tr ? tr.width : 0) / MSG_LINE_H))].join(":");
+}
+
+/* 「只缩首行、续行顶格」：量**实际排出来的几何**，不是读 CSS 里写没写
+   text-indent。拿 Range 把那段文字框住，按 top 把行盒并起来，比较第一行
+   与第二行的左边界：
+     - text-indent: 2em   → 首行比续行右移两格，差值 ≈ 2em（正数）
+     - padding-left: 2em  → 两行**一起**右移，差值 = 0
+   所以这一格量错的话最典型的症状就是差值恒为 0——那说明读到的是整段
+   盒子而不是行盒。
+
+   压到 280px 再量：宽面板下这句话可能只排一行，量不到「第二行」，这一格
+   就成了「读不出来」而不是「读到了不合格的数」。量完把面板放回原状。 */
+function msgIndentReading(narrow) {
+  function probe() {
+    var t = el("preview").querySelector(".demo.d-msgtxt .d-msgtext");
+    if (!t || !t.firstChild) { return null; }
+    var r = t.ownerDocument.createRange();
+    r.selectNodeContents(t);
+    var rs = r.getClientRects();
+    var lines = [];
+    for (var i = 0; i < rs.length; i++) {
+      var rc = rs[i];
+      if (rc.width <= 0 || rc.height <= 0) { continue; }
+      var last = lines[lines.length - 1];
+      if (last && Math.abs(rc.top - last.top) < 2) {
+        /* 同一行可能被拆成好几个 rect（内联子元素、空白折叠），
+           左边界取最小那个，别被某一段的偏移带偏。 */
+        if (rc.left < last.left) { last.left = rc.left; }
+      } else {
+        lines.push({ top: rc.top, left: rc.left });
+      }
+    }
+    if (lines.length < 2) { return null; }
+    return Math.round(lines[0].left - lines[1].left);
+  }
+  if (!el("preview").querySelector(".demo.d-msgtxt .d-msgtext")) { return ""; }
+  setNarrowPanel(true);
+  var d = probe();
+  setNarrowPanel(!!narrow);
+  return (d === null) ? "" : String(d);
+}
+
+/* AI 那个盒右边真的空出了一栏：盒的右边界 vs 它所在容器（预览里那一格）
+   的右边界，差值就是那栏留白。同时报容器宽，好让断言按比例钉而不是钉
+   某个像素——面板拉宽时留白本来就跟着变大。
+   只读 dataset.dinset 等于没量：那个数是数据自己写的，写了不做也照样
+   成立；这里量的是浏览器算出来的位置，margin 被别处规则盖掉就量不出来。 */
+function aiRightGapReading() {
+  function gap() {
+    var box = el("preview").querySelector(".demo[data-dinset]");
+    if (!box || !box.parentNode) { return ""; }
+    var b = box.getBoundingClientRect();
+    var p = box.parentNode.getBoundingClientRect();
+    return [String(Math.round(p.right - b.right)),
+            String(Math.round(p.width))].join(":");
+  }
+  /* AI 那一版不是 chat_bubble 的默认变体，插进来的是「你说的话」那版，
+     所以要先把变体切到 ai 再量，量完切回去——不动这个状态的话这里量到的
+     永远是空的，断言就成了一条恒真。 */
+  var node = proposal.filter(function (n) { return n.bkey === "chat_bubble"; })[0];
+  if (!node) { return ""; }
+  var keep = node.bvar;
+  node.bvar = "ai";
+  renderCanvas();
+  var out = gap();
+  node.bvar = keep;
+  renderCanvas();
+  return out;
 }
 
 /* 「文字宽度跟盒宽度一样」：同一个气泡在宽面板与窄面板下各量一次每行字数。
