@@ -97,9 +97,18 @@ class MockLayout:
         return c
 
     def split(self, factor=0.5, **kw):
-        a, b = MockLayout("split", parent=self), MockLayout("split", parent=self)
-        self.children += [a, b]
-        return a, b
+        # 真实 Blender 4.x/5.x 的 UILayout.split() 返回**单个** layout，
+        # 是左边那一列（宽 = factor × 内容宽）；右边那列 Python 拿不到。
+        # 这里原来返回 2.8 时代的 (a, b) 元组，比真实 API 旧，会让测试跟真实
+        # 行为脱节 —— ui.py 里那段 isinstance(col, tuple) 兜底就是被它逼出来的。
+        # align 在 5.2 是 **bool 不是枚举**，传 'LEFT'/'RIGHT' 会 TypeError，
+        # 所以这里只接受真假值。
+        if isinstance(kw.get("align"), str):
+            raise TypeError(
+                "Function.align expected True/False or 0/1, not %r" % kw["align"])
+        a = MockLayout("split", parent=self)
+        self.children.append(a)
+        return a
 
     def separator(self, factor=1.0):
         pass
@@ -236,8 +245,18 @@ def main():
 
     # 7. 输入区必须在历史之前：侧栏只能整体滚动，输入框排到长历史下面就用不了
     state.history.clear()
+    # 「你」的消息是偶数下标。把 22 号做成**够长**的一条：只有它折成两行以上，
+    # 「首行缩进」和「每行都缩进」才区分得开。6 个字的 fixture 下这两种行为
+    # 长得一模一样，断言会空过 —— 而空过的还是一条编码了旧要求的断言。
+    # 注意不要另外 push 第 25 条：下面「历史条数跟随偏好设置」数的是含
+    # 「历史消息」字的行数，多插一条会把 shown 从 3 挤成 2。
     for i in range(24):
-        U.push_history(state, "你" if i % 2 == 0 else "AI", f"历史消息 {i}")
+        if i == 22:
+            U.push_history(state, "你",
+                           "历史消息 22：做一个精致的中式紫砂茶杯，杯身要能看出"
+                           "砂颗粒的质感，把手做成竹节形，壶嘴短一点")
+        else:
+            U.push_history(state, "你" if i % 2 == 0 else "AI", f"历史消息 {i}")
     layout_order = MockLayout()
     U.draw_chat_content(layout_order, bpy.context, state, run_done)
     seq = layout_order.all_texts()
@@ -271,15 +290,25 @@ def main():
     # 用户明确要求：从左开始、空两个字符、常规排。原来是 alignment='RIGHT'。
     ck("人的消息不再靠右", host_alignment_of(layout_order, "历史消息 22") != 'RIGHT',
        repr(host_alignment_of(layout_order, "历史消息 22")))
-    # 只有「你」说的话要缩进 —— AI 的回复直接排在对话流上，本来就不进盒也不缩进。
-    # 历史消息是交替造的（i%2==0 是"你"），所以 22 是用户、21/23 是 AI。
-    user_msgs = [t for t in layout_order.all_texts()
-                 if t.strip().endswith("22") or "历史消息 22" in t]
-    ai_msgs = [t for t in layout_order.all_texts()
-               if "历史消息 21" in t or "历史消息 23" in t]
-    ck("人的消息每行都空两格缩进",
-       bool(user_msgs) and all(t.startswith("　　") for t in user_msgs),
-       "用户的每一行续行都要缩进，不能只缩首行：%r" % user_msgs)
+    # 只有「你」说的话缩进，而且**只缩首行** —— AI 的回复不进盒也不缩进。
+    # 22 号那条长指令折出来的所有行 = 从它那行到下一条历史消息之前那一段。
+    # 用切片而不是按内容过滤：折行后的续行不含「历史消息」字样，按内容筛只能
+    # 捞到第一行 —— 那正是上一版断言空过的原因。
+    i22 = next((i for i, t in enumerate(seq) if "历史消息 22" in t), -1)
+    j = next((k for k in range(i22 + 1, len(seq)) if "历史消息" in seq[k]), len(seq))
+    tea_lines = seq[i22:j] if i22 >= 0 else []
+    short_user = [t for t in seq if "历史消息 22" in t]
+    ai_msgs = [t for t in seq if "历史消息 21" in t or "历史消息 23" in t]
+    ck("长用户消息确实折成了多行（否则下面两条断言无从区分）",
+       len(tea_lines) >= 2,
+       "长指令应折行，实际只有 %d 行：%r" % (len(tea_lines), tea_lines))
+    ck("只有首行缩进两格，续行顶格",
+       bool(tea_lines) and tea_lines[0].startswith("　　")
+       and all(not t.startswith("　　") for t in tea_lines[1:]),
+       "首行应缩进、续行不应：%r" % (tea_lines,))
+    ck("短用户消息也缩进（单行时首行就是全部）",
+       bool(short_user) and all(t.startswith("　　") for t in short_user),
+       "单行用户消息的首行也要缩进：%r" % (short_user,))
     ck("AI 的消息不缩进", all(not t.startswith("　　") for t in ai_msgs),
        "AI 的话不进盒也不缩进：%r" % ai_msgs)
     ck("AI 的回复不再套盒子（直接排在对话流上）",
