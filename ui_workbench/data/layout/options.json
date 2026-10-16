@@ -39,7 +39,7 @@
       "children": []
     },
     {
-      "kind": "row",
+      "kind": "split",
       "element_id": null,
       "alert": false,
       "active": false,
@@ -48,35 +48,86 @@
       "alignment": "EXPAND",
       "use_property_split": false,
       "emboss": "NONE",
-      "texts": [
-        "　　做一个精致的中式紫砂茶杯，"
-      ],
-      "icons": [
-        "NONE"
-      ],
+      "texts": [],
+      "icons": [],
       "ops": [],
       "props": [],
-      "children": []
-    },
-    {
-      "kind": "row",
-      "element_id": null,
-      "alert": false,
-      "active": false,
-      "enabled": true,
-      "scale_y": 1.0,
-      "alignment": "EXPAND",
-      "use_property_split": false,
-      "emboss": "NONE",
-      "texts": [
-        "杯身要能看出砂颗粒的质感"
+      "children": [
+        {
+          "kind": "column",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [],
+          "icons": [],
+          "ops": [],
+          "props": [],
+          "children": []
+        },
+        {
+          "kind": "column",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [],
+          "icons": [],
+          "ops": [],
+          "props": [],
+          "children": [
+            {
+              "kind": "row",
+              "element_id": null,
+              "alert": false,
+              "active": false,
+              "enabled": true,
+              "scale_y": 1.0,
+              "alignment": "EXPAND",
+              "use_property_split": false,
+              "emboss": "NONE",
+              "texts": [
+                "　　做一个精致的中式紫砂茶杯，杯身要"
+              ],
+              "icons": [
+                "NONE"
+              ],
+              "ops": [],
+              "props": [],
+              "children": []
+            },
+            {
+              "kind": "row",
+              "element_id": null,
+              "alert": false,
+              "active": false,
+              "enabled": true,
+              "scale_y": 1.0,
+              "alignment": "EXPAND",
+              "use_property_split": false,
+              "emboss": "NONE",
+              "texts": [
+                "能看出砂颗粒的质感"
+              ],
+              "icons": [
+                "NONE"
+              ],
+              "ops": [],
+              "props": [],
+              "children": []
+            }
+          ]
+        }
       ],
-      "icons": [
-        "NONE"
-      ],
-      "ops": [],
-      "props": [],
-      "children": []
+      "split_factor": 0.2
     },
     {
       "kind": "split",
@@ -144,7 +195,7 @@
               "texts": [
                 "选择: 经典直筒微收口 (推荐)",
                 "选择: 鼓腹圆润",
-                "选择: 手作厚壁窑变"
+                "选择: 手作厚壁窑变 (推荐)"
               ],
               "icons": [],
               "ops": [
@@ -168,7 +219,7 @@
                 },
                 {
                   "id": "deepseek.submit_selection",
-                  "text": "选择: 手作厚壁窑变",
+                  "text": "选择: 手作厚壁窑变 (推荐)",
                   "icon": "CHECKBOX_DEHLT",
                   "kwargs": {},
                   "assigned": {
@@ -192,7 +243,7 @@
               "texts": [
                 "选择: 短嘴 (推荐)",
                 "选择: 长嘴",
-                "选择: 无嘴"
+                "选择: 无嘴 (推荐)"
               ],
               "icons": [],
               "ops": [
@@ -216,7 +267,7 @@
                 },
                 {
                   "id": "deepseek.submit_selection",
-                  "text": "选择: 无嘴",
+                  "text": "选择: 无嘴 (推荐)",
                   "icon": "CHECKBOX_DEHLT",
                   "kwargs": {},
                   "assigned": {
@@ -240,7 +291,7 @@
               "texts": [
                 "选择: 紫砂一体",
                 "选择: 竹节缠绕 (推荐)",
-                "选择: 无把手"
+                "选择: 无把手 (推荐)"
               ],
               "icons": [],
               "ops": [
@@ -264,7 +315,7 @@
                 },
                 {
                   "id": "deepseek.submit_selection",
-                  "text": "选择: 无把手",
+                  "text": "选择: 无把手 (推荐)",
                   "icon": "CHECKBOX_DEHLT",
                   "kwargs": {},
                   "assigned": {

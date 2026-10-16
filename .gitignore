@@ -19,3 +19,8 @@ dev/out/
 crop_*.png
 # capture_shots.py 的整窗原图中间产物（约 1.8MB/张），裁切后的 <state>.png 才入库
 ui_workbench/data/shots/*_full.png
+
+# ---- 临时诊断与验证碎片 ----
+dev/_tmp_verify/
+_pipe_renders/
+dev/_junklist.txt

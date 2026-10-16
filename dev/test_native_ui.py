@@ -76,15 +76,15 @@ class MockLayout:
 
     def panel(self, idname, default_closed=False, layout_header=None,
               layout_body=None):
-        # 真实 UILayout.panel() 返回**单个** layout（头和体是同一个），
-        # 不是二元组，也不是 split() 那样只返回一半。ui.py 的长用户提示词
-        # 折叠用的就是它；桩里少这个方法，测试里塞一条长指令就会
-        # AttributeError，而不是安静地少断言。
-        p = MockLayout("panel", parent=self)
-        p.panel_idname = idname
-        p.panel_default_closed = bool(default_closed)
-        self.children.append(p)
-        return p
+        # 真实 Blender 4.1+/5.x 的 UILayout.panel() 返回二元组 (layout_header, layout_body)
+        header = MockLayout("panel_header", parent=self)
+        body = MockLayout("panel_body", parent=self)
+        header.panel_idname = idname
+        body.panel_idname = idname
+        header.panel_default_closed = bool(default_closed)
+        body.panel_default_closed = bool(default_closed)
+        self.children.extend([header, body])
+        return (header, body)
 
     def row(self, align=False):
         r = MockLayout("row", parent=self)
@@ -243,13 +243,26 @@ def main():
     ck("clarify_has_options", any("西施壶" in op["text"] for op in submit_ops), "选项按钮必须以原生 operator 渲染")
     ck("clarify_has_recommend_btn", any("按推荐参数开始建模" in op["text"] for op in submit_ops), "需提供快速开始建模按钮")
 
+    # 6b. 验证圈号与全角斜杠等真实追问格式解析能力
+    state.history.clear()
+    msg_ai_snow = state.history.add()
+    msg_ai_snow.role = "AI"
+    msg_ai_snow.text = (
+        "雪屋小场景，先确认几个核心细节（括号内是我的推荐）：\n"
+        "① 雪屋风格：冰屋（推荐）／ 半球体+螺旋雪砖 ／ 烟囱 A 字木屋\n"
+        "② 场景范围：纯雪屋（推荐）／ 加旗杆等氛围道具\n"
+        "直接回复选项编号，立刻开始建模。"
+    )
+    layout_snow = MockLayout()
+    U.draw_chat_content(layout_snow, bpy.context, state, run_done)
+    snow_submit_ops = [op for op in layout_snow.all_operators() if op["id"] == "deepseek.submit_selection"]
+    ck("snow_clarify_has_options", any("冰屋" in op["text"] for op in snow_submit_ops), "圈号与全角斜杠格式必须被正确解析为按钮")
+    ck("snow_clarify_has_rec_btn", any("按推荐参数开始建模" in op["text"] for op in snow_submit_ops), "圈号格式下必须生成一键推荐建模按钮")
+
     # 7. 输入区必须在历史之前：侧栏只能整体滚动，输入框排到长历史下面就用不了
     state.history.clear()
     # 「你」的消息是偶数下标。把 22 号做成**够长**的一条：只有它折成两行以上，
-    # 「首行缩进」和「每行都缩进」才区分得开。6 个字的 fixture 下这两种行为
-    # 长得一模一样，断言会空过 —— 而空过的还是一条编码了旧要求的断言。
-    # 注意不要另外 push 第 25 条：下面「历史条数跟随偏好设置」数的是含
-    # 「历史消息」字的行数，多插一条会把 shown 从 3 挤成 2。
+    # 「首行缩进」和「每行都缩进」才区分得开。
     for i in range(24):
         if i == 22:
             U.push_history(state, "你",
@@ -260,8 +273,6 @@ def main():
     layout_order = MockLayout()
     U.draw_chat_content(layout_order, bpy.context, state, run_done)
     seq = layout_order.all_texts()
-    # 「输入建模指令:」那一栏已删（用户要省纵向空间），输入区现在只有
-    # textbox 一个 prop，所以顺序锚点改成 prop 名，不是文字。
     tok = layout_order.all_tokens()
     idx_input = next((n for n, (k, v) in enumerate(tok) if k == "prop" and v == "prompt"), -1)
     idx_first_hist = next((n for n, (k, v) in enumerate(tok) if k == "text" and "历史消息" in v), -1)
@@ -285,17 +296,13 @@ def main():
                 return chain
         return []
 
-    # 一问一答样式（2026-10-16 定稿）：
-    #   你说的话 -> 无框、无右边距，文字直接落在面板底色上，只缩首行
-    #   AI 回的话 -> 整段**一个**盒，且右边留一段间距
-    # 盒数从「外盒 + 每细节一个内盒」压到严格的 1。
+    # 一问一答样式（最新规范）：
+    #   你说的话 -> 无框，使用 split(factor=0.20) 靠右侧排布（左侧留空 20% 缩进），文字仅首行缩进两格
+    #   AI 回的话 -> 整段一个盒，且右边留一段间距
     ck("人的消息没有盒子", "box" not in host_kind_of("历史消息 22"),
        "用户消息应当无框，实际宿主链=%r" % (host_kind_of("历史消息 22"),))
-    ck("人的消息没有右边距", "split" not in host_kind_of("历史消息 22"),
-       "用户消息不该被 split 切窄，实际宿主链=%r" % (host_kind_of("历史消息 22"),))
-    # 用户明确要求：从左开始、空两个字符、常规排。原来是 alignment='RIGHT'。
-    ck("人的消息不再靠右", host_alignment_of(layout_order, "历史消息 22") != 'RIGHT',
-       repr(host_alignment_of(layout_order, "历史消息 22")))
+    ck("人的消息靠右分栏", "split" in host_kind_of("历史消息 22"),
+       "用户消息应当在 split 列里靠右排布，实际宿主链=%r" % (host_kind_of("历史消息 22"),))
     # 只有「你」说的话缩进，而且**只缩首行** —— AI 的回复不进盒也不缩进。
     # 22 号那条长指令折出来的所有行 = 从它那行到下一条历史消息之前那一段。
     # 用切片而不是按内容过滤：折行后的续行不含「历史消息」字样，按内容筛只能
@@ -315,6 +322,12 @@ def main():
     ck("短用户消息也缩进（单行时首行就是全部）",
        bool(short_user) and all(t.startswith("　　") for t in short_user),
        "单行用户消息的首行也要缩进：%r" % (short_user,))
+    ck("用户消息行右对齐贴边", host_alignment_of(layout_order, "历史消息 22") == 'RIGHT',
+       "用户消息行应设置 alignment='RIGHT' 贴右排布，实际=%r" % (host_alignment_of(layout_order, "历史消息 22"),))
+    t_snow = "按推荐参数建模：北欧童话木屋，桌景微缩18cm，原木 + 厚白雪顶，烟囱 + 雪堆 + 松树 + 木栅栏"
+    lines_snow = U.wrap_text(t_snow, max_chars=22, first_chars=20)
+    ck("符号空格不提前截断", any("雪堆" in l for l in lines_snow if "烟囱" in l),
+       "烟囱行应包含雪堆，不应提前在+空格截断造成大空隙：%r" % (lines_snow,))
     ck("AI 的消息不缩进", all(not t.startswith("　　") for t in ai_msgs),
        "AI 的话不进盒也不缩进：%r" % ai_msgs)
     ck("AI 整段套一个盒", "box" in host_kind_of("历史消息 21"),

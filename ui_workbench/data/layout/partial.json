@@ -73,7 +73,7 @@
       "children": []
     },
     {
-      "kind": "row",
+      "kind": "split",
       "element_id": null,
       "alert": false,
       "active": false,
@@ -82,35 +82,86 @@
       "alignment": "EXPAND",
       "use_property_split": false,
       "emboss": "NONE",
-      "texts": [
-        "　　做一个精致的中式紫砂茶杯，"
-      ],
-      "icons": [
-        "NONE"
-      ],
+      "texts": [],
+      "icons": [],
       "ops": [],
       "props": [],
-      "children": []
-    },
-    {
-      "kind": "row",
-      "element_id": null,
-      "alert": false,
-      "active": false,
-      "enabled": true,
-      "scale_y": 1.0,
-      "alignment": "EXPAND",
-      "use_property_split": false,
-      "emboss": "NONE",
-      "texts": [
-        "杯身要能看出砂颗粒的质感"
+      "children": [
+        {
+          "kind": "column",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [],
+          "icons": [],
+          "ops": [],
+          "props": [],
+          "children": []
+        },
+        {
+          "kind": "column",
+          "element_id": null,
+          "alert": false,
+          "active": false,
+          "enabled": true,
+          "scale_y": 1.0,
+          "alignment": "EXPAND",
+          "use_property_split": false,
+          "emboss": "NONE",
+          "texts": [],
+          "icons": [],
+          "ops": [],
+          "props": [],
+          "children": [
+            {
+              "kind": "row",
+              "element_id": null,
+              "alert": false,
+              "active": false,
+              "enabled": true,
+              "scale_y": 1.0,
+              "alignment": "EXPAND",
+              "use_property_split": false,
+              "emboss": "NONE",
+              "texts": [
+                "　　做一个精致的中式紫砂茶杯，杯身要"
+              ],
+              "icons": [
+                "NONE"
+              ],
+              "ops": [],
+              "props": [],
+              "children": []
+            },
+            {
+              "kind": "row",
+              "element_id": null,
+              "alert": false,
+              "active": false,
+              "enabled": true,
+              "scale_y": 1.0,
+              "alignment": "EXPAND",
+              "use_property_split": false,
+              "emboss": "NONE",
+              "texts": [
+                "能看出砂颗粒的质感"
+              ],
+              "icons": [
+                "NONE"
+              ],
+              "ops": [],
+              "props": [],
+              "children": []
+            }
+          ]
+        }
       ],
-      "icons": [
-        "NONE"
-      ],
-      "ops": [],
-      "props": [],
-      "children": []
+      "split_factor": 0.2
     },
     {
       "kind": "split",
@@ -141,8 +192,8 @@
             "执行的操作：",
             "✓ 旋转车削一体化成型 完成，耗时 12秒",
             "✓ 配置物理 PBR 材质节点 完成，耗时 6秒",
-            "杯身已经车削完成，我顺手把边缘的微倒角也做了，",
-            "看起来更接近手工打磨的质感。",
+            "杯身已经车削完成，我顺手把边缘的微倒角也做了，看起来",
+            "更接近手工打磨的质感。",
             "新增对象：Teapot"
           ],
           "icons": [

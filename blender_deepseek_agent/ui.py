@@ -45,7 +45,7 @@ SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"
 # 1.0（用户分支不再切 split 栏）。
 # 现在 factor 只服务于 **AI 消息的右侧留白**：AI 返回的内容整体缩窄，
 # 右边空出一栏，形成一问一答的对称感。
-AI_MARGIN_SPLIT = 0.84
+AI_MARGIN_SPLIT = 0.88
 
 # 下面三个常量都是实测出来的（UI 单位，1.0 = ui_scale 1.0）：
 #   CJK 字宽：blf.size(font, 11) 下 blf.dimensions('中文') / 字数 = 11.00 px
@@ -61,12 +61,12 @@ PX_PER_CJK = 11.0
 PANEL_PAD_UI = 54.0
 BOX_PAD_UI = 14.0
 
-# 每行字数 = 盒内可用 px / 字宽，夹在 [6, 44]：极窄面板不至于算出 0，
-# 极宽面板不至于算出几百（一行几百字在气泡里没法看）。
-WRAP_CHARS_MIN = 6
-WRAP_CHARS_MAX = 44
+# 每行字数 = 盒内可用 px / 字宽，夹在 [14, 56]：极窄面板不至于算出 0，
+# 宽侧栏下充分利用空间，避免中途断行留下右侧大片空白。
+WRAP_CHARS_MIN = 14
+WRAP_CHARS_MAX = 56
 # 拿不到 context.region 时（无头测试、MockLayout）退回这个值，和旧行为一致。
-WRAP_CHARS_FALLBACK = 18
+WRAP_CHARS_FALLBACK = 26
 
 # 布局契约（结构性约束，用 check_layout_contract() 自检，空列表 = 全部通过）：
 #   1. 页签条排在状态提示条上面 —— DEEPSEEK_PT_chat.draw 先画页签条再调
@@ -172,27 +172,28 @@ def get_current_action_text(run):
     if run.phase == Phase.PREFLIGHT:
         return f"正在预检场景物体与材质 ({elapsed}秒)"
     if run.phase == Phase.REQUESTING:
-        if elapsed < 8:
-            return f"正在构思三维几何结构与物理尺度 ({elapsed}秒)"
-        elif elapsed < 20:
-            return f"正在规划参数化建模脚本与材质管线 ({elapsed}秒)"
-        elif elapsed < 45:
-            return f"正在编写高保真造型脚本 ({elapsed}秒)"
+        rounds = getattr(run, "rounds", 0)
+        completed_calls = [c for c in getattr(run, "calls", []) if c.result is not None]
+        if rounds == 0 and not completed_calls:
+            return f"大模型深度思考中，正在生成建模指令 ({elapsed}秒)"
         else:
-            return f"正在细化高光倒角与布光细节 ({elapsed}秒)"
+            return f"第 {rounds + 1} 轮推理中，正在生成后续建模指令 ({elapsed}秒)"
     if run.phase == Phase.TOOL_RUNNING:
-        call = run.calls[-1] if run.calls else None
+        call = next((c for c in reversed(run.calls) if c.result is None), None) or (run.calls[-1] if run.calls else None)
         if call:
             # ToolCall.args 可能为 None（尚未解析的工具调用），draw 里抛异常会让整块面板变白
             cargs = call.args if isinstance(call.args, dict) else {}
             if call.name == "get_scene_info":
-                return f"正在分析场景现有对象数据 ({elapsed}秒)"
+                return f"正在读取与分析场景现有对象 ({elapsed}秒)"
             elif call.name == "create_primitive":
-                return f"正在生成基础几何体 {cargs.get('name', '')} ({elapsed}秒)"
+                pname = cargs.get("name") or cargs.get("type", "几何体")
+                return f"正在创建基础几何体 {pname} ({elapsed}秒)"
             elif call.name == "set_material":
-                return f"正在为 {cargs.get('object_name', '')} 配置 PBR 材质 ({elapsed}秒)"
+                oname = cargs.get("object_name") or "对象"
+                return f"正在为 {oname} 配置 PBR 材质 ({elapsed}秒)"
             elif call.name == "transform_object":
-                return f"正在调整 {cargs.get('object_name', '')} 空间变换 ({elapsed}秒)"
+                oname = cargs.get("object_name") or "对象"
+                return f"正在调整 {oname} 空间变换 ({elapsed}秒)"
             elif call.name == "execute_blender_code":
                 code = str(cargs.get("code", "")).lower()
                 if "spin" in code or "screw" in code:
@@ -317,6 +318,7 @@ def settle(context):
         push_history(state, "AI", run.reply, run=run)
     state.settled_phase = run.phase.value
     state.settled_err = run.err.value
+    state.settled_err_detail = str(run.detail or "")
     state.busy = False
     _tag(context)
 
@@ -341,6 +343,7 @@ class DEEPSEEK_PG_state(bpy.types.PropertyGroup):
     last_elapsed: bpy.props.FloatProperty(default=0.0, options={'SKIP_SAVE'})
     settled_phase: bpy.props.StringProperty(default=Phase.READY.value, options={'SKIP_SAVE'})
     settled_err: bpy.props.StringProperty(default="", options={'SKIP_SAVE'})
+    settled_err_detail: bpy.props.StringProperty(default="", options={'SKIP_SAVE'})
     api_key_cache: bpy.props.StringProperty(default="", options={'SKIP_SAVE'})
     transcript: bpy.props.PointerProperty(type=bpy.types.Text, options={'SKIP_SAVE'})
     show_approval_code: bpy.props.BoolProperty(name="查看代码", default=False, options={'SKIP_SAVE'})
@@ -391,23 +394,48 @@ def dispatch_run_prompt(context, text_override=None, reporter=None):
     text = (text_override if text_override is not None else state.prompt).strip()
     state.api_key_cache = cfg["api_key"]
 
+    is_retry = False
+    if not text:
+        # 失败状态下的重新尝试 fallback：若用户未在输入框重新打字，自动提取上一条失败的提示词
+        is_failed = (CONTROLLER.run and CONTROLLER.run.phase == Phase.FAILED) or (state.settled_phase == Phase.FAILED.value)
+        if is_failed:
+            if CONTROLLER.run and getattr(CONTROLLER.run, "prompt", None) and CONTROLLER.run.prompt.strip():
+                text = CONTROLLER.run.prompt.strip()
+                is_retry = True
+            else:
+                for item in reversed(state.history):
+                    if item.role == "你":
+                        cand = (getattr(item, "raw_prompt", None) or item.text or "").strip()
+                        if cand:
+                            text = cand
+                            is_retry = True
+                            break
+
     if not text:
         state.settled_err = ""
+        state.settled_err_detail = ""
         if reporter:
             reporter({'WARNING'}, "请输入指令")
         return {'CANCELLED'}
     if not cfg["api_key"]:
         state.settled_phase = Phase.FAILED.value
         state.settled_err = Err.KEY_MISSING.value
+        state.settled_err_detail = "缺少 API Key，请在偏好设置中配置"
         if reporter:
             reporter({'ERROR'}, "缺少 API Key")
         return {'CANCELLED'}
     if not context.preferences.edit.use_global_undo and not bpy.app.background:
         state.settled_phase = Phase.FAILED.value
         state.settled_err = Err.UNDO_UNAVAILABLE.value
+        state.settled_err_detail = "全局撤销已关闭，请在【偏好设置 -> 系统 -> 撤销】中开启"
         if reporter:
             reporter({'ERROR'}, "全局撤销已关闭")
         return {'CANCELLED'}
+
+    if is_retry and len(state.history) > 0 and state.history[-1].role == "你":
+        last_t = getattr(state.history[-1], "raw_prompt", "") or state.history[-1].text
+        if last_t.strip() == text:
+            state.history.remove(len(state.history) - 1)
 
     push_history(state, "你", text, raw_prompt=text)
     state.page = 0
@@ -415,6 +443,7 @@ def dispatch_run_prompt(context, text_override=None, reporter=None):
     state.busy = True
     state.settled_phase = Phase.PREFLIGHT.value
     state.settled_err = ""
+    state.settled_err_detail = ""
     # 发送后将指令输入栏重置清空，高度也收回默认，避免下次被撑高的框占位置
     state.prompt = ""
     state.prompt_lines = 2
@@ -431,6 +460,7 @@ def dispatch_run_prompt(context, text_override=None, reporter=None):
         else:
             state.settled_phase = Phase.FAILED.value
             state.settled_err = Err.KEY_MISSING.value
+            state.settled_err_detail = "缺少 API Key 或配置无效"
             if reporter:
                 reporter({'ERROR'}, "缺少 API Key")
         return {'CANCELLED'}
@@ -448,6 +478,21 @@ class DEEPSEEK_OT_run(bpy.types.Operator):
     """提交指令给模型；网络在后台线程，Blender 界面保持可响应"""
     bl_idname = "deepseek.run_prompt"
     bl_label = "发送指令"
+    bl_options = set()
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene is not None and not CONTROLLER.busy
+
+    def execute(self, context):
+        return dispatch_run_prompt(context, reporter=self.report)
+
+
+class DEEPSEEK_OT_retry(bpy.types.Operator):
+    """重新尝试失败的任务；自动提取失败指令或最后一条用户指令重发"""
+    bl_idname = "deepseek.retry"
+    bl_label = "重新尝试"
+    bl_description = "清除错误状态并使用上一条失败指令重新尝试"
     bl_options = set()
 
     @classmethod
@@ -857,11 +902,16 @@ def wrap_text(text, max_chars=26, first_chars=None):
                 lines.append(p)
                 break
             cut = budget
-            for sep in (" ", "，", "。", "；", "！", "、", ",", ";"):
-                pos = p[:budget].rfind(sep)
-                if pos > budget // 2:
-                    cut = pos + 1
-                    break
+            # 仅当切分点正好处在英文/数字单词内部时，才回退到该单词起始处避免拆散单词
+            if cut < len(p) and p[cut - 1].isascii() and p[cut - 1].isalnum() and p[cut].isascii() and p[cut].isalnum():
+                idx = cut - 1
+                while idx > 0 and p[idx].isascii() and p[idx].isalnum():
+                    idx -= 1
+                if idx > int(budget * 0.4):
+                    cut = idx + 1
+            # 避头尾：下一字符若为逗号句号等标点，收入本行末尾
+            if cut < len(p) and p[cut] in ("，", "。", "；", "！", "、", ",", ";", "？", "?", "）", ")"):
+                cut += 1
             lines.append(p[:cut].strip())
             p = p[cut:].strip()
     return lines
@@ -969,11 +1019,16 @@ def draw_chat_content(layout, context, state, run):
                 pbox.label(text=f"  • {s_line}")
         pbox.label(text="没做完的部分，再说一句就行", icon='FORWARD')
 
-    if run and run.phase == Phase.FAILED:
+    if (run and run.phase == Phase.FAILED) or (state.settled_phase == Phase.FAILED.value and not busy):
         fbox = layout.box()
         fbox.alert = True
         err_msg = state.settled_err or "任务遇到异常"
         fbox.label(text=f"任务执行中断：{err_msg}", icon='ERROR')
+        detail = (run.detail if run and run.detail else getattr(state, "settled_err_detail", "")) or ""
+        if detail and detail != err_msg:
+            chars = bubble_wrap_chars(context, factor=0.85) if context else 40
+            for d_line in wrap_text(detail, max_chars=chars):
+                fbox.label(text=d_line)
         fbox.label(text="该做的事：检查设置或重试指令", icon='INFO')
         frow = fbox.row(align=True)
         frow.operator("deepseek.run_prompt", text="重新尝试", icon='FILE_REFRESH')
@@ -993,29 +1048,33 @@ def draw_chat_content(layout, context, state, run):
         for idx in range(start_idx, hist_len):
             item = state.history[idx]
             if item.role == "你":
-                # 人发的：**没有盒框**，文字直接排在面板底色上
-                # （用户原话「不要用户消息的盒框」），只给**首行**缩进两格、
-                # 续行顶格。没有 ubox 可挂，所以长提示词的原生折叠直接挂在
-                # 父 layout 上。
-                #
-                # 可用宽度回到整幅内容宽，bubble_wrap_chars() 默认 factor=1.0，
-                # 面板拉宽行就变长、拉窄就变短。
-                chars = bubble_wrap_chars(context)
-                ubox = layout
+                # 用户消息：靠右侧分栏排布（左侧留出 20% 空白缩进，右侧无盒框直接排布文字）
+                sp = layout.split(factor=0.20)
+                sp.column()  # 左侧 20% 留白列
+                rcol = sp.column()  # 右侧 80% 文字排布列
+
+                chars = bubble_wrap_chars(context, factor=0.80)
+                ubox = rcol
+                target = ubox
                 if user_msg_is_long(item.text, max_chars=chars):
-                    # 长提示词给一个原生折叠箭头（layout.panel 有正确的动效和
-                    # 开合状态记忆）。idname 必须对同一个气泡稳定，所以用
-                    # push_history 里发的 uid，不用会移位的历史下标。
-                    # 默认展开：对话流是主内容，折叠是「点开看长提示词」。
                     p_id = f"chat.user_msg_{int(getattr(item, 'uid', 0) or 0) or (idx + 1)}"
-                    up = ubox.panel(p_id, default_closed=False)
-                    up.label(text=user_msg_summary(item.text), icon='USER')
-                # 只给**第一行**加两格缩进，续行顶格。首行预算减 2，
-                # 免得缩进把首行顶出盒宽。
-                for i, ln in enumerate(wrap_text(item.text, max_chars=chars,
-                                                 first_chars=max(2, chars - 2))):
-                    urow = ubox.row()
-                    urow.label(text=("　　" + ln) if i == 0 else ln)
+                    panel_res = ubox.panel(p_id, default_closed=False)
+                    if isinstance(panel_res, tuple):
+                        uheader, ubody = panel_res
+                        if uheader:
+                            uheader.alignment = 'RIGHT'
+                            uheader.label(text=user_msg_summary(item.text), icon='USER')
+                        target = ubody
+                    else:
+                        panel_res.label(text=user_msg_summary(item.text), icon='USER')
+                        target = panel_res
+                # 靠右贴紧排布，首行缩进两格，续行顶格
+                if target is not None:
+                    for i, ln in enumerate(wrap_text(item.text, max_chars=chars,
+                                                     first_chars=max(2, chars - 2))):
+                        urow = target.row()
+                        urow.alignment = 'RIGHT'
+                        urow.label(text=("　　" + ln) if i == 0 else ln)
             else:
                 # AI 回的：**右边留一栏空白**，内容画在 split 返回的左边那列里
                 # （实测 split 返回左边列、宽 = factor × 内容宽，右边留白；
@@ -1054,8 +1113,9 @@ def draw_chat_content(layout, context, state, run):
                 if questions:
                     mark(sbody, CHAT_OPTIONS)
 
+                ai_chars = bubble_wrap_chars(context, factor=AI_MARGIN_SPLIT)
                 if intro:
-                    for ln in wrap_text(intro):
+                    for ln in wrap_text(intro, max_chars=ai_chars):
                         sbody.label(text=ln)
 
                 if questions:
@@ -1068,8 +1128,7 @@ def draw_chat_content(layout, context, state, run):
                             # 「细节 1：1.杯型风格」两个 1，所以先剥掉。
                             q_title = re.sub(r"^\s*\d+\s*[.、．)）]\s*",
                                              "", str(q.get('title', '')))
-                            # MENU_PANEL：这一组是「等你从菜单里选」的分组标题，
-                            # 原来的问号语义是「这是什么」，对不上。
+                            # MENU_PANEL：这一组是「等你从菜单里选」的分组标题
                             sbody.label(text=f"细节 {q_idx + 1}：{q_title}",
                                         icon='MENU_PANEL')
                             opts = q.get("options", [])
@@ -1091,12 +1150,12 @@ def draw_chat_content(layout, context, state, run):
                         rec_btn.custom_prompt = info.get("all_recommended", "全部按推荐参数开始建模！")
 
                 for gl in info.get("general", []):
-                    for ln in wrap_text(gl):
+                    for ln in wrap_text(gl, max_chars=ai_chars):
                         sbody.label(text=ln)
 
                 outro = info.get("outro", "")
                 if outro:
-                    for ln in wrap_text(outro):
+                    for ln in wrap_text(outro, max_chars=ai_chars):
                         sbody.label(text=ln)
 
                 if item.added_objects_str:
@@ -1358,14 +1417,27 @@ def _opt_label(text, is_rec=False, limit=16):
     return f"{disp} (推荐)" if is_rec else disp
 
 
+CIRCLED_NUMS = {
+    '①': '1.', '②': '2.', '③': '3.', '④': '4.', '⑤': '5.',
+    '⑥': '6.', '⑦': '7.', '⑧': '8.', '⑨': '9.', '⑩': '10.',
+}
+
+
 def parse_interactive_options(text):
     """智能解析追问文本中的问题与候选按钮：
     支持两类主流大模型输出格式：
     1. 斜杠分隔型：'1. 杯型风格：经典直筒微收口 / 鼓腹圆润 / 手作厚壁窑变（推荐：直筒微收口）'
+       兼容圈号与全角斜杠：'① 雪屋风格：冰屋（推荐）／ 半球体+螺旋雪砖 ／ 烟囱 A 字木屋'
     2. 换行列表型：'**1. 派系风格**\n- A. 直饮运动水杯\n- B. 大容量吨吨桶'
     同时支持提取确认项 confirm（带 ✔ 或 ✓）
     """
-    lines = (text or "").split("\n")
+    raw_text = str(text or "")
+    # 仅当序号后紧跟标题和冒号时（如 ' 2. 材质：' 或 ' ② 材质：'），才视为单行多问题并断行；
+    # 严禁在选项内部的数字（如 ' / 2. 尖顶锥形'）前断行，否则会将选项切成碎行！
+    raw_text = re.sub(r"(?<=\S)[ \t]+([1-9]\d*[\.、\s\)])(?=[^：:\n\r]{1,15}[：:])", r"\n\1", raw_text)
+    raw_text = re.sub(r"(?<=\S)[ \t]+([①②③④⑤⑥⑦⑧⑨⑩])(?=[^：:\n\r]{1,15}[：:])", r"\n\1", raw_text)
+    raw_text = re.sub(r"(?<=\S)[ \t]+([①②③④⑤⑥⑦⑧⑨⑩])", r"\n\1", raw_text)
+    lines = raw_text.split("\n")
     intro_lines = []
     questions = []
     confirm_items = []
@@ -1380,6 +1452,14 @@ def parse_interactive_options(text):
             continue
         clean = _clean_md(line)
 
+        # 过滤 Markdown 表格分隔线，如 |---|---| 或 | - - - | - - - |
+        if re.match(r"^\|?[\s\-:]+(\|[\s\-:]+)+\|?$", clean):
+            continue
+
+        # 净化 Markdown 表格行，如 | 外观 | 名称 | 常见叫法 | -> 外观 · 名称 · 常见叫法
+        if clean.startswith("|") and clean.endswith("|") and clean.count("|") >= 2:
+            clean = " · ".join([p.strip() for p in clean.strip("|").split("|") if p.strip()])
+
         # 过滤预检噪音
         if "目前场景中仅有" in clean or "并不冲突或需要保留" in clean or "分析：目前场景" in clean:
             continue
@@ -1390,21 +1470,34 @@ def parse_interactive_options(text):
             confirm_items.append(item_text)
             continue
 
-        # 结语识别
-        if any(k in clean for k in ["回复这几点", "按推荐来", "直接说", "欢迎随时告诉我", "我就开始车削", "开始建模"]):
+        # 结语识别：非序号开头的独立结语行
+        if not re.match(r"^[-*•\s]*[0-9①-⑩]", clean) and any(k in clean for k in ["回复这几点", "按推荐来", "直接说", "欢迎随时告诉我", "我就开始车削", "开始建模", "选项编号", "立刻开始", "回复编号"]):
             if current_q:
                 questions.append(current_q)
                 current_q = None
             outro_lines.append(clean)
             continue
 
-        # 1. 识别单行问题：如 1. 杯型风格：A / B / C（推荐：A） 或 1. 款式（推荐：A / B）
-        clean_numbered = re.sub(r"^[-*•\s]+", "", clean).strip()
-        num_match = re.match(r"^([1-9][.、\s]+[^：:\n\r]+)[：:]([^\n\r]+)", clean_numbered)
+        # 归一化序号：将 ①②③... 转换为 1. 2. 3. ...
+        norm_line = clean
+        for c_char, num_str in CIRCLED_NUMS.items():
+            if norm_line.startswith(c_char):
+                norm_line = num_str + " " + norm_line[len(c_char):]
+                break
+
+        # 归一化分隔符：将全角斜杠 ／、全角竖线 ｜、半角竖线 | 替换为半角 /
+        norm_line = norm_line.replace("／", "/").replace("｜", "/").replace("|", "/")
+
+        # 1. 识别单行问题：如 1. 杯型风格：A / B / C（推荐：A） 或 ① 雪屋风格：冰屋（推荐）／ 木屋
+        clean_numbered = re.sub(r"^[-*•\s]+", "", norm_line).strip()
+        num_match = re.match(r"^([1-9][0-9]?[.、\s\)]+[^：:\n\r]+)[：:]([^\n\r]+)", clean_numbered)
         if num_match:
             raw_title = num_match.group(1).strip()
             rest = num_match.group(2).strip()
+            # 剥离行尾混入的结语提示（如 '大（推荐） 回复编号开始'）
+            rest = re.sub(r"[ \t]+(?:回复编号|按推荐|直接回复|开始建模|点击选项).*", "", rest).strip()
             clean_title = re.sub(r"[（(【].*", "", raw_title).strip()
+            clean_title = re.sub(r"^[0-9]+[.、\s\)]*", "", clean_title).strip()
 
             # 提取推荐值（支持在标题括号内或在后文内）
             rec_val = ""
@@ -1414,14 +1507,14 @@ def parse_interactive_options(text):
 
             opts = []
             if "/" in rest:
-                # 只去空白和分号：原来连「）」一起 strip 掉，闭合括号没了，
-                # 后面就无法识别「（口径 8.5cm）」这类括注，只能按字数硬切。
-                raw_opts = [o.strip(" \t；;") for o in rest.split("/") if o.strip(" \t；;")]
+                raw_opts = [o.strip(" \t；;,，") for o in rest.split("/") if o.strip(" \t；;,，")]
                 for ro in raw_opts:
-                    # 剥掉「（推荐：xxx）」后缀（兼容括号已被上游切掉的情况）
-                    ro_clean = re.sub(r"[（(【]?\s*推荐\s*[：:][^）)】]*[）)]?\s*$", "", ro)
-                    ro_clean = re.sub(r"^[;；\s]*也可选\s*", "", ro_clean).strip()
-                    is_rec = bool(rec_val and (rec_val in ro_clean or ro_clean in rec_val))
+                    is_rec = bool("推荐" in ro or "★" in ro or (rec_val and (rec_val in ro or ro in rec_val)))
+                    ro_clean = re.sub(r"^[0-9A-Za-z]+[.、\s\)]*", "", ro).strip()
+                    ro_clean = re.sub(r"[（(【]?\s*推荐[：:\s]*[^）)】]*[）)]?\s*", "", ro_clean)
+                    ro_clean = re.sub(r"^[;；\s]*也可选\s*", "", ro_clean).strip(" \t；;,，/／|｜")
+                    if is_rec and not rec_val:
+                        rec_val = ro_clean
                     opts.append({
                         "label": _opt_label(ro_clean, is_rec),
                         "value": ro_clean,
@@ -1448,22 +1541,23 @@ def parse_interactive_options(text):
                 })
                 continue
 
-        # 2. 识别换行型问题标题：如 1. 派系风格 或 **1. 派系风格**
-        q_match = re.match(r"^(?:[#*]*\s*)?([1-9][.、\s]+[^\n\r]+)", clean)
-        if q_match and ("风格" in clean or "尺寸" in clean or "材质" in clean or "把手" in clean or "结构" in clean or "偏好" in clean or "容量" in clean or any(f"{i}." in clean[:4] for i in range(1, 10))):
+        # 2. 识别换行型问题标题：如 1. 派系风格 或 **1. 派系风格** 或 1. 规模：
+        q_match = re.match(r"^(?:[#*]*\s*)?([1-9][0-9]?[.、\s\)]+[^\n\r]+)", norm_line)
+        if q_match and ("：" in clean or ":" in clean or any(w in clean for w in ["风格", "尺寸", "材质", "把手", "结构", "偏好", "容量", "造型", "入口", "环境"])):
             if current_q:
                 questions.append(current_q)
-            current_q = {"title": clean, "rec_value": "", "options": []}
+            q_title = re.sub(r"^[0-9]+[.、\s\)]*", "", clean).strip(" ：:")
+            current_q = {"title": q_title, "rec_value": "", "options": []}
             continue
 
         if current_q is not None:
-            if re.match(r"^[-*•\s]*[A-Z0-9][.、\s)]", clean) or clean.startswith("- ") or clean.startswith("• "):
+            if re.match(r"^[-*•\s]*[A-Za-z0-9][.、\s)]", clean) or clean.startswith("- ") or clean.startswith("• "):
                 opt_text = re.sub(r"^[-*•\s]*", "", clean)
                 is_rec = "推荐" in opt_text or "★" in opt_text
-                val = re.sub(r"[（(【].*?推荐.*?[）)】]", "", opt_text).strip()
-                val = re.sub(r"^[A-Z0-9][.、\s)]*", "", val).strip()
+                val = re.sub(r"^[0-9A-Za-z]+[.、\s\)]*", "", opt_text).strip()
+                val = re.sub(r"[（(【]?\s*推荐[：:\s]*[^）)】]*[）)]?\s*", "", val).strip(" \t；;,，/／|｜")
                 current_q["options"].append({
-                    "label": f"{val[:14]} (推荐)" if is_rec else val[:16],
+                    "label": _opt_label(val, is_rec),
                     "value": val,
                     "is_rec": is_rec
                 })
@@ -1494,11 +1588,11 @@ def parse_interactive_options(text):
         all_rec = "全部按推荐参数开始建模！"
 
     return {
-        "intro": " ".join(intro_lines),
+        "intro": "\n".join(intro_lines),
         "questions": questions,
         "confirm": confirm_items,
         "all_recommended": all_rec,
-        "outro": " ".join(outro_lines),
+        "outro": "\n".join(outro_lines),
         "general": general_lines,
     }
 
@@ -1524,7 +1618,7 @@ def can_undo(state):
 
 
 OPERATORS = (
-    DEEPSEEK_OT_run, DEEPSEEK_OT_stop, DEEPSEEK_OT_approve, DEEPSEEK_OT_undo_task,
+    DEEPSEEK_OT_run, DEEPSEEK_OT_retry, DEEPSEEK_OT_stop, DEEPSEEK_OT_approve, DEEPSEEK_OT_undo_task,
     DEEPSEEK_OT_show, DEEPSEEK_OT_export, DEEPSEEK_OT_clear,
     DEEPSEEK_OT_new_task,
     DEEPSEEK_OT_fetch_models, DEEPSEEK_OT_set_model,
@@ -1568,17 +1662,15 @@ def check_layout_contract():
         bad.append("ai_margin_split: 规格段必须复用 AI 的整段盒，不能再套盒")
     if 'sbody = abox.box()' in content_src:
         bad.append("ai_margin_split: 规格区又在盒里套了一个盒")
-    if 'ubox = layout' not in content_src:
-        bad.append("user_bubble_split_margin: 用户消息必须直接画在父 layout 上（无盒框）")
-    if 'ubox = col.box()' in content_src:
+    if 'ubox.box()' in content_src or 'rcol.box()' in content_src:
         bad.append("user_bubble_split_margin: 用户消息不该再有盒框")
-    if 'bubble_wrap_chars(context)' not in content_src:
+    if 'bubble_wrap_chars(context' not in content_src:
         bad.append("wrap_follows_box_width: 折行宽度没有跟着实际面板宽算")
     if 'max_chars=18' in content_src:
         bad.append("wrap_follows_box_width: 还有写死 18 字的折行宽度")
     if 'text=("　　" + ln) if i == 0 else ln' not in content_src:
         bad.append("indent_first_line_only: 缩进必须只加首行，续行顶格")
-    if 'layout.panel' not in content_src:
+    if '.panel(' not in content_src:
         bad.append("user_msg_panel_fold: 长提示词没有用原生 layout.panel() 折叠")
     if 'default_closed=False' not in content_src:
         bad.append("user_msg_panel_fold: 折叠面板必须默认展开")

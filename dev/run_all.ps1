@@ -110,6 +110,7 @@ $TESTS = @(
     @{ name = 'test_p0_contract';    summary = 'RESULT p0:\s*0 failed';              mustMatch = $true; engine = 'bpy' },
     @{ name = 'test_provider_minimax'; summary = 'RESULT provider_minimax:\s*0 failed'; mustMatch = $true; engine = 'bpy' },
     @{ name = 'test_native_ui';      summary = 'RESULT native_ui:\s*0 failed';       mustMatch = $true; engine = 'bpy' },
+    @{ name = 'test_robustness';     summary = 'RESULT robustness:\s*0 failed';      mustMatch = $true; engine = 'bpy' },
 
     # ui_workbench chain: ids -> states -> constraints/vocabulary -> layout -> data.js
     @{ name = 'test_ids';            summary = 'PASS [1-9]\d*\s+FAIL 0';              mustMatch = $true; engine = 'bpy' },

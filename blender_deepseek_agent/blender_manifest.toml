@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "blender_deepseek_agent"
-version = "0.4.7"
+version = "0.5.0"
 name = "Blender DeepSeek Agent"
 tagline = "AI-powered Blender control via DeepSeek & MiniMax"
 maintainer = "Blender Agent <agent@example.com>"

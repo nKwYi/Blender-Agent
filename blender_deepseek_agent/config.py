@@ -42,9 +42,9 @@ PROVIDERS = {
 
 DEFAULT_MODEL = "deepseek-flash"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_TIMEOUT = 180
+DEFAULT_TIMEOUT = 600
 DEFAULT_MAX_TURNS = 20
-WALL_BUDGET = 600.0
+WALL_BUDGET = 1800.0
 
 KEY_MISSING = (
     "未配置 DeepSeek API Key：编辑 → 偏好设置 → 插件 → Blender DeepSeek Agent 里填入，"
@@ -112,15 +112,15 @@ class DEEPSEEK_PT_prefs(bpy.types.AddonPreferences):
     )
     base_url: bpy.props.StringProperty(name="Base URL", default=DEFAULT_BASE_URL)
     timeout: bpy.props.IntProperty(
-        name="单次请求超时", default=DEFAULT_TIMEOUT, min=1, max=600,
-        description="秒。针对 MiniMax 等长思考模型生成复杂脚本建议保持 180s",
+        name="单次请求超时", default=DEFAULT_TIMEOUT, min=1, max=1800,
+        description="秒。针对 MiniMax / 深度思考长模型生成复杂几何脚本默认设为 600s (10分钟)",
     )
     max_turns: bpy.props.IntProperty(
         name="最大对话轮次", default=DEFAULT_MAX_TURNS, min=1, max=50,
         description="Agent Loop 里 LLM → 工具 往返的上限（超长上下文模型建议设为 16~30 轮）",
     )
     wall_budget: bpy.props.IntProperty(
-        name="单次任务时间预算", default=int(WALL_BUDGET), min=10, max=1800,
+        name="单次任务时间预算", default=int(WALL_BUDGET), min=10, max=3600,
         description="秒。超过后任务以“部分完成”结算，不会假装跑完",
     )
     allow_arbitrary_code: bpy.props.BoolProperty(
@@ -183,14 +183,14 @@ def get_config():
             key = os.environ.get("DEEPSEEK_API_KEY", "").strip() or os.environ.get("MINIMAX_API_KEY", "").strip()
 
     raw_timeout = p.timeout if p else DEFAULT_TIMEOUT
-    if p and raw_timeout < 180:
+    if p and raw_timeout < 600:
         try:
-            p.timeout = 180
-            raw_timeout = 180
+            p.timeout = 600
+            raw_timeout = 600
         except Exception:
-            raw_timeout = 180
-    elif raw_timeout < 180:
-        raw_timeout = 180
+            raw_timeout = 600
+    elif raw_timeout < 600:
+        raw_timeout = 600
 
     raw_turns = p.max_turns if p else DEFAULT_MAX_TURNS
     if p and raw_turns < 16:
@@ -203,14 +203,14 @@ def get_config():
         raw_turns = 16
 
     raw_wall = p.wall_budget if p else WALL_BUDGET
-    if p and raw_wall < 600:
+    if p and raw_wall < 1200:
         try:
-            p.wall_budget = 600
-            raw_wall = 600
+            p.wall_budget = 1200
+            raw_wall = 1200
         except Exception:
-            raw_wall = 600
-    elif raw_wall < 600:
-        raw_wall = 600
+            raw_wall = 1200
+    elif raw_wall < 1200:
+        raw_wall = 1200
 
     return {
         "provider": provider,

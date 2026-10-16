@@ -32,7 +32,7 @@ def worker_loop(run, messages, cfg, request_tool, chat=None):
         run.phase = Phase.REQUESTING
         attempt = 0
         completion = None
-        current_timeout = cfg.get("timeout", 180)
+        current_timeout = cfg.get("timeout", 600)
         while attempt < 2:
             try:
                 completion = chat(messages, ag.tools_for(cfg), api_key=cfg["api_key"], model=cfg["model"],
@@ -42,7 +42,7 @@ def worker_loop(run, messages, cfg, request_tool, chat=None):
                 left_wall = run.wall - (time.monotonic() - run.started)
                 if error.kind == "timeout" and attempt == 0 and not run.stop_requested and left_wall > 60:
                     attempt += 1
-                    current_timeout = max(current_timeout, 180)
+                    current_timeout = max(current_timeout, 600)
                     continue
                 run.err = ag.classify(error)
                 run.detail = redact(error.message, cfg["api_key"])
@@ -143,30 +143,38 @@ def compact_messages(messages, keep_recent_tail=6, max_tool_len=300):
 
 
 def ensure_tool_responses(messages):
-    """确保所有 assistant tool_calls 都有配对的 tool 消息，防止 API 返回 400 报错。"""
-    fixed = list(messages)
-    called_ids = {}
-    responded_ids = set()
-    for m in fixed:
-        if m.get("role") == "assistant" and m.get("tool_calls"):
-            for tc in m["tool_calls"]:
-                cid = tc.get("id")
-                if cid:
-                    called_ids[cid] = tc.get("function", {}).get("name", "tool")
-        elif m.get("role") == "tool":
-            cid = m.get("tool_call_id")
-            if cid:
-                responded_ids.add(cid)
-
-    for cid, name in called_ids.items():
-        if cid not in responded_ids:
-            import json
-            fixed.append({
-                "role": "tool",
-                "tool_call_id": cid,
-                "content": json.dumps({"status": "skipped", "message": f"{name} 上一轮未及完成"}, ensure_ascii=False)
-            })
-    return fixed
+    """确保所有 assistant tool_calls 都有配对的 tool 消息，且紧随其后，防止 API 返回 400 报错。"""
+    if not messages:
+        return []
+    import json
+    result = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+        result.append(msg)
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            expected_ids = {
+                tc.get("id"): (tc.get("function", {}).get("name", "tool"))
+                for tc in msg["tool_calls"] if tc.get("id")
+            }
+            # 查看紧随其后的 tool 消息
+            j = i + 1
+            while j < len(messages) and messages[j].get("role") == "tool":
+                cid = messages[j].get("tool_call_id")
+                expected_ids.pop(cid, None)
+                result.append(messages[j])
+                j += 1
+            # 补齐本条 assistant 遗漏的 tool 响应（必须插在紧随其后的位置，在下一条 user/assistant 之前）
+            for cid, name in expected_ids.items():
+                result.append({
+                    "role": "tool",
+                    "tool_call_id": cid,
+                    "content": json.dumps({"status": "skipped", "message": f"{name} 上一轮未及完成"}, ensure_ascii=False)
+                })
+            i = j
+        else:
+            i += 1
+    return result
 
 
 def _tool_message(call):
@@ -213,6 +221,8 @@ class Controller:
         if self.messages and len(self.messages) > 0:
             self.messages = ensure_tool_responses(self.messages)
             self.messages = compact_messages(self.messages)
+            while self.messages and self.messages[-1].get("role") == "user":
+                self.messages.pop()
             self.messages.append({"role": "user", "content": prompt})
         else:
             self.messages = [
@@ -342,7 +352,7 @@ class Controller:
             run.phase = Phase.COMPLETED
         run.recovered = bool(run.phase is Phase.COMPLETED and run.failed_calls)
         if run.phase == Phase.FAILED and not run.detail:
-            run.detail = str(run.err)
+            run.detail = str(run.err.value if hasattr(run.err, "value") else (run.err or "任务遇到未知异常"))
         if not run.reply:
             if run.phase is Phase.PARTIAL:
                 run.reply = ("已达到本次处理的步骤或时间上限，操作可能只做了一半。"
