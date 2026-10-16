@@ -166,6 +166,38 @@ def data_checks(doc):
        by_key["chat_tabbar"]["demo"]["items"] == ["对话", "详情", "设置"],
        "页签条的图示应是「对话 / 详情 / 设置」，实际 %s"
        % by_key["chat_tabbar"]["demo"]["items"])
+    # 第 1 条：页签条排在状态提示条**上面**。blocks 数组的顺序就是控件架上
+    # 的顺序、也是导出 draw_chat_content 里的顺序，所以这一条落在数据上：
+    # 取对话那 7 块，看页签条是不是第 0 块、状态条是不是排在它后面。
+    chat_order = [b["key"] for b in doc["blocks"] if b["tab"] == "chat"]
+    ck("blocks_tabbar_above_statusbar",
+       chat_order[:2] == ["chat_tabbar", "chat_status"],
+       "对话页最顶上应是页签条、状态提示条排第二，实际顺序 %s" % chat_order)
+    ck("blocks_chat_keeps_seven", len(chat_order) == 7,
+       "对话页块数应仍是 7，实际 %s" % chat_order)
+    # 第 2 条的数据侧：状态提示条 busy 那格声明自己是盒里的正文。
+    busy_demo = by_key["chat_status"]["demo"]
+    ck("blocks_status_action_declared_bare",
+       busy_demo.get("kind") == "box" and busy_demo.get("bare") == [0],
+       "状态提示条第 0 格（「正在做什么」）应声明 bare=[0]（盒里的正文，"
+       "不再套内层小盒），实际 kind=%s bare=%s"
+       % (busy_demo.get("kind"), busy_demo.get("bare")))
+    # 第 6 条的数据侧：输入区的图示里不许再有「高度 N」滑块，
+    # 「输入建模指令:」这一格是与输入框合成一处的标签（bare）。
+    comp_demo = by_key["chat_composer"]["demo"]
+    ck("blocks_composer_has_no_height_slider",
+       comp_demo.get("kind") == "composer" and
+       not any("高度" in str(t) for t in (comp_demo.get("items") or [])) and
+       comp_demo.get("bare") == [0],
+       "对话输入区应只有「输入建模指令:」一个标签（bare）+ 输入框，不该还有"
+       "「高度 N」滑块，实际 items=%s bare=%s"
+       % (comp_demo.get("items"), comp_demo.get("bare")))
+    # 第 3 条的数据侧：默认展开（open_default=True）——折叠是给长提示词用的，
+    # 不是默认藏起来。
+    ck("blocks_bubble_defaults_open",
+       "open_default=True" in by_key["chat_bubble"]["ui_py"],
+       "你说的话默认应展开（open_default=True），实际 ui_py=%r"
+       % by_key["chat_bubble"]["ui_py"][:120])
 
     # 第 3 条：底部常用操作一行 4 个。数据上是 cols=4 + 四个条目；
     # 真的排成一行由 DOM 那侧的 pills 读数量（数据写 4 而 CSS 没跟上会红）。
@@ -306,13 +338,20 @@ def data_checks(doc):
        any(rw["from"] == "ubox = layout.box()" for rw in bub["rewrites"]),
        "你说的话那一行的改写必须登记它在 ui.py 里的原句 ubox = layout.box()")
 
-    # 第 4 条：输入框独占一行（照 ui.py:947-955）。
+    # 第 6 条：标签与输入框**合成一处**、没有「高度 N」滑块。
+    # （上一版判的是「items 有 2 个：标签 + 高度滑块」，那个滑块已按用户
+    #   要求删掉，口径随之改成「只剩标签那一格，且它声明 bare（盒里的正文，
+    #   直接压在输入框上面）」。判据没松：textbox 必须有内容、kind 不能退回
+    #   prop、items 必须正好一格——多一格就说明滑块又回来了。）
     cmp_ = by_key["chat_composer"]["demo"]
     ck("blocks_composer_textbox_own_row",
        cmp_.get("kind") == "composer" and str(cmp_.get("textbox") or "").strip()
-       and len(cmp_.get("items") or []) == 2,
-       "对话输入区应是「标签 + 高度一行，输入框另起一行」，实际 kind=%s items=%s "
-       "textbox=%r" % (cmp_.get("kind"), cmp_.get("items"), cmp_.get("textbox")))
+       and len(cmp_.get("items") or []) == 1
+       and cmp_.get("bare") == [0]
+       and not any("高度" in str(t) for t in (cmp_.get("items") or [])),
+       "对话输入区应是「标签与输入框合成一处、无高度滑块」，实际 kind=%s items=%s "
+       "textbox=%r bare=%s" % (cmp_.get("kind"), cmp_.get("items"),
+                               cmp_.get("textbox"), cmp_.get("bare")))
     ck("blocks_composer_preview_is_not_prop",
        cmp_.get("kind") != "prop",
        "对话输入区退回 prop 就又变成三样东西挤一行了")
@@ -686,6 +725,12 @@ def dom_checks(doc):
                "业务块上出现了归属下拉 %s 个" % at.get("parent-selects"))
             ck("dom_biz_no_move_buttons", at.get("move-btns") == "0",
                "业务块上出现了移入/移出按钮 %s 个" % at.get("move-btns"))
+            # 第 1 条在画布上：页签条排在状态提示条**上面**。量的是插完那一刻
+            # 的块序（还没拖动），头两个就是这一页最顶上的两块。
+            ck("dom_tabbar_above_statusbar_on_canvas",
+               (at.get("order") or "").split(",")[:2] ==
+               ["chat_tabbar", "chat_status"],
+               "画布上最顶上应是页签条、状态条第二，实际块序 %r" % at.get("order"))
             # 「改文案 · 备注名 · 变体下拉」这三样必须在。
             ck("dom_biz_has_text_boxes", int(at.get("text-boxes", "0") or 0) >= 1,
                "展开后一块都没有改文案输入框")
@@ -829,6 +874,25 @@ def dom_checks(doc):
                "细节 3：" in qs[4],
                "里层三个盒的标题不是「细节 N：…」，读到 %r"
                % (qs[4] if len(qs) > 4 else "",))
+            # 第 5 条（选项字少就横排）：每组三个选项必须真的挤在一行上。
+            # 数的是浏览器算出来的不同 top——3 个选项 / 1 行才是横排；
+            # 只看 DOM 里有几个 .d-it 的话，竖排也照样通过。
+            ck("dom_questions_options_horizontal",
+               len(qs) >= 9 and qs[7] == "1/1/1" and qs[8] == "wrap/wrap/wrap",
+               "细节里的选项应横排并排（每组一行），读到行数 %r / 排列 %r"
+               % (qs[7] if len(qs) > 7 else "",
+                  qs[8] if len(qs) > 8 else ""))
+
+            # 第 2 条（状态提示条一个盒，内容直接在里面）：「正在做什么」
+            # 那一格**没有边框**——它是盒里的正文，不是盒里又一个控件。
+            # 判据是浏览器算出来的 border 宽度：数据写了 bare 但 CSS 还给它
+            # 画了框的话，这里照样红。
+            st = (it.get("status") or "").split(":")
+            ck("dom_status_action_not_inner_box",
+               len(st) >= 4 and st[0] == "box" and st[1] == "2" and
+               st[2] == "bare" and st[3] == "boxed",
+               "状态提示条应是一个盒、内容直接在里面（第 1 格无边框、第 2 格是"
+               "按钮），读到 %r" % (it.get("status"),))
 
             # 第 2 条（一个盒，到此为止）：外层气泡盒有边框，里面那段文字
             # 没有边框，也没有内层分组盒。看的是浏览器算出来的 border 宽度，
@@ -840,14 +904,19 @@ def dom_checks(doc):
                "你说的话应是一个带边框的盒 + 一段没有边框的文字，读到 %r"
                % (it.get("msg"),))
 
-            # 第 4 条（输入框独占一行）：.d-textbox 得是 .d-crow 的**兄弟**
-            # 而不是孩子，宽度摊满，而且真的排在那一行的下面。
+            # 第 6 条（标签与输入框合成一处、去掉「高度 3」）：.d-textbox 与
+            # 那个标签都是这个盒的**直接**孩子，输入框摊满、在标签下面，
+            # 且盒里不再有「高度 N」那类滑块。
+            # （上一版这里量的是 .d-crow 那条标签行，标签行本身已按用户要求
+            #   删掉，判据随之改成「标签直接压在输入框上面」——不是放松：
+            #   边界的 sibling / 摊满 / 在下面三格都还在，另加一格查滑块。）
             cp = (it.get("composer") or "").split(":")
             ck("dom_composer_textbox_own_row",
-               len(cp) >= 6 and cp[0] == "composer" and cp[1] == "2" and
-               cp[2] == "1" and cp[3] == "sibling" and cp[4] == "ownrow",
-               "输入框应独占一行（与标签那行平级、摊满宽度、在它下面），读到 %r"
-               % (it.get("composer"),))
+               len(cp) >= 6 and cp[0] == "composer" and cp[1] == "1" and
+               cp[2] == "1" and cp[3] == "sibling" and cp[4] == "merged" and
+               cp[5] == "0",
+               "输入区应是标签与输入框合成一处（平级、摊满、在标签下面、无高度"
+               "滑块），读到 %r" % (it.get("composer"),))
 
         # --- 长消息的折叠 / 展开两态（#biz-msg）---
         mp = dump(exe, url + "#biz-msg", profile)
@@ -855,11 +924,16 @@ def dom_checks(doc):
         ck("dom_msg_report_ran", bool(mt),
            "没拿到长消息折叠的读数：#biz-msg 没跑起来")
         if mt:
+            # 收起态：只留**一行**标题 = 首句摘要 + 总字数。
+            # （上一版判的是「前 20 字 + 省略号」，用户改成原生折叠的形态：
+            #   标题行带首句摘要和总字数。所以口径换成「带字数、且只有一行」，
+            #   trunc（确实比原文短）与 dots 两条原判据都保留。）
             ck("dom_msg_folded_is_summary",
                mt.get("folded-trunc") == "1" and mt.get("folded-dots") == "1"
-               and len(mt.get("folded-text") or "") <= 21,
-               "折叠态应只显示前 20 字 + 省略号，读到 %r"
-               % mt.get("folded-text"))
+               and "字" in (mt.get("folded-text") or "")
+               and mt.get("folded-lines") == "1",
+               "折叠态应只显示一行标题（首句摘要 + 总字数），读到 %r / 行数 %r"
+               % (mt.get("folded-text"), mt.get("folded-lines")))
             # 「这是一条长消息」要看得见：省略号之外还得有一个展开指示，
             # 而且不许只靠一个光看不知道什么意思的小三角。
             ck("dom_msg_folded_shows_toggle",
@@ -871,6 +945,12 @@ def dom_checks(doc):
                "收起" in mt.get("open-toggle", ""),
                "展开态应显示全文并换成收起指示，读到 %r / %r"
                % (mt.get("open-text"), mt.get("open-toggle")))
+            # 展开/收起按钮在**右下角**：量浏览器算出来的 align-self 与实际
+            # 位置，不看 CSS 里写没写 flex-end（被别处规则盖掉时这里要红）。
+            ck("dom_msg_toggle_bottom_right",
+               mt.get("folded-pos") == "br" and mt.get("open-pos") == "br",
+               "展开/收起按钮应在右下角，折/展两态都读到 %r / %r"
+               % (mt.get("folded-pos"), mt.get("open-pos")))
             # 状态存在积木上，导出时不许丢：折着导 → open_default=False，
             # 展开着导 → open_default=True。两条都在同一次运行里量。
             ck("dom_msg_state_reaches_export",
@@ -881,6 +961,31 @@ def dom_checks(doc):
                "default_closed %s）" % (mt.get("py-closed"), mt.get("py-open"),
                                        mt.get("py-has-panel"),
                                        mt.get("py-has-default-closed")))
+
+        # --- 第 4 条：盒宽 = 面板宽，文字按盒内宽度折行（#biz-wrap）---
+        # 同一个气泡在宽面板与窄面板下各量一次文字宽度与每行字数。
+        # 宽的那档每行字数必须**明显更多**：不多就说明盒宽被写死了，
+        # 或者文字被塞进了某个窄栏 / 固定宽度里。
+        wr_page = dump(exe, url + "#biz-wrap", profile)
+        wr = attrs_of(wr_page, "biz-wrap")
+        ck("dom_msg_wrap_report_ran", bool(wr),
+           "没拿到盒宽读数：#biz-wrap 没跑起来")
+        if wr:
+            # 读数是：窄(行数/每行字数) : 宽(行数/每行字数) : 宽盒像素 : 窄盒像素
+            wv = (wr.get("wrap") or "").split(":")
+            ck("dom_msg_box_follows_panel_width",
+               len(wv) >= 6 and int(wv[2]) <= int(wv[0]) and
+               int(wv[3]) > int(wv[1]) and int(wv[4]) > int(wv[5]),
+               "把面板拉宽后同一个气泡每行的字应明显变多、盒子本身更宽、"
+               "排出来的行数不增反减。读到窄 %s 行/%s 字每行/%s px → "
+               "宽 %s 行/%s 字每行/%s px"
+               % (wv[0], wv[1], wv[5], wv[2], wv[3], wv[4]))
+            w56 = (wr.get("narrow") or "").split(":")
+            ck("dom_msg_wide_560_more_per_line",
+               len(w56) >= 3 and int(w56[1]) > int(wv[1])
+               and int(w56[0]) > int(wv[5]),
+               "面板拉到 560px 后每行字数应比 280px 明显更多、盒宽更大，"
+               "读到 560px %r vs 窄 %r" % (wr.get("narrow"), wr.get("wrap")))
 
         # --- 16 块全点一遍 ---
         allp = dump(exe, url + "#biz-all", profile)

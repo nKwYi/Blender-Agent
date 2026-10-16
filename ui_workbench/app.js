@@ -1246,6 +1246,7 @@ function renderDemo(w) {
   }
   var items = d.items || [];
   var icons = d.icons || [];
+  var bare = d.bare || [];
   var cols = Number(d.cols) > 0 ? Number(d.cols) : 0;
   if (cols) {
     box.dataset.dcols = String(cols);
@@ -1261,16 +1262,17 @@ function renderDemo(w) {
   if (kind === "msgtxt") { return renderMsgBox(box, d, w); }
   if (kind === "composer") { return renderComposer(box, d, icons, left); }
   items.forEach(function (t, i) {
-    box.appendChild(demoItem(t, kind, icons[i], left, cols, i));
+    box.appendChild(demoItem(t, kind, icons[i], left, cols, i, bare.indexOf(i) >= 0));
   });
   /* 双层盒：每组细节自己再一个盒，标题 + 那一串按钮都装在里面。
      外面那个盒已经由 kind 画出来了（这里是 box），所以这里只补里层。
-     组内的按钮一个占满一整行——真实面板里就是一个选项一行，
-     并排放会把「选择：经典直筒微收口（推荐）」折成两行。 */
+     按钮**字少就横排并排**（详见 demoGroup 的注释），超过 OPT_WRAP_MAX 个
+     才退回竖排——预览能量宽度，Blender 那边量不了，所以这个折中由预览替它做。 */
   (d.groups || []).forEach(function (g) {
     var gb = document.createElement("div");
     gb.className = "d-group";
     gb.dataset.dgtitle = g.title || "";
+    gb.dataset.dflow = ((g.items || []).length > OPT_WRAP_MAX) ? "col" : "wrap";
     var gt = document.createElement("i");
     gt.className = "d-gtitle";
     if (g.icon) {
@@ -1303,21 +1305,40 @@ function renderDemo(w) {
    .d-msgtext。上一版走 d-box，盒里又出来一个带边框的方块，两层框套着——
    用户点名说「一个盒，到此为止」。
 
-   折叠态只露前 FOLD_CHARS 个字 + 省略号，并配一个**看得见的**展开指示
-   （虚线小标签「展开全文」，不是一个光看不知道什么意思的小三角）。 */
+   盒宽 = 预览容器的宽度，文字按盒内宽度折行：不给 .demo 写死宽度、不做
+   窄栏、不加左右外边距。把面板拉宽，每一行的字就变多——这正是用户要的
+   「文字宽度跟盒宽度一样」。唯一的内边距是盒主题自带的那点 padding。
+
+   形态跟 Blender 侧的原生折叠一致：默认**展开**（折叠是给长提示词用的，
+   不是默认藏起来）；收起时只剩一行标题（首句摘要 + 总字数），展开/收起
+   按钮在**右下角**（Blender 那边是 layout.panel 的标题行 + 原生箭头）。 */
 var FOLD_CHARS = 20;
+/* 一组细节里的选项超过这么多个才退回一个一行。选项字通常很短
+   （「选择：经典直筒微收口（推荐）」这种），一个占满一整行会把面板拉长；
+   但数量一多就并排不下了，所以留这道闸。
+   插件那边（ui.py 的 too_wide）用的是「>3 个或标签总字数 >22 就竖排」——
+   它量不到像素只能估，这里量得到，所以只看个数。真要两边完全一致，
+   把这个数改成 3 就与 ui.py 对齐了。 */
+var OPT_WRAP_MAX = 3;
+
+/* 收起时留在标题行里的摘要：首句 + 总字数。没有句号就切不出首句，
+   这时退回「前 FOLD_CHARS 个字 + 省略号」。两种情况都带总字数——
+   后面的正文是被藏起来了，所以那个省略号不是修辞，是实话。 */
+function foldSummary(full) {
+  var m = full.match(/^[^。！？]*[。！？]/);
+  var head = m ? m[0] : (full.length > FOLD_CHARS ? full.slice(0, FOLD_CHARS) : full);
+  return head + "…（共 " + full.length + " 字）";
+}
+
 function renderMsgBox(box, d, w) {
   var full = String((d.items || [])[0] || "");
-  var open = !!(w.node && w.node.msgOpen);
+  /* 默认展开：只有明确存了 false 才折着。写反了（!!msgOpen）的话，
+     新插入的气泡一律是折着的，用户看到的第一眼就是一行摘要。 */
+  var open = !(w.node && w.node.msgOpen === false);
   var txt = document.createElement("i");
-  txt.className = "d-msgtext";
+  txt.className = "d-msgtext" + (open ? "" : " folded");
   txt.dataset.dmsglen = String(full.length);
-  if (open) {
-    txt.textContent = full;
-  } else {
-    txt.textContent = (full.length > FOLD_CHARS
-      ? full.slice(0, FOLD_CHARS) + "…" : full);
-  }
+  txt.textContent = open ? full : foldSummary(full);
   box.appendChild(txt);
   if (full.length <= FOLD_CHARS) { return box; }
   var tg = document.createElement("i");
@@ -1336,17 +1357,14 @@ function renderMsgBox(box, d, w) {
   return box;
 }
 
-/* ---- 对话输入区：输入框独占一行 ----
-   ui.py:947-955 本来就是这样：crow（标签 + 高度滑块）一行，cbox.textbox 在
-   下一行。预览照抄。上一版用 kind=prop 把三样东西塞进一行，于是
-   「输入建模指令:」「高度 3」「用自然语言描述要建模什么，」挤成一条。 */
+/* ---- 对话输入区：标签与输入框合成一处 ----
+   上一版是「标签 + 高度滑块」一行、输入框下一行。那个「高度 3」的滑块已经
+   按用户要求删掉（高度由输入框自己的多行决定），标签于是直接压在输入框上面，
+   两者同属一个盒、输入框摊满盒宽——不再有那条只为放数字而存在的行。 */
 function renderComposer(box, d, icons, left) {
-  var crow = document.createElement("div");
-  crow.className = "d-crow";
   (d.items || []).forEach(function (t, i) {
-    crow.appendChild(demoItem(t, "prop", icons[i], left, 0, i));
+    box.appendChild(demoItem(t, "prop", icons[i], left, 0, i, true));
   });
-  box.appendChild(crow);
   var tb = document.createElement("div");
   tb.className = "d-textbox";
   tb.dataset.dtextbox = "1";
@@ -1357,10 +1375,17 @@ function renderComposer(box, d, icons, left) {
 
 /* 一个条目方块。图标名照样照印（离线没有图标资源），而且**永远在**——
    面板窄的时候 Blender 那边只剩图标，文字那边藏起来（style.css 的容器查询）。
-   文字自己包一层 .d-tx：窄面板要 display:none 的是**文字**，图标得留着。 */
-function demoItem(t, kind, icon, left, cols, i) {
+   文字自己包一层 .d-tx：窄面板要 display:none 的是**文字**，图标得留着。
+
+   bare 为真时这一格不是控件，而是**盒里的正文**（「正在做什么」那句、
+   「输入建模指令:」那个标签）：不画边框也不画底色，直接躺在盒里。
+   画成带边框的小方块就是「盒里又套了一个盒」——用户点名要拿掉的那一层。
+   这里用 data-dbare 而不是加一个 class：dev/test_proposal_blocks.py 的
+   dom_biz_demo_items 是按字面串 'class="d-it"' 数方块数的，多一个类名就数不到。 */
+function demoItem(t, kind, icon, left, cols, i, bare) {
   var it = document.createElement("i");
   it.className = "d-it";
+  if (bare) { it.dataset.dbare = "1"; }
   if (icon) {
     var ic = document.createElement("b");
     ic.className = "d-ic";
@@ -4749,11 +4774,18 @@ function runBizHook(hash) {
   /* 结尾缀 -narrow：把左边那块预览压到 280px。
      这是「响应式图标」那一条的真实验证入口——不是把 class 换掉就宣布
      图标没了，而是压窄之后由浏览器自己重新算一遍样式，再把算出来的
-     display 报出来（见 bizIconReport）。 */
+     display 报出来（见 bizIconReport）。
+     -wide 则反过来把面板拉到 560px：用来证明「盒宽 = 面板宽」——把面板
+     拉宽，同一段文字每行的字就变多。 */
   var narrow = false;
   if (kind && kind.slice(-7) === "-narrow") {
     narrow = true;
     kind = kind.slice(0, -7);
+  }
+  var wide = false;
+  if (kind && kind.slice(-5) === "-wide") {
+    wide = true;
+    kind = kind.slice(0, -5);
   }
   /* all-detail / all-settings：先把画布切到那个界面再点满它那一层的块。
      控件架上的卡片本来就按界面过滤，留在对话页点按钮只会点中对话那 7 张。 */
@@ -4768,6 +4800,7 @@ function runBizHook(hash) {
   switchView("proposal");
   loadVocab().then(function () {
     if (narrow) { setNarrowPanel(true); }
+    if (wide) { document.body.classList.add("uw-panel-560"); renderCanvas(); }
     if (tab) { switchTab(tab); }
     if (kind === "empty") {
       setStatus("BIZ empty 块 0" + (narrow ? "（面板已压窄）" : ""));
@@ -4803,6 +4836,7 @@ function runBizHook(hash) {
     }
     if (kind === "icons") { insertBizDemo(); bizIconReport(narrow); return; }
     if (kind === "msg") { insertBizDemo(); bizMsgReport(null); return; }
+    if (kind === "wrap") { insertBizDemo(); bizWrapReport(); return; }
     if (kind === "msg-folded") { insertBizDemo(); bizMsgReport(false); return; }
     if (kind === "msg-open") { insertBizDemo(); bizMsgReport(true); return; }
     if (kind === "demo") { insertBizDemo(); return; }
@@ -4864,6 +4898,7 @@ function bizIconReport(narrow) {
     "narrowTextShown": String(thin.tx.shown),
     "narrowPanel": String(thin.panel),
     "tabs": tabsReading(),
+    "status": statusReading(),
     "pills": pillsReading(),
     "qs": qsReading(),
     "composer": composerReading(),
@@ -4871,43 +4906,105 @@ function bizIconReport(narrow) {
   });
 }
 
-/* 对话输入区：ui.py:947-955 里 textbox 独占一行，所以图示里它也必须独占一行
-   ——是 .d-crow 的**兄弟**而不是孩子，宽度摊满，并且真的排在那一行的下面。
-   只查「有一个 .d-textbox」是不够的：把它挪回 .d-crow 里照样成立。 */
+/* 对话输入区：标签与输入框**合成一处**——标签是这个盒的直接孩子（不是
+   另一个 .d-crow 里的），输入框同样是这个盒的直接孩子、摊满盒宽、排在标签
+   下面。最后一格报「盒里还有没有『高度 3』那类滑块」：只查有没有
+   .d-textbox 是不够的，滑块删没删它照样成立。 */
 function composerReading() {
   var card = document.querySelector('.bcard[data-bcard-for="chat_composer"] .demo');
   if (!card) { return ""; }
   var box = card.querySelector(".d-textbox");
-  var crow = card.querySelector(".d-crow");
-  var n = crow ? crow.querySelectorAll(".d-it").length : 0;
-  if (!box || !crow) {
-    return [card.dataset.dkind, String(n), box ? "1" : "0",
+  var its = card.querySelectorAll(".d-it");
+  var lab = its.length ? its[0] : null;
+  var txt = (card.textContent || "");
+  if (!box || !lab) {
+    return [card.dataset.dkind, String(its.length), box ? "1" : "0",
             "none", "none", "0"].join(":");
   }
   var br = box.getBoundingClientRect();
-  var cr = crow.getBoundingClientRect();
-  var sibling = (box.parentNode === card && crow.parentNode === card);
-  var span = (br.width >= cr.width - 1);
-  var below = (br.top >= cr.bottom - 1);
-  return [card.dataset.dkind, String(n), "1",
-          sibling ? "sibling" : "inside",
-          (span && below) ? "ownrow" : "same", String(Math.round(br.height))]
-    .join(":");
+  var lr = lab.getBoundingClientRect();
+  var sibling = (box.parentNode === card && lab.parentNode === card);
+  var span = (br.width >= lr.width - 1);
+  var below = (br.top >= lr.bottom - 1);
+  return [card.dataset.dkind, String(its.length), "1",
+          sibling ? "sibling" : "split",
+          (span && below) ? "merged" : "loose",
+          (txt.indexOf("高度") >= 0) ? "1" : "0"].join(":");
+}
+
+/* 状态提示条卡片：「正在做什么」那一格是**盒里的正文**，不是又一个控件。
+   判据是浏览器算出来的边框宽度——数据里写了 bare、渲染器也可能照抄，
+   但只要 CSS 还给它画了边框，盒里就还是两层框。 */
+function statusReading() {
+  var card = document.querySelector('.bcard[data-bcard-for="chat_status"] .demo');
+  if (!card) { return ""; }
+  var its = card.querySelectorAll(".d-it");
+  if (!its.length) { return ""; }
+  var cs = hostCs(its[0]);
+  var bcs = hostCs(card);
+  return [card.dataset.dkind, String(its.length),
+          (cs.borderTopWidth === "0px") ? "bare" : "boxed",
+          (bcs.borderTopWidth !== "0px") ? "boxed" : "bare"].join(":");
 }
 
 /* 你说的话：一个盒，到此为止。量的是浏览器算出来的边框宽度——
    外层气泡盒有边框，里面那段文字没有边框。有没有第二个带边框的盒子，
-   不看 DOM 结构（.d-msgtext 本来就只有一个），看它自己画没画边框。 */
+   不看 DOM 结构（.d-msgtext 本来就只有一个），看它自己画没画边框。
+   后三格是盒宽那条：盒子的宽度（应等于容器宽，不许写死）、文字占多宽、
+   以及一个固定的行高——「把面板拉宽，每行的字变多」就是拿
+   宽面板的每行字数 减去 窄面板的每行字数 来验的。 */
+var MSG_LINE_H = 16;
+/* 这一段文字**真的**排成几行：拿 Range 把内容框住，数它自己的行盒有几个
+   不同的 top。用 clientHeight / 行高去估是不行的——.d-msgtext 在盒里是
+   flex 项、会被拉满盒高，折与不折量出来都是同一个数。 */
+function lineCount(t) {
+  if (!t) { return 0; }
+  var r = t.ownerDocument.createRange();
+  r.selectNodeContents(t);
+  var tops = {};
+  var rs = r.getClientRects();
+  for (var i = 0; i < rs.length; i++) {
+    if (rs[i].height > 0) { tops[String(Math.round(rs[i].top))] = "1"; }
+  }
+  return Object.keys(tops).length;
+}
+
 function msgShapeReading() {
   var demo = el("preview").querySelector(".demo.d-msgtxt");
   if (!demo) { return ""; }
   var cs = hostCs(demo);
   var txt = demo.querySelector(".d-msgtext");
   var ts = txt ? hostCs(txt) : null;
+  var tr = txt ? txt.getBoundingClientRect() : null;
   return [demo.dataset.dkind,
           (cs.borderTopWidth !== "0px") ? "boxed" : "bare",
           (ts && ts.borderTopWidth === "0px") ? "plain" : "boxed",
-          String(demo.querySelectorAll(".d-group").length)].join(":");
+          String(demo.querySelectorAll(".d-group").length),
+          tr ? String(Math.round(tr.width)) : "0",
+          String(Math.round((tr ? tr.width : 0) / MSG_LINE_H))].join(":");
+}
+
+/* 「文字宽度跟盒宽度一样」：同一个气泡在宽面板与窄面板下各量一次每行字数。
+   宽的必须明显更多——不多就说明盒宽被写死了、或者文字被塞进了窄栏里。
+   这一格只有预览能量得到（Blender 那边量不到像素），所以它就是这条的判据。 */
+function msgWrapReading() {
+  if (!el("preview").querySelector(".demo.d-msgtxt")) { return ""; }
+  /* 每次量完都要重新取节点：setNarrowPanel 会 renderCanvas()，重画之后
+     手里那个 .d-msgtext 已经不在文档里了，拿旧引用量宽度会永远量到同一个值。 */
+  function perLine() {
+    var txt = el("preview").querySelector(".demo.d-msgtxt .d-msgtext");
+    if (!txt) { return { px: 0, cpl: 0, lines: 0 }; }
+    var w = Math.round(txt.getBoundingClientRect().width);
+    var lines = Math.max(1, lineCount(txt));
+    return { px: w, cpl: Math.ceil(Number(txt.dataset.dmsglen || 0) / lines),
+             lines: lines };
+  }
+  setNarrowPanel(true);
+  var th = perLine();
+  setNarrowPanel(false);
+  var wd = perLine();
+  return [String(th.lines), String(th.cpl), String(wd.lines), String(wd.cpl),
+          String(wd.px), String(th.px)].join(":");
 }
 
 function hostCs(e) {
@@ -4950,13 +5047,29 @@ function pillsReading() {
    「引子是不是这个盒的直接孩子」这条是第 2 条的全部：文字与按钮同盒，
    文字就是盒里的第一个直接孩子，按钮在盒里的分组中。 */
 function qsReading() {
-  var card = document.querySelector('.bcard[data-bcard-for="chat_questions"] .demo');
+  /* 排版必须在**预览**里量，不是在控件架那张卡上：卡只有 210px 宽，
+     量出来的是「这么窄排不下三行」——而用户真正看的是左边那块预览。
+     预览里带分组的 demo 只有规格选项组这一个，所以按 data-dgroups 找。 */
+  var card = el("preview").querySelector(".demo[data-dgroups]") ||
+             document.querySelector('.bcard[data-bcard-for="chat_questions"] .demo');
   if (!card) { return ""; }
-  var intro = card.querySelector(":scope > .d-it");
+  var intro = card.querySelector(':scope > .d-it');
   var gs = card.querySelectorAll(".d-group");
   var per = [];
+  var rows = [];
+  var flows = [];
   gs.forEach(function (g) {
-    per.push(g.querySelectorAll(".d-it").length);
+    var is = g.querySelectorAll(".d-it");
+    per.push(is.length);
+    /* 每组细节里的选项真的排成几行：数浏览器算出来的不同 top。
+       「字少就横排」这一条就是这个数——3 个选项挤在一行才是横排，
+       数 DOM 层级（有几个 .d-it）永远量不出排版。 */
+    var tops = {};
+    for (var i = 0; i < is.length; i++) {
+      tops[String(Math.round(is[i].getBoundingClientRect().top))] = "1";
+    }
+    rows.push(Object.keys(tops).length);
+    flows.push(g.dataset.dflow || "?");
   });
   var titles = [];
   gs.forEach(function (g) {
@@ -4968,7 +5081,8 @@ function qsReading() {
              只报「外层是 box、引子是它的直接孩子」是不够的——把里层整层
              删掉，前两句照样成立，于是「文字和按钮同盒」没人验。 */
           card.querySelector(".d-group") ? "same" : "bare",
-          card.querySelectorAll(".d-ic").length].join(":");
+          card.querySelectorAll(".d-ic").length,
+          rows.join("/"), flows.join("/")].join(":");
 }
 
 /* 一套 6 块的对话界面。挑法：页签条 / 状态提示条 / 消息气泡 /
@@ -5009,10 +5123,13 @@ function bizMsgReport(shotState) {
     "foldedDots": folded.dots,
     "foldedTrunc": folded.trunc,
     "foldedToggle": folded.toggle,
+    "foldedLines": folded.lines,
+    "foldedPos": folded.pos,
     "openText": open.text,
     "openDots": open.dots,
     "openTrunc": open.trunc,
     "openToggle": open.toggle,
+    "openPos": open.pos,
     "shape": msgShapeReading(),
     "pyClosed": (pyClosed.indexOf("open_default=False") >= 0) ? "1" : "0",
     "pyOpen": (pyOpen.indexOf("open_default=True") >= 0) ? "1" : "0",
@@ -5037,22 +5154,40 @@ function bizMsgReport(shotState) {
 function msgProbe() {
   var demo = el("preview").querySelector(".demo.d-msgtxt");
   if (!demo) {
-    return { text: "", dots: "0", trunc: "0", toggle: "" };
+    return { text: "", dots: "0", trunc: "0", toggle: "", lines: "0", pos: "none" };
   }
   var t = demo.querySelector(".d-msgtext");
   var g = demo.querySelector(".d-msgfold");
   var txt = t ? t.textContent : "";
   var full = t ? Number(t.dataset.dmsglen || 0) : 0;
+  /* 按钮在不在右下角：拿浏览器算出来的几何位置对**盒子内容区**的右下角，
+     不看 CSS 里写没写 align-self——写了但被别处的规则盖掉、或者干脆是
+     行尾而不是角上时，这里都要红。 */
+  var pos = "none";
+  if (g) {
+    var hr = demo.getBoundingClientRect();
+    var gr = g.getBoundingClientRect();
+    var pcs = hostCs(demo);
+    var ir = hr.right - (parseFloat(pcs.paddingRight) || 0);
+    var ib = hr.bottom - (parseFloat(pcs.paddingBottom) || 0);
+    pos = (gr.right >= ir - 2 && gr.bottom >= ib - 2) ? "br" : "elsewhere";
+  }
   return {
     text: txt,
     dots: (txt.indexOf("…") >= 0) ? "1" : "0",
     trunc: (full > txt.length) ? "1" : "0",
-    toggle: g ? g.textContent : ""
+    toggle: g ? g.textContent : "",
+    lines: String(lineCount(t)),
+    pos: pos
   };
 }
 
 function bizReport() {
   var canvas = el("canvas");
+  /* 插完那一刻的块序（还没拖动）：页签条必须排在状态提示条上面。
+     报出来的是 bkey 序列，测试那边按头两个比——只报「块数」的话，
+     顺序反了根本看不出来。 */
+  var order0 = proposal.map(function (n) { return n.bkey; }).join(",");
   /* 拖动重排：把第 1 块挪到最后。派发真的 DragEvent 走一遍真链路，
      不直接调 reorderTo——要验的就是「用户拖一下会怎样」。 */
   var before = uidListOf(proposal);
@@ -5118,6 +5253,7 @@ function bizReport() {
     "idBoxes": String(canvas.querySelectorAll('[data-field="id"]').length),
     "variantSelects": String(canvas.querySelectorAll('[data-field="bvar"]').length),
     "shelfCards": String(document.querySelectorAll(".bcard").length),
+    "order": order0,
     "shelfButtons": String(document.querySelectorAll("button[data-bkey]").length),
     "advDetails": String(document.querySelectorAll("details#adv-primitives").length),
     "pvBiz": String(canvas.ownerDocument.querySelectorAll(".pv-biz").length),
@@ -5130,6 +5266,35 @@ function bizReport() {
     "slot": slotName,
     "pyLines": String(py.split("\n").length)
   });
+}
+
+/* 「盒宽 = 面板宽」的无头验收入口（#biz-wrap）：把预览分别量成宽、窄、
+   560px 三档，量的是同一个气泡的文字宽度与每行字数。宽的那档每行字数
+   必须明显更多——不多就说明盒宽被写死了，或者文字被塞进了某个窄栏里。
+   截图也走这里（#biz-taball-chat-wide / -narrow）。 */
+function bizWrapReport() {
+  appendReport("biz-wrap", {
+    "shape": msgShapeReading(),
+    "wrap": msgWrapReading(),
+    "narrow": msgWrapNarrowOnly()
+  });
+  document.body.classList.add("uw-shot-canvas");
+  if (window.scrollTo) { window.scrollTo(0, 0); }
+  setStatus("BIZ wrap 宽/窄/560 三档都读完了");
+}
+
+/* 560px 那一档：msgWrapReading 只量宽与窄两档（宽 = 面板默认宽），
+   这里单独量「面板宽 560」时的文字宽度与每行字数。 */
+function msgWrapNarrowOnly() {
+  document.body.classList.add("uw-panel-560");
+  renderCanvas();
+  var txt = el("preview").querySelector(".demo.d-msgtxt .d-msgtext");
+  var w = txt ? Math.round(txt.getBoundingClientRect().width) : 0;
+  var lines = Math.max(1, lineCount(txt));
+  var cpl = txt ? Math.ceil(Number(txt.dataset.dmsglen || 0) / lines) : 0;
+  document.body.classList.remove("uw-panel-560");
+  renderCanvas();
+  return [String(w), String(cpl), String(lines)].join(":");
 }
 
 function bizExportReport() {
