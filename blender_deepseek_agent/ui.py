@@ -39,7 +39,13 @@ SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"
 #   * split 留出来的是**右边**的空白，左边留白在原生 UILayout 里做不到；
 #   * layout.box() 加 scale_x 不缩宽，column.alignment='RIGHT' 也不缩不推。
 # 所以这里的 factor 留的是**右侧**边距；左侧的「空一格」由首行缩进实现。
-USER_BUBBLE_SPLIT = 0.80
+#
+# 2026-10-16：用户消息**去掉盒框**（用户原话「不要用户消息的盒框」），文字直接
+# 排在面板底色上，可用宽度回到整幅内容宽，所以 bubble_wrap_chars 的 factor 是
+# 1.0（用户分支不再切 split 栏）。
+# 现在 factor 只服务于 **AI 消息的右侧留白**：AI 返回的内容整体缩窄，
+# 右边空出一栏，形成一问一答的对称感。
+AI_MARGIN_SPLIT = 0.84
 
 # 下面三个常量都是实测出来的（UI 单位，1.0 = ui_scale 1.0）：
 #   CJK 字宽：blf.size(font, 11) 下 blf.dimensions('中文') / 字数 = 11.00 px
@@ -67,8 +73,9 @@ WRAP_CHARS_FALLBACK = 18
 #      draw_chat_content，UILayout 按源码顺序渲染，天然成立；
 #   2. 状态提示条只有一层盒 —— draw_chat_content 的 busy 分支不再 box() 套内层；
 #   3. 长提示词用原生 layout.panel() 折叠，idname 稳定、默认展开；
-#   4. 用户气泡盒走 layout.split(factor) 切出边距，文字按**实际盒宽**折行
-#      （首行缩进两格，续行顶格）；
+#   4. AI 回复**整段一个盒**（引子+细节+选项+结语都在里面），盒由
+#      layout.split(factor) 的左边列承载 → 右边留一栏空白；用户消息
+#      **没有盒子**，直接落在面板底色上；
 #   5. 规格选项横排，过多或过长时降级竖排；
 #   6. 输入框不再有「高度 N」滑块，prompt_lines 仅作 textbox 初值。
 LAYOUT_CONTRACT = {
@@ -76,6 +83,7 @@ LAYOUT_CONTRACT = {
     "statusbar_single_box": True,
     "user_msg_panel_fold": True,
     "user_bubble_full_width_box": True,
+    "ai_margin_split": True,
     "options_horizontal": True,
     "no_composer_height_slider": True,
 }
@@ -875,14 +883,17 @@ def user_msg_summary(text, limit=16):
     return f"你：{first}（共 {len(flat)} 字）"
 
 
-def bubble_wrap_chars(context, factor=USER_BUBBLE_SPLIT):
-    """从实际面板宽反推气泡每行放得下多少个中文字。
+def bubble_wrap_chars(context, factor=1.0):
+    """从实际面板宽反推每行放得下多少个中文字。
 
     链路（全部实测，见文件头常量注释）：
         内容宽 = region.width - 面板留白
-        盒宽   = 内容宽 × split factor
-        文字宽 = 盒宽 - 盒内留白
+        文字宽 = 内容宽 × factor - 盒内留白
         每行字数 = 文字宽 / 中文字宽
+
+    factor 默认 1.0：用户消息 2026-10-16 起**去掉了盒框**，文字直接排在面板
+    底色上，可用宽度就是整幅内容宽，不再是 0.8 倍。BOX_PAD_UI 仍留一点，
+    因为 label() 没有拉伸参数，文字按自然宽度渲染，留一点余量免得顶出边沿。
 
     region.width 是**设备像素**（ui_scale 已经乘进去，实测 420 与截图 420 px
     一致），所以三个留白常量也要乘 ui_scale 才能对齐，最后相除时 ui_scale
@@ -982,23 +993,15 @@ def draw_chat_content(layout, context, state, run):
         for idx in range(start_idx, hist_len):
             item = state.history[idx]
             if item.role == "你":
-                # 人发的：盒子底色 + 文字左对齐 + **首行**缩进两格。
+                # 人发的：**没有盒框**，文字直接排在面板底色上
+                # （用户原话「不要用户消息的盒框」），只给**首行**缩进两格、
+                # 续行顶格。没有 ubox 可挂，所以长提示词的原生折叠直接挂在
+                # 父 layout 上。
                 #
-                # 边距用 layout.split(factor)：layout.box() 原生永远是整幅宽，
-                # 要缩窄只能切 split 栏。实测 split 返回的是**左边**那一列，
-                # 留出来的是**右边**空白（左边留白原生做不到，见文件头注释）。
-                #
-                # 折行宽度跟着实际盒宽走：bubble_wrap_chars() 从
-                # context.region.width 反推每行字数，面板拉宽行就变长、拉窄就
-                # 变短——「文字充满盒」就是折行宽度刚好等于盒内可用宽度。
+                # 可用宽度回到整幅内容宽，bubble_wrap_chars() 默认 factor=1.0，
+                # 面板拉宽行就变长、拉窄就变短。
                 chars = bubble_wrap_chars(context)
-                # 老 mock（dev/test_native_ui.py 的 MockLayout.split）返回的是
-                # 2.8 之前的 (a, b) 元组，真实 5.2 只返回一个 UILayout。
-                # 这里两种都能吃，不为了迁就 mock 改写真正的调用。
-                col = layout.split(factor=USER_BUBBLE_SPLIT)
-                if isinstance(col, tuple):
-                    col = col[0]
-                ubox = col.box()
+                ubox = layout
                 if user_msg_is_long(item.text, max_chars=chars):
                     # 长提示词给一个原生折叠箭头（layout.panel 有正确的动效和
                     # 开合状态记忆）。idname 必须对同一个气泡稳定，所以用
@@ -1014,8 +1017,17 @@ def draw_chat_content(layout, context, state, run):
                     urow = ubox.row()
                     urow.label(text=("　　" + ln) if i == 0 else ln)
             else:
-                # AI 回的：整幅、无框，直接排在对话流里
-                abox = layout
+                # AI 回的：**右边留一栏空白**，内容画在 split 返回的左边那列里
+                # （实测 split 返回左边列、宽 = factor × 内容宽，右边留白；
+                #  align 在 5.2 是 bool 且不影响位置，这里不传）。
+                # 用户原话「A 回复的内容要整体套一个盒」：耗时行 + 操作列表 +
+                # 引子 + 规格段 + 通用条目 + 结语 + 新增对象**全部装在同一个盒里**，
+                # 盒画在 split 返回的左边列上，右边自然空出一栏。
+                # 只有这一层盒；规格区不再是另一个盒，也不在盒里套盒。
+                acol = layout.split(factor=AI_MARGIN_SPLIT)
+                if isinstance(acol, tuple):
+                    acol = acol[0]
+                abox = acol.box()
                 if item.duration_str:
                     arow = abox.row(align=True)
                     arow.alignment = 'LEFT'
@@ -1027,19 +1039,18 @@ def draw_chat_content(layout, context, state, run):
                     except Exception:
                         steps = []
                     if steps:
-                        sbox = abox.box()
-                        sbox.label(text="执行的操作：", icon='FILE_SCRIPT')
+                        # 同一个盒，不再为了操作列表再开一层。
+                        abox.label(text="执行的操作：", icon='FILE_SCRIPT')
                         for st in steps:
-                            sbox.label(text=f"✓ {st}")
+                            abox.label(text=f"✓ {st}")
 
                 info = parse_interactive_options(item.text)
                 intro = info.get("intro", "")
                 questions = info.get("questions", [])
                 is_latest_ai = (idx == hist_len - 1)
-                # 规格段整段装进同一个盒：引子 + 所有细节 + 选项按钮 + 结语。
-                # 此前是「外层一个盒 + 每个细节各自再一个内盒」，用户看到的是
-                # 被切碎的几块，内层盒去掉。
-                sbody = abox.box() if questions else abox
+                # 规格段是 AI 整段盒的**一部分**，不是另一个盒：
+                # 引子 + 所有细节 + 选项按钮 + 结语都直接画在 abox 上。
+                sbody = abox
                 if questions:
                     mark(sbody, CHAT_OPTIONS)
 
@@ -1089,7 +1100,7 @@ def draw_chat_content(layout, context, state, run):
                         sbody.label(text=ln)
 
                 if item.added_objects_str:
-                    res_box = abox.box()
+                    res_box = abox
                     res_box.label(text=f"新增对象：{item.added_objects_str}", icon='MESH_DATA')
 
     # 3) 输入区贴在对话流下面：聊天窗口的阅读顺序是"上一条永远在输入框上面"，
@@ -1551,12 +1562,18 @@ def check_layout_contract():
         bad.append("no_composer_height_slider: prompt_lines 没继续作为 textbox 初值")
     if 'orow_holder' not in content_src:
         bad.append("options_horizontal: 选项仍是一行一个")
-    if 'layout.split(factor=USER_BUBBLE_SPLIT)' not in content_src:
-        bad.append("user_bubble_split_margin: 用户气泡没有用 layout.split(factor) 切边距")
-    if 'ubox = col.box()' not in content_src:
-        bad.append("user_bubble_split_margin: 用户气泡的盒必须画在 split 返回的列里")
+    if 'abox = acol.box()' not in content_src:
+        bad.append("ai_margin_split: AI 回复必须是 split 列里的**一个**盒")
+    if 'sbody = abox' not in content_src:
+        bad.append("ai_margin_split: 规格段必须复用 AI 的整段盒，不能再套盒")
+    if 'sbody = abox.box()' in content_src:
+        bad.append("ai_margin_split: 规格区又在盒里套了一个盒")
+    if 'ubox = layout' not in content_src:
+        bad.append("user_bubble_split_margin: 用户消息必须直接画在父 layout 上（无盒框）")
+    if 'ubox = col.box()' in content_src:
+        bad.append("user_bubble_split_margin: 用户消息不该再有盒框")
     if 'bubble_wrap_chars(context)' not in content_src:
-        bad.append("wrap_follows_box_width: 折行宽度没有跟着实际盒宽算")
+        bad.append("wrap_follows_box_width: 折行宽度没有跟着实际面板宽算")
     if 'max_chars=18' in content_src:
         bad.append("wrap_follows_box_width: 还有写死 18 字的折行宽度")
     if 'text=("　　" + ln) if i == 0 else ln' not in content_src:
