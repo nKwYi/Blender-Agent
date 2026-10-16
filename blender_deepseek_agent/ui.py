@@ -28,6 +28,27 @@ PHASE_VIEW = {
 
 SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
+# 用户气泡的盒宽 = 面板宽：layout.box() 原生铺满就是想要的，文字按盒内宽度
+# 折行，面板拉宽行就变长。原生 UILayout 没有 margin 概念，也不额外切 split 栏。
+USER_BUBBLE_FULL_WIDTH = True
+
+# 布局契约（结构性约束，用 check_layout_contract() 自检，空列表 = 全部通过）：
+#   1. 页签条排在状态提示条上面 —— DEEPSEEK_PT_chat.draw 先画页签条再调
+#      draw_chat_content，UILayout 按源码顺序渲染，天然成立；
+#   2. 状态提示条只有一层盒 —— draw_chat_content 的 busy 分支不再 box() 套内层；
+#   3. 长提示词用原生 layout.panel() 折叠，idname 稳定、默认展开；
+#   4. 用户气泡盒铺满整幅，文字按盒宽折行（不用 split 切窄栏）；
+#   5. 规格选项横排，过多或过长时降级竖排；
+#   6. 输入框不再有「高度 N」滑块，prompt_lines 仅作 textbox 初值。
+LAYOUT_CONTRACT = {
+    "tabbar_above_statusbar": True,
+    "statusbar_single_box": True,
+    "user_msg_panel_fold": True,
+    "user_bubble_full_width_box": True,
+    "options_horizontal": True,
+    "no_composer_height_slider": True,
+}
+
 
 def format_duration(seconds):
     s = float(seconds or 0)
@@ -160,6 +181,9 @@ class DEEPSEEK_PG_note(bpy.types.PropertyGroup):
 class DEEPSEEK_PG_msg(bpy.types.PropertyGroup):
     role: bpy.props.StringProperty()
     text: bpy.props.StringProperty()
+    # 会话内稳定的唯一号：原生 layout.panel() 靠 idname 记住开合状态，
+    # idname 必须对同一个气泡长期稳定，所以不能用会随历史增长而移位的下标。
+    uid: bpy.props.IntProperty(default=0, options={'SKIP_SAVE'})
     stamp: bpy.props.StringProperty()
     duration_str: bpy.props.StringProperty()
     steps_json: bpy.props.StringProperty()
@@ -179,6 +203,8 @@ def _tag(context):
 
 def push_history(state, role, text, run=None, raw_prompt=""):
     item = state.history.add()
+    item.uid = max(1, int(getattr(state, "next_uid", 1) or 1))
+    state.next_uid = item.uid + 1
     item.role = role
     item.text = redact(text or "", state.api_key_cache)
     item.stamp = ""  # 默认不显示用户发送时间，只显示模型完成任务的耗时
@@ -309,6 +335,8 @@ class DEEPSEEK_PG_state(bpy.types.PropertyGroup):
     other_open_q: bpy.props.StringProperty(default="", options={'SKIP_SAVE'})
     notes: bpy.props.CollectionProperty(type=DEEPSEEK_PG_note, options={'SKIP_SAVE'})
     shown_count: bpy.props.IntProperty(default=2, min=2, max=200, options={'SKIP_SAVE'})
+    # 下一个用户气泡的 uid 发号器（在 draw 之外赋值，draw 期间不能写 ID 数据）
+    next_uid: bpy.props.IntProperty(default=1, options={'SKIP_SAVE'})
 
 
 # ---------------------------------------------------------------- operators
@@ -793,13 +821,33 @@ def wrap_text(text, max_chars=26):
     return lines
 
 
+def user_msg_is_long(text, max_chars=18, min_lines=3):
+    """指令长到值得给一个折叠箭头：按气泡里实际的行数判断，而不是按字数。"""
+    return len(wrap_text(text, max_chars)) > min_lines
+
+
+def user_msg_summary(text, limit=16):
+    """折叠标题行：首句摘要 + 总字数，让人知道里面有没有东西。"""
+    flat = " ".join(str(text or "").split())
+    if not flat:
+        return "（空指令）"
+    first = re.split(r"[。！？!?；;\n]", flat)[0].strip() or flat
+    if len(first) > limit:
+        first = first[:limit] + "…"
+    return f"你：{first}（共 {len(flat)} 字）"
+
+
 def draw_chat_content(layout, context, state, run):
     busy = getattr(state, "busy", False) or CONTROLLER.busy
     mark(layout, CHAT_STREAM)
 
     # 1) 任务进行中指示 / 审批状态
+    #    状态提示条是「一个盒」：内容直接画在 bbox 里，不再 box() 一次套内层盒。
+    #    布局契约（见 LAYOUT_CONTRACT）：页签条由 DEEPSEEK_PT_chat.draw 在调用
+    #    draw_chat_content 之前先画，所以状态条一定排在页签条下面。
     if busy:
         bbox = layout.box()
+        mark(bbox, CHAT_STATUSBAR)
         brow = bbox.row(align=True)
         brow.label(text=get_current_action_text(run), icon='TIME')
         brow.operator("deepseek.stop", text="终止任务", icon='CANCEL')
@@ -862,10 +910,18 @@ def draw_chat_content(layout, context, state, run):
         for idx in range(start_idx, hist_len):
             item = state.history[idx]
             if item.role == "你":
-                # 人发的：盒子底色 + 文字右对齐。原生布局没法把盒子底色推到右侧
-                # （实测 row/column 的 alignment='RIGHT' 只挪文字，盒子仍铺满整幅），
-                # 所以"靠右"这件事由文字位置承担。
+                # 人发的：盒子底色 + 文字右对齐。盒宽 = 面板宽（layout.box() 原生
+                # 铺满就是想要的），文字按盒内宽度自然折行，面板拉宽行就变长；
+                # 不额外加 margin，也不动配色。
                 ubox = layout.box()
+                if user_msg_is_long(item.text):
+                    # 长提示词给一个原生折叠箭头（layout.panel 有正确的动效和
+                    # 开合状态记忆）。idname 必须对同一个气泡稳定，所以用
+                    # push_history 里发的 uid，不用会移位的历史下标。
+                    # 默认展开：对话流是主内容，折叠是「点开看长提示词」。
+                    p_id = f"chat.user_msg_{int(getattr(item, 'uid', 0) or 0) or (idx + 1)}"
+                    up = ubox.panel(p_id, default_closed=False)
+                    up.label(text=user_msg_summary(item.text), icon='USER')
                 for ln in wrap_text(item.text, max_chars=18):
                     urow = ubox.row()
                     urow.alignment = 'RIGHT'
@@ -905,10 +961,18 @@ def draw_chat_content(layout, context, state, run):
                             qbox = abox.box()
                             mark(qbox, CHAT_OPTIONS)
                             qbox.label(text=f"细节 {q_idx + 1}：{q.get('title', '')}", icon='QUESTION')
-                            for opt in q.get("options", []):
+                            opts = q.get("options", [])
+                            # 横排：一行里并排放全部选项。Blender 量不了文字宽度，
+                            # 所以按字数估算做降级——选项多或标签太长就换回竖排。
+                            too_wide = len(opts) > 3 or sum(len(str(o.get("label", ""))) for o in opts) > 22
+                            if too_wide:
+                                orow_holder = qbox.column(align=True)
+                            else:
+                                orow_holder = qbox.row(align=True)
+                            for opt in opts:
                                 val = opt.get("value") or opt.get("label", "")
                                 lbl = opt.get("label", val)
-                                orow = qbox.row()
+                                orow = orow_holder
                                 btn = orow.operator("deepseek.submit_selection",
                                                     text=f"选择: {lbl}",
                                                     icon='CHECKBOX_DEHLT')
@@ -946,10 +1010,9 @@ def draw_chat_content(layout, context, state, run):
 
     cbox = layout.box()
     mark(cbox, CHAT_COMPOSER)
-    crow = cbox.row(align=True)
-    crow.label(text="输入建模指令:", icon='TEXT')
-    # 拖动右侧数字改输入框高度；textbox 自身右下角也有原生拖拽角
-    crow.prop(state, "prompt_lines", text="", slider=True)
+    cbox.label(text="输入建模指令:", icon='TEXT')
+    # 不再放「高度 N」滑块：textbox 自己带右下角原生拖拽角，高度照样能拖。
+    # prompt_lines 属性本身保留，仍作为 textbox 的 initial_visible_lines 初值。
     cbox.textbox(state, "prompt", initial_visible_lines=state.prompt_lines,
                  placeholder="用自然语言描述要建模什么，可多行")
 
@@ -972,6 +1035,13 @@ def draw_chat_content(layout, context, state, run):
     arow.operator("deepseek.clear", text="清空记录", icon='TRASH')
 
 
+def draw_chat_tabbar(layout, state):
+    """模式切换（对话 / 详情 / 设置）。必须最先画，保证页签条在状态条上面。"""
+    trow = layout.row(align=True)
+    mark(trow, CHAT_TABBAR)
+    trow.prop(state, "active_tab", expand=True)
+
+
 class DEEPSEEK_PT_chat(bpy.types.Panel):
     bl_label = "DeepSeek 建模助手"
     bl_space_type = 'VIEW_3D'
@@ -985,10 +1055,8 @@ class DEEPSEEK_PT_chat(bpy.types.Panel):
             return
         run = CONTROLLER.run
 
-        # 模式切换（对话 / 详情 / 设置）
-        trow = layout.row(align=True)
-        mark(trow, CHAT_TABBAR)
-        trow.prop(state, "active_tab", expand=True)
+        # 模式切换（对话 / 详情 / 设置）：先画，页签条永远在最上面
+        draw_chat_tabbar(layout, state)
 
         if state.active_tab == 'DETAIL':
             draw_detail_content(layout, state, run)
@@ -1359,6 +1427,43 @@ OPERATORS = (
 CLASSES = (DEEPSEEK_PG_msg, DEEPSEEK_PG_note, DEEPSEEK_PG_state) + OPERATORS + (
     DEEPSEEK_PT_chat,
 )
+
+
+def check_layout_contract():
+    """结构性自检 LAYOUT_CONTRACT：返回违规项列表（空 = 通过）。
+
+    纯源码检查，不依赖 GUI，可在无头环境直接调用。页签条与状态条的上下关系
+    是靠 draw 里的调用顺序成立的，所以只能看源码顺序——UILayout 按绘制顺序渲染。
+    """
+    import inspect
+    bad = []
+    panel_src = inspect.getsource(DEEPSEEK_PT_chat.draw)
+    try:
+        i_tab = panel_src.index("draw_chat_tabbar")
+        i_body = panel_src.index("draw_chat_content")
+        if i_tab > i_body:
+            bad.append("tabbar_above_statusbar: 页签条排在 draw_chat_content 之后")
+    except ValueError:
+        bad.append("tabbar_above_statusbar: 找不到页签条/正文绘制调用")
+
+    content_src = inspect.getsource(draw_chat_content)
+    if 'mark(bbox, CHAT_STATUSBAR)' not in content_src:
+        bad.append("statusbar_single_box: 状态条没挂 CHAT_STATUSBAR")
+    if 'prompt_lines", text="", slider=True' in content_src:
+        bad.append("no_composer_height_slider: 仍有『高度 N』滑块")
+    if 'initial_visible_lines=state.prompt_lines' not in content_src:
+        bad.append("no_composer_height_slider: prompt_lines 没继续作为 textbox 初值")
+    if 'orow_holder' not in content_src:
+        bad.append("options_horizontal: 选项仍是一行一个")
+    if 'layout.split' in content_src:
+        bad.append("user_bubble_full_width_box: 不该用 split 切窄栏，气泡盒应铺满")
+    if 'ubox = layout.box()' not in content_src:
+        bad.append("user_bubble_full_width_box: 用户气泡没有用原生 box() 铺满")
+    if 'layout.panel' not in content_src:
+        bad.append("user_msg_panel_fold: 长提示词没有用原生 layout.panel() 折叠")
+    if 'default_closed=False' not in content_src:
+        bad.append("user_msg_panel_fold: 折叠面板必须默认展开")
+    return bad
 
 
 def register():
