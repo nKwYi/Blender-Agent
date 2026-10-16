@@ -122,6 +122,21 @@ class MockLayout:
             out.extend(ch.all_props())
         return out
 
+    def all_tokens(self):
+        """按文档顺序的合并 token 流：('text', 文本) / ('prop', 属性名) / ('op', 算子名)。
+
+        all_texts() / all_props() / all_operators() 各自维护自己的列表，是
+        三条**平行**序列，互相之间比不出先后。任何「A 出现在 B 之前」而 A/B
+        又不是同一种东西的断言，都必须走这个——否则两个 -1 相减恒成立，
+        断言看着在验顺序、其实什么都没验。
+        """
+        out = [("text", t) for t in self.texts]
+        out += [("prop", p["prop"]) for p in self.props]
+        out += [("op", o["id"]) for o in self.operators]
+        for ch in self.children:
+            out.extend(ch.all_tokens())
+        return out
+
 
 def _all_layouts(node):
     yield node
@@ -166,7 +181,9 @@ def main():
     all_empty_ops = [op["id"] for op in layout_empty.all_operators()]
     all_empty_props = layout_empty.all_props()
 
-    ck("empty_has_welcome", any("欢迎使用 DeepSeek 建模助手" in t for t in all_empty_texts), "空状态下应有欢迎引导")
+    ck("empty_has_welcome", any("欢迎使用建模助手" in t for t in all_empty_texts), "空状态下应有欢迎引导")
+    ck("welcome_has_no_brand_prefix", not any("欢迎使用 DeepSeek" in t for t in all_empty_texts),
+       "品牌前缀已去掉，欢迎语不该再带 DeepSeek")
     ck("empty_has_prompt_prop", any(p["prop"] == "prompt" for p in all_empty_props), "输入框必须使用原生 StringProperty")
     ck("empty_has_send_btn", "deepseek.run_prompt" in all_empty_ops, "必须包含发送按钮 deepseek.run_prompt")
 
@@ -224,9 +241,16 @@ def main():
     layout_order = MockLayout()
     U.draw_chat_content(layout_order, bpy.context, state, run_done)
     seq = layout_order.all_texts()
-    idx_input = next((n for n, t in enumerate(seq) if "输入建模指令" in t), -1)
-    idx_first_hist = next((n for n, t in enumerate(seq) if "历史消息" in t), -1)
-    ck("输入区排在历史之后（上一条永远在输入框上面）", 0 <= idx_first_hist < idx_input,
+    # 「输入建模指令:」那一栏已删（用户要省纵向空间），输入区现在只有
+    # textbox 一个 prop，所以顺序锚点改成 prop 名，不是文字。
+    tok = layout_order.all_tokens()
+    idx_input = next((n for n, (k, v) in enumerate(tok) if k == "prop" and v == "prompt"), -1)
+    idx_first_hist = next((n for n, (k, v) in enumerate(tok) if k == "text" and "历史消息" in v), -1)
+    ck("输入区不再有『输入建模指令:』标签行",
+       not any("输入建模指令" in v for k, v in tok if k == "text"),
+       "那一栏应当已删除")
+    ck("输入区排在历史之后（上一条永远在输入框上面）",
+       0 <= idx_first_hist < idx_input,
        f"idx_input={idx_input} idx_first_hist={idx_first_hist}")
     ck("顶部不再有『会话: xxx / 可连续追问』占位栏",
        not any("会话:" in t or "可连续追问" in t for t in seq), str(seq[:6]))
@@ -244,8 +268,20 @@ def main():
 
     ck("人的消息有盒子底色", "box" in host_kind_of("历史消息 22"),
        str(host_kind_of("历史消息 22")))
-    ck("人的消息文字靠右", host_alignment_of(layout_order, "历史消息 22") == 'RIGHT',
+    # 用户明确要求：从左开始、空两个字符、常规排。原来是 alignment='RIGHT'。
+    ck("人的消息不再靠右", host_alignment_of(layout_order, "历史消息 22") != 'RIGHT',
        repr(host_alignment_of(layout_order, "历史消息 22")))
+    # 只有「你」说的话要缩进 —— AI 的回复直接排在对话流上，本来就不进盒也不缩进。
+    # 历史消息是交替造的（i%2==0 是"你"），所以 22 是用户、21/23 是 AI。
+    user_msgs = [t for t in layout_order.all_texts()
+                 if t.strip().endswith("22") or "历史消息 22" in t]
+    ai_msgs = [t for t in layout_order.all_texts()
+               if "历史消息 21" in t or "历史消息 23" in t]
+    ck("人的消息每行都空两格缩进",
+       bool(user_msgs) and all(t.startswith("　　") for t in user_msgs),
+       "用户的每一行续行都要缩进，不能只缩首行：%r" % user_msgs)
+    ck("AI 的消息不缩进", all(not t.startswith("　　") for t in ai_msgs),
+       "AI 的话不进盒也不缩进：%r" % ai_msgs)
     ck("AI 的回复不再套盒子（直接排在对话流上）",
        "box" not in host_kind_of("历史消息 21"), str(host_kind_of("历史消息 21")))
     ck("不再只靠左上角名称区分角色",
