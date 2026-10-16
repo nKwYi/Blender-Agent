@@ -8,16 +8,8 @@
   "alignment": "EXPAND",
   "use_property_split": false,
   "emboss": "NONE",
-  "texts": [
-    "在动手之前想跟你确认一下：这只茶杯的杯壁你想要多厚？",
-    "薄胎（约 2mm）透光但易磕，厚胎（约",
-    "6mm）手感沉稳。"
-  ],
-  "icons": [
-    "NONE",
-    "NONE",
-    "NONE"
-  ],
+  "texts": [],
+  "icons": [],
   "ops": [],
   "props": [],
   "children": [
@@ -47,7 +39,47 @@
       "children": []
     },
     {
-      "kind": "box",
+      "kind": "row",
+      "element_id": null,
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [
+        "　　做一个精致的中式紫砂茶杯，"
+      ],
+      "icons": [
+        "NONE"
+      ],
+      "ops": [],
+      "props": [],
+      "children": []
+    },
+    {
+      "kind": "row",
+      "element_id": null,
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [
+        "杯身要能看出砂颗粒的质感"
+      ],
+      "icons": [
+        "NONE"
+      ],
+      "ops": [],
+      "props": [],
+      "children": []
+    },
+    {
+      "kind": "split",
       "element_id": null,
       "alert": false,
       "active": false,
@@ -62,7 +94,7 @@
       "props": [],
       "children": [
         {
-          "kind": "row",
+          "kind": "box",
           "element_id": null,
           "alert": false,
           "active": false,
@@ -72,36 +104,21 @@
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "　　做一个精致的中式紫砂茶杯，"
+            "在动手之前想跟你确认一下：这只茶杯的杯壁你想要多厚？",
+            "薄胎（约 2mm）透光但易磕，厚胎（约",
+            "6mm）手感沉稳。"
           ],
           "icons": [
-            "NONE"
-          ],
-          "ops": [],
-          "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "　　杯身要能看出砂颗粒的质感"
-          ],
-          "icons": [
+            "NONE",
+            "NONE",
             "NONE"
           ],
           "ops": [],
           "props": [],
           "children": []
         }
-      ]
+      ],
+      "split_factor": 0.84
     },
     {
       "kind": "box",

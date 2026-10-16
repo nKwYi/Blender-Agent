@@ -8,12 +8,8 @@
   "alignment": "EXPAND",
   "use_property_split": false,
   "emboss": "NONE",
-  "texts": [
-    "我先看一下场景里现有的物体，再动手。"
-  ],
-  "icons": [
-    "NONE"
-  ],
+  "texts": [],
+  "icons": [],
   "ops": [],
   "props": [],
   "children": [
@@ -89,7 +85,47 @@
       ]
     },
     {
-      "kind": "box",
+      "kind": "row",
+      "element_id": null,
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [
+        "　　做一个精致的中式紫砂茶杯，"
+      ],
+      "icons": [
+        "NONE"
+      ],
+      "ops": [],
+      "props": [],
+      "children": []
+    },
+    {
+      "kind": "row",
+      "element_id": null,
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [
+        "杯身要能看出砂颗粒的质感"
+      ],
+      "icons": [
+        "NONE"
+      ],
+      "ops": [],
+      "props": [],
+      "children": []
+    },
+    {
+      "kind": "split",
       "element_id": null,
       "alert": false,
       "active": false,
@@ -104,7 +140,7 @@
       "props": [],
       "children": [
         {
-          "kind": "row",
+          "kind": "box",
           "element_id": null,
           "alert": false,
           "active": false,
@@ -114,27 +150,7 @@
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "　　做一个精致的中式紫砂茶杯，"
-          ],
-          "icons": [
-            "NONE"
-          ],
-          "ops": [],
-          "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "　　杯身要能看出砂颗粒的质感"
+            "我先看一下场景里现有的物体，再动手。"
           ],
           "icons": [
             "NONE"
@@ -143,7 +159,8 @@
           "props": [],
           "children": []
         }
-      ]
+      ],
+      "split_factor": 0.84
     },
     {
       "kind": "box",

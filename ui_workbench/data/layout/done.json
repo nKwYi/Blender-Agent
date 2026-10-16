@@ -8,14 +8,8 @@
   "alignment": "EXPAND",
   "use_property_split": false,
   "emboss": "NONE",
-  "texts": [
-    "杯身已经车削完成，我顺手把边缘的微倒角也做了，",
-    "看起来更接近手工打磨的质感。"
-  ],
-  "icons": [
-    "NONE",
-    "NONE"
-  ],
+  "texts": [],
+  "icons": [],
   "ops": [],
   "props": [],
   "children": [
@@ -45,7 +39,47 @@
       "children": []
     },
     {
-      "kind": "box",
+      "kind": "row",
+      "element_id": null,
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [
+        "　　做一个精致的中式紫砂茶杯，"
+      ],
+      "icons": [
+        "NONE"
+      ],
+      "ops": [],
+      "props": [],
+      "children": []
+    },
+    {
+      "kind": "row",
+      "element_id": null,
+      "alert": false,
+      "active": false,
+      "enabled": true,
+      "scale_y": 1.0,
+      "alignment": "EXPAND",
+      "use_property_split": false,
+      "emboss": "NONE",
+      "texts": [
+        "杯身要能看出砂颗粒的质感"
+      ],
+      "icons": [
+        "NONE"
+      ],
+      "ops": [],
+      "props": [],
+      "children": []
+    },
+    {
+      "kind": "split",
       "element_id": null,
       "alert": false,
       "active": false,
@@ -60,7 +94,7 @@
       "props": [],
       "children": [
         {
-          "kind": "row",
+          "kind": "box",
           "element_id": null,
           "alert": false,
           "active": false,
@@ -70,100 +104,48 @@
           "use_property_split": false,
           "emboss": "NONE",
           "texts": [
-            "　　做一个精致的中式紫砂茶杯，"
+            "执行的操作：",
+            "✓ 旋转车削一体化成型 完成，耗时 12秒",
+            "✓ 配置物理 PBR 材质节点 完成，耗时 6秒",
+            "杯身已经车削完成，我顺手把边缘的微倒角也做了，",
+            "看起来更接近手工打磨的质感。",
+            "新增对象：Teapot"
           ],
           "icons": [
-            "NONE"
+            "FILE_SCRIPT",
+            "NONE",
+            "NONE",
+            "NONE",
+            "NONE",
+            "MESH_DATA"
           ],
           "ops": [],
           "props": [],
-          "children": []
-        },
-        {
-          "kind": "row",
-          "element_id": null,
-          "alert": false,
-          "active": false,
-          "enabled": true,
-          "scale_y": 1.0,
-          "alignment": "EXPAND",
-          "use_property_split": false,
-          "emboss": "NONE",
-          "texts": [
-            "　　杯身要能看出砂颗粒的质感"
-          ],
-          "icons": [
-            "NONE"
-          ],
-          "ops": [],
-          "props": [],
-          "children": []
+          "children": [
+            {
+              "kind": "row",
+              "element_id": null,
+              "alert": false,
+              "active": false,
+              "enabled": true,
+              "scale_y": 1.0,
+              "alignment": "LEFT",
+              "use_property_split": false,
+              "emboss": "NONE",
+              "texts": [
+                "耗时 24秒"
+              ],
+              "icons": [
+                "COMMUNITY"
+              ],
+              "ops": [],
+              "props": [],
+              "children": []
+            }
+          ]
         }
-      ]
-    },
-    {
-      "kind": "row",
-      "element_id": null,
-      "alert": false,
-      "active": false,
-      "enabled": true,
-      "scale_y": 1.0,
-      "alignment": "LEFT",
-      "use_property_split": false,
-      "emboss": "NONE",
-      "texts": [
-        "耗时 24秒"
       ],
-      "icons": [
-        "COMMUNITY"
-      ],
-      "ops": [],
-      "props": [],
-      "children": []
-    },
-    {
-      "kind": "box",
-      "element_id": null,
-      "alert": false,
-      "active": false,
-      "enabled": true,
-      "scale_y": 1.0,
-      "alignment": "EXPAND",
-      "use_property_split": false,
-      "emboss": "NONE",
-      "texts": [
-        "执行的操作：",
-        "✓ 旋转车削一体化成型 完成，耗时 12秒",
-        "✓ 配置物理 PBR 材质节点 完成，耗时 6秒"
-      ],
-      "icons": [
-        "FILE_SCRIPT",
-        "NONE",
-        "NONE"
-      ],
-      "ops": [],
-      "props": [],
-      "children": []
-    },
-    {
-      "kind": "box",
-      "element_id": null,
-      "alert": false,
-      "active": false,
-      "enabled": true,
-      "scale_y": 1.0,
-      "alignment": "EXPAND",
-      "use_property_split": false,
-      "emboss": "NONE",
-      "texts": [
-        "新增对象：Teapot"
-      ],
-      "icons": [
-        "MESH_DATA"
-      ],
-      "ops": [],
-      "props": [],
-      "children": []
+      "split_factor": 0.84
     },
     {
       "kind": "box",
