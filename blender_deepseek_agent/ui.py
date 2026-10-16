@@ -287,7 +287,7 @@ class DEEPSEEK_PG_state(bpy.types.PropertyGroup):
         name="模式",
         description="在对话、详情与设置之间切换",
         items=[
-            ('CHAT', "AI 对话", "与 AI 助手实时对话与建模", 'COMMUNITY', 0),
+            ('CHAT', "对话", "与 AI 助手实时对话与建模", 'COMMUNITY', 0),
             ('DETAIL', "详情", "工具调用、用量与完整转录", 'CONSOLE', 1),
             ('SETTINGS', "设置", "API 密钥与模型参数配置", 'PREFERENCES', 2),
         ],
@@ -898,7 +898,7 @@ def draw_chat_content(layout, context, state, run):
     # 2) 对话历史流
     if not state.history and not busy:
         ebox = layout.box()
-        ebox.label(text="欢迎使用 DeepSeek 建模助手", icon='COMMUNITY')
+        ebox.label(text="欢迎使用建模助手", icon='COMMUNITY')
         ebox.label(text="描述想创建的模型，或选择快捷标签：")
     else:
         hist_len = len(state.history)
@@ -910,9 +910,12 @@ def draw_chat_content(layout, context, state, run):
         for idx in range(start_idx, hist_len):
             item = state.history[idx]
             if item.role == "你":
-                # 人发的：盒子底色 + 文字右对齐。盒宽 = 面板宽（layout.box() 原生
-                # 铺满就是想要的），文字按盒内宽度自然折行，面板拉宽行就变长；
-                # 不额外加 margin，也不动配色。
+                # 人发的：盒子底色 + 文字左对齐、开头空两个全角字符。盒宽 = 面板宽
+                # （layout.box() 原生铺满就是想要的），文字按盒内宽度自然折行，
+                # 面板拉宽行就变长；不额外加 margin，也不动配色。
+                # 缩进不用 alignment + indent_left（原生会把整块推到右边），直接在
+                # 每一行文本前面加前缀——wrap_text 已经把正文按行切开了，逐行加
+                # 前缀才能让换行后的每一条续行都对齐，不会只有首行缩进。
                 ubox = layout.box()
                 if user_msg_is_long(item.text):
                     # 长提示词给一个原生折叠箭头（layout.panel 有正确的动效和
@@ -924,8 +927,7 @@ def draw_chat_content(layout, context, state, run):
                     up.label(text=user_msg_summary(item.text), icon='USER')
                 for ln in wrap_text(item.text, max_chars=18):
                     urow = ubox.row()
-                    urow.alignment = 'RIGHT'
-                    urow.label(text=ln)
+                    urow.label(text="　　" + ln)
             else:
                 # AI 回的：整幅、无框，直接排在对话流里
                 abox = layout
@@ -947,28 +949,37 @@ def draw_chat_content(layout, context, state, run):
 
                 info = parse_interactive_options(item.text)
                 intro = info.get("intro", "")
-                if intro:
-                    for ln in wrap_text(intro):
-                        abox.label(text=ln)
-
                 questions = info.get("questions", [])
                 is_latest_ai = (idx == hist_len - 1)
+                # 规格段整段装进同一个盒：引子 + 所有细节 + 选项按钮 + 结语。
+                # 此前是「外层一个盒 + 每个细节各自再一个内盒」，用户看到的是
+                # 被切碎的几块，内层盒去掉。
+                sbody = abox.box() if questions else abox
+                if questions:
+                    mark(sbody, CHAT_OPTIONS)
+
+                if intro:
+                    for ln in wrap_text(intro):
+                        sbody.label(text=ln)
+
                 if questions:
                     if not is_latest_ai:
-                        abox.label(text="✓ 关键规格已确认", icon='CHECKMARK')
+                        sbody.label(text="✓ 关键规格已确认", icon='CHECKMARK')
                     else:
                         for q_idx, q in enumerate(questions):
-                            qbox = abox.box()
-                            mark(qbox, CHAT_OPTIONS)
-                            qbox.label(text=f"细节 {q_idx + 1}：{q.get('title', '')}", icon='QUESTION')
+                            # AI 给的 title 常自带 markdown 序号前缀（「1. 杯型风格」）。
+                            # 外面已经有「细节 N：」这个序号，这里再留一遍就成了
+                            # 「细节 1：1.杯型风格」两个 1，所以先剥掉。
+                            q_title = re.sub(r"^\s*\d+\s*[.、．)）]\s*",
+                                             "", str(q.get('title', '')))
+                            # MENU_PANEL：这一组是「等你从菜单里选」的分组标题，
+                            # 原来的问号语义是「这是什么」，对不上。
+                            sbody.label(text=f"细节 {q_idx + 1}：{q_title}",
+                                        icon='MENU_PANEL')
                             opts = q.get("options", [])
-                            # 横排：一行里并排放全部选项。Blender 量不了文字宽度，
-                            # 所以按字数估算做降级——选项多或标签太长就换回竖排。
-                            too_wide = len(opts) > 3 or sum(len(str(o.get("label", ""))) for o in opts) > 22
-                            if too_wide:
-                                orow_holder = qbox.column(align=True)
-                            else:
-                                orow_holder = qbox.row(align=True)
+                            # 永远横排。Blender 量不了文字宽度，但用户说了截断没关系、
+                            # 面板可以拉宽，纵向空间才是真约束——所以不再按字数退回竖排。
+                            orow_holder = sbody.row(align=True)
                             for opt in opts:
                                 val = opt.get("value") or opt.get("label", "")
                                 lbl = opt.get("label", val)
@@ -976,21 +987,21 @@ def draw_chat_content(layout, context, state, run):
                                 btn = orow.operator("deepseek.submit_selection",
                                                     text=f"选择: {lbl}",
                                                     icon='CHECKBOX_DEHLT')
-                                btn.custom_prompt = f"针对「{q.get('title', '')}」，我选择：{val}"
+                                btn.custom_prompt = f"针对「{q_title}」，我选择：{val}"
 
-                        rec_btn = abox.operator("deepseek.submit_selection",
+                        rec_btn = sbody.operator("deepseek.submit_selection",
                                                 text="按推荐参数开始建模",
                                                 icon='PLAY')
                         rec_btn.custom_prompt = info.get("all_recommended", "全部按推荐参数开始建模！")
 
                 for gl in info.get("general", []):
                     for ln in wrap_text(gl):
-                        abox.label(text=ln)
+                        sbody.label(text=ln)
 
                 outro = info.get("outro", "")
                 if outro:
                     for ln in wrap_text(outro):
-                        abox.label(text=ln)
+                        sbody.label(text=ln)
 
                 if item.added_objects_str:
                     res_box = abox.box()
@@ -1001,16 +1012,20 @@ def draw_chat_content(layout, context, state, run):
     pills = list(quick_pills(state))
     if pills:
         pbox = layout.box()
-        p_row1 = pbox.row(align=True)
-        p_row2 = pbox.row(align=True)
+        # 两个胶囊并排一行，不占用两行纵向空间。超过两个才分两行。
+        if len(pills) <= 2:
+            pill_rows = [pbox.row(align=True)]
+        else:
+            pill_rows = [pbox.row(align=True), pbox.row(align=True)]
         mid = (len(pills) + 1) // 2
         for i, pill in enumerate(pills):
-            target_row = p_row1 if i < mid else p_row2
+            target_row = pill_rows[0] if (len(pills) <= 2 or i < mid) else pill_rows[1]
             target_row.operator("deepseek.quick_pill", text=pill).action = pill
 
     cbox = layout.box()
     mark(cbox, CHAT_COMPOSER)
-    cbox.label(text="输入建模指令:", icon='TEXT')
+    # 不再放「输入建模指令:」标签：这一栏省下来的纵向空间比标题值钱，
+    # textbox 的 placeholder 已经说明了这里能干什么。
     # 不再放「高度 N」滑块：textbox 自己带右下角原生拖拽角，高度照样能拖。
     # prompt_lines 属性本身保留，仍作为 textbox 的 initial_visible_lines 初值。
     cbox.textbox(state, "prompt", initial_visible_lines=state.prompt_lines,
@@ -1043,7 +1058,7 @@ def draw_chat_tabbar(layout, state):
 
 
 class DEEPSEEK_PT_chat(bpy.types.Panel):
-    bl_label = "DeepSeek 建模助手"
+    bl_label = "建模助手"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "AI 对话"
@@ -1396,19 +1411,15 @@ def parse_interactive_options(text):
 
 
 def quick_pills(state):
-    """输入区上方的快捷胶囊。自绘层和原生层共用同一份，避免两处文案漂移。"""
+    """输入区上方的快捷胶囊。固定两条（改尺寸 / 换材质），并排一行。
+
+    之前按 topic 分支给出四条胶囊（「增加倒角」「平滑着色」等）。用户明确只要
+    「修改尺寸」「更换材质」两条：两条就够表达高频微调，而且两行胶囊白白吃掉
+    输入区的纵向空间——纵向才是这个侧栏的真约束。
+    """
     if not getattr(state, "history", None) or len(state.history) == 0:
         return []
-    topic = state.session_topic or ""
-    if any(k in topic for k in ["杯", "壶", "碗", "盘", "花瓶", "茶"]):
-        return ["修改尺寸", "更换材质", "增加倒角", "平滑着色"]
-    if any(k in topic for k in ["沙发", "椅", "床", "家具"]):
-        return ["修改尺寸", "更换面料", "添加靠枕", "增加倒角"]
-    if any(k in topic for k in ["别墅", "建筑", "房子", "室内"]):
-        return ["调整层高", "更换材质", "增加门窗", "布置灯光"]
-    if any(k in topic for k in ["机械", "零件", "构件", "齿轮"]):
-        return ["修改公差", "金属材质", "增加倒角", "阵列打孔"]
-    return ["修改尺寸", "更换材质", "增加倒角", "平滑着色"]
+    return ["修改尺寸", "更换材质"]
 
 
 def can_undo(state):
