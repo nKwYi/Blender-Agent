@@ -285,8 +285,14 @@ def main():
                 return chain
         return []
 
-    ck("人的消息有盒子底色", "box" in host_kind_of("历史消息 22"),
-       str(host_kind_of("历史消息 22")))
+    # 一问一答样式（2026-10-16 定稿）：
+    #   你说的话 -> 无框、无右边距，文字直接落在面板底色上，只缩首行
+    #   AI 回的话 -> 整段**一个**盒，且右边留一段间距
+    # 盒数从「外盒 + 每细节一个内盒」压到严格的 1。
+    ck("人的消息没有盒子", "box" not in host_kind_of("历史消息 22"),
+       "用户消息应当无框，实际宿主链=%r" % (host_kind_of("历史消息 22"),))
+    ck("人的消息没有右边距", "split" not in host_kind_of("历史消息 22"),
+       "用户消息不该被 split 切窄，实际宿主链=%r" % (host_kind_of("历史消息 22"),))
     # 用户明确要求：从左开始、空两个字符、常规排。原来是 alignment='RIGHT'。
     ck("人的消息不再靠右", host_alignment_of(layout_order, "历史消息 22") != 'RIGHT',
        repr(host_alignment_of(layout_order, "历史消息 22")))
@@ -311,8 +317,14 @@ def main():
        "单行用户消息的首行也要缩进：%r" % (short_user,))
     ck("AI 的消息不缩进", all(not t.startswith("　　") for t in ai_msgs),
        "AI 的话不进盒也不缩进：%r" % ai_msgs)
-    ck("AI 的回复不再套盒子（直接排在对话流上）",
-       "box" not in host_kind_of("历史消息 21"), str(host_kind_of("历史消息 21")))
+    ck("AI 整段套一个盒", "box" in host_kind_of("历史消息 21"),
+       "AI 回复应当整段一个盒，实际宿主链=%r" % (host_kind_of("历史消息 21"),))
+    ck("AI 那个盒右边留了间距", "split" in host_kind_of("历史消息 21"),
+       "AI 盒子应当画在 split 的列里、右侧留白，实际宿主链=%r"
+       % (host_kind_of("历史消息 21"),))
+    ck("AI 只有一个盒（规格区不再单独成盒）",
+       host_kind_of("历史消息 21").count("box") == 1,
+       "盒数应当严格是 1，实际宿主链=%r" % (host_kind_of("历史消息 21"),))
     ck("不再只靠左上角名称区分角色",
        not any(t in ("用户", "AI 助手") for t in seq), str([t for t in seq if "助手" in t or t == "用户"]))
     shown = sum(1 for t in seq if "历史消息" in t)
