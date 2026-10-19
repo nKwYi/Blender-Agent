@@ -290,13 +290,37 @@ def main():
 
     # 验证折叠项初始未展开，展开后具体步骤出现且输入区依然可见
     ck("steps_initially_folded", "创建基础几何体" not in v_texts, "未展开时具体步骤不应占用版面")
-    msg_ai_verbose.show_steps = True
+    
+    # 验证通过 Operator 真实触发切换
+    bpy.ops.deepseek.toggle_ai_detail(idx=0, field="steps")
+    ck("toggle_op_executed", msg_ai_verbose.show_steps is True, "点击折叠按钮算子必须成功切换为展开")
     layout_expanded = MockLayout()
     U.draw_chat_content(layout_expanded, bpy.context, state, run_done)
     exp_texts = layout_expanded.all_texts()
     ck("steps_expand_on_click", any("创建基础几何体" in t for t in exp_texts), "展开后具体步骤应正确列出")
     exp_tokens = layout_expanded.all_tokens()
     ck("composer_visible_when_expanded", any(k == "prop" and v == "prompt" for k, v in exp_tokens), "展开时输入区依然完好可见")
+    
+    # 验证二次点击算子收起
+    bpy.ops.deepseek.toggle_ai_detail(idx=0, field="steps")
+    ck("toggle_op_collapses", msg_ai_verbose.show_steps is False, "再次点击算子必须成功收起")
+
+    # 验证无双重对勾：上一轮已确认规格文案不能自带 '✓'（避免配合 CHECKMARK 图标变成两个对勾）
+    state.history.clear()
+    msg_prev = state.history.add()
+    msg_prev.role = "AI"
+    msg_prev.text = "1. 造型：经典\n选项A / 选项B"
+    msg_curr = state.history.add()
+    msg_curr.role = "你"
+    msg_curr.text = "选择选项A"
+    msg_curr_ai = state.history.add()
+    msg_curr_ai.role = "AI"
+    msg_curr_ai.text = "已完成"
+    layout_prev = MockLayout()
+    U.draw_chat_content(layout_prev, bpy.context, state, run_done)
+    prev_texts = layout_prev.all_texts()
+    ck("confirmed_spec_no_double_check", any(t == "关键规格已确认" for t in prev_texts), "已确认文案文本不应包含冗余对勾字符")
+    ck("no_check_prefix_in_confirmed", not any("✓ 关键规格已确认" in t for t in prev_texts), "杜绝双对勾出现")
 
     # 7. 输入区必须在历史之前：侧栏只能整体滚动，输入框排到长历史下面就用不了
     state.history.clear()

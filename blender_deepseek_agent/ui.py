@@ -872,6 +872,7 @@ class DEEPSEEK_OT_toggle_ai_detail(bpy.types.Operator):
     bl_description = "点击展开或折叠此项详细内容"
     bl_options = {'INTERNAL'}
 
+    idx: bpy.props.IntProperty(default=-1)
     uid: bpy.props.IntProperty(default=0)
     field: bpy.props.StringProperty(default="steps")
 
@@ -879,11 +880,17 @@ class DEEPSEEK_OT_toggle_ai_detail(bpy.types.Operator):
         state = getattr(context.scene, "deepseek_agent", None) if context.scene else None
         if not state:
             return {'CANCELLED'}
-        for item in state.history:
-            if getattr(item, "uid", 0) == self.uid:
-                cur = getattr(item, f"show_{self.field}", False)
-                setattr(item, f"show_{self.field}", not cur)
-                break
+        target = None
+        if 0 <= self.idx < len(state.history):
+            target = state.history[self.idx]
+        elif self.uid:
+            for item in state.history:
+                if getattr(item, "uid", 0) == self.uid:
+                    target = item
+                    break
+        if target:
+            cur = getattr(target, f"show_{self.field}", False)
+            setattr(target, f"show_{self.field}", not cur)
         _tag(context)
         return {'FINISHED'}
 
@@ -933,12 +940,16 @@ def wrap_text(text, max_chars=26, first_chars=None):
                     idx -= 1
                 if idx > int(budget * 0.4):
                     cut = idx + 1
-            # 避头尾：下一字符若为逗号句号等标点，收入本行末尾
-            if cut < len(p) and p[cut] in ("，", "。", "；", "！", "、", ",", ";", "？", "?", "）", ")"):
+            # 避头尾：后续字符若为逗号句号等连续标点，全部收入本行末尾，绝不让孤立标点出现在下一行首
+            while cut < len(p) and p[cut] in ("，", "。", "；", "！", "、", ",", ";", "？", "?", "）", ")", "”", "’", "》", "】"):
                 cut += 1
             lines.append(p[:cut].strip())
             para_lines_count += 1
             p = p[cut:].strip()
+            while p and p[0] in ("，", "。", "；", "！", "、", ",", ";", "？", "?", "）", ")"):
+                if lines:
+                    lines[-1] = lines[-1] + p[0]
+                p = p[1:].strip()
     return lines
 
 
@@ -1155,13 +1166,14 @@ def draw_chat_content(layout, context, state, run):
                                              text=f"执行了 {len(steps)} 项建模操作{dur_text}",
                                              icon=icon,
                                              emboss=False)
+                            btn.idx = idx
                             btn.uid = getattr(item, 'uid', 0) or (idx + 1)
                             btn.field = "steps"
                             if is_open:
                                 for st in steps:
                                     abox.label(text=f"  ✓ {st}")
                         else:
-                            abox.label(text=f"✓ {steps[0]}{dur_text}", icon='CHECKMARK')
+                            abox.label(text=f"{steps[0]}{dur_text}", icon='CHECKMARK')
                 elif item.duration_str:
                     arow = abox.row(align=True)
                     arow.alignment = 'LEFT'
@@ -1193,6 +1205,7 @@ def draw_chat_content(layout, context, state, run):
                                          text=f"查看方案分析与说明（{len(intro_paras) - 1}项）",
                                          icon=icon,
                                          emboss=False)
+                        btn.idx = idx
                         btn.uid = getattr(item, 'uid', 0) or (idx + 1)
                         btn.field = "intro_more"
                         if is_open:
@@ -1201,7 +1214,7 @@ def draw_chat_content(layout, context, state, run):
 
                 if questions:
                     if not is_latest_ai:
-                        sbody.label(text="✓ 关键规格已确认", icon='CHECKMARK')
+                        sbody.label(text="关键规格已确认", icon='CHECKMARK')
                     else:
                         for q_idx, q in enumerate(questions):
                             # AI 给的 title 常自带 markdown 序号前缀（「1. 杯型风格」）。
@@ -1242,6 +1255,7 @@ def draw_chat_content(layout, context, state, run):
                                          text="查看补充参数与技术细节",
                                          icon=icon,
                                          emboss=False)
+                        btn.idx = idx
                         btn.uid = getattr(item, 'uid', 0) or (idx + 1)
                         btn.field = "params"
                         if is_open:
@@ -1265,6 +1279,7 @@ def draw_chat_content(layout, context, state, run):
                                          text=f"查看完整说明（{len(full_paras) - 1}段）",
                                          icon=icon,
                                          emboss=False)
+                        btn.idx = idx
                         btn.uid = getattr(item, 'uid', 0) or (idx + 1)
                         btn.field = "body_more"
                         if is_open:
