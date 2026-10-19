@@ -45,26 +45,21 @@ SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"
 # 1.0（用户分支不再切 split 栏）。
 # 现在 factor 只服务于 **AI 消息的右侧留白**：AI 返回的内容整体缩窄，
 # 右边空出一栏，形成一问一答的对称感。
-AI_MARGIN_SPLIT = 0.88
+AI_MARGIN_SPLIT = 0.94
 
-# 下面三个常量都是实测出来的（UI 单位，1.0 = ui_scale 1.0）：
-#   CJK 字宽：blf.size(font, 11) 下 blf.dimensions('中文') / 字数 = 11.00 px
-#             （英文 5.42 px/字符；折行按中文字宽算，英文会偏保守，不会溢出）
-#   面板左右留白（两侧合计）：region.width 420 → 盒 x24..365 = 342，
-#             即 78 设备 px / ui_scale 1.5 = 52 UI 单位。
-#   盒内文字留白（两侧合计）：盒左沿 24、字左沿 34 = 单侧 10，
-#             两侧 20 设备 px / 1.5 ≈ 13.3 → 取 14 留一点安全余量。
-#
-# 留白一律**取比实测更大**的值：面板留白算多了只是少排一个字，留白算少了
-# 文字会顶出盒外，所以宁可排短也不要溢出。
+# 下面常量根据真实 DPI 与渲染实测校准：
+#   CJK 字宽：标准 DPI (scale=1.0) 下每个中文字约 11px；
+#             4K 高清屏 (scale=2.25) 下实测每个中文字约为 15.8px。
+#   面板左右留白：两侧各 ~16px（合计 32px UI 单位）。
+#   盒内文字留白：盒内边距两侧各 ~6px（合计 12px UI 单位）。
 PX_PER_CJK = 11.0
-PANEL_PAD_UI = 54.0
-BOX_PAD_UI = 14.0
+PANEL_PAD_UI = 32.0
+BOX_PAD_UI = 12.0
 
-# 每行字数 = 盒内可用 px / 字宽，夹在 [14, 56]：极窄面板不至于算出 0，
-# 宽侧栏下充分利用空间，避免中途断行留下右侧大片空白。
+# 每行字数 = 盒内可用 px / 字宽，夹在 [14, 80]：极窄面板不至于算出 0，
+# 宽侧栏（如 1024px+）下充分利用空间，消除右侧大片死白。
 WRAP_CHARS_MIN = 14
-WRAP_CHARS_MAX = 56
+WRAP_CHARS_MAX = 80
 # 拿不到 context.region 时（无头测试、MockLayout）退回这个值，和旧行为一致。
 WRAP_CHARS_FALLBACK = 26
 
@@ -895,11 +890,13 @@ def wrap_text(text, max_chars=26, first_chars=None):
         p = paragraph.strip()
         if not p:
             continue
+        para_lines_count = 0
         while p:
-            budget = int(first_chars) if (first_chars and not lines) else int(max_chars)
+            budget = int(first_chars) if (first_chars and para_lines_count == 0) else int(max_chars)
             budget = max(1, budget)
             if len(p) <= budget:
                 lines.append(p)
+                para_lines_count += 1
                 break
             cut = budget
             # 仅当切分点正好处在英文/数字单词内部时，才回退到该单词起始处避免拆散单词
@@ -913,8 +910,35 @@ def wrap_text(text, max_chars=26, first_chars=None):
             if cut < len(p) and p[cut] in ("，", "。", "；", "！", "、", ",", ";", "？", "?", "）", ")"):
                 cut += 1
             lines.append(p[:cut].strip())
+            para_lines_count += 1
             p = p[cut:].strip()
     return lines
+
+
+def draw_ai_paragraph(layout, text, max_chars):
+    """绘制 AI 消息段落：
+    - 普通段落（一大段话）：首行缩进两格（'　　'），首行预算 max_chars - 2，续行顶格（max_chars）；
+    - 列表项 / 符号项（以 -、*、•、·、✓、数字编号等开头或表格行）：不加首行缩进，保持自然对齐。
+    """
+    if not text:
+        return
+    for raw_p in str(text).split("\n"):
+        p = raw_p.strip()
+        if not p:
+            continue
+        is_bullet = (
+            p.startswith(("-", "*", "•", "·", "✓", "✔", ">", "#"))
+            or bool(re.match(r"^[0-9①-⑩一二三四五六七八九十]+[.、\s\)]", p))
+            or (p.count("·") >= 2)
+        )
+        if not is_bullet:
+            first_c = max(2, max_chars - 2)
+            lines = wrap_text(p, max_chars=max_chars, first_chars=first_c)
+            for i, ln in enumerate(lines):
+                layout.label(text=("　　" + ln) if i == 0 else ln)
+        else:
+            for ln in wrap_text(p, max_chars=max_chars):
+                layout.label(text=ln)
 
 
 def user_msg_is_long(text, max_chars=18, min_lines=3):
@@ -936,18 +960,18 @@ def user_msg_summary(text, limit=16):
 def bubble_wrap_chars(context, factor=1.0):
     """从实际面板宽反推每行放得下多少个中文字。
 
-    链路（全部实测，见文件头常量注释）：
+    链路：
         内容宽 = region.width - 面板留白
         文字宽 = 内容宽 × factor - 盒内留白
         每行字数 = 文字宽 / 中文字宽
 
-    factor 默认 1.0：用户消息 2026-10-16 起**去掉了盒框**，文字直接排在面板
-    底色上，可用宽度就是整幅内容宽，不再是 0.8 倍。BOX_PAD_UI 仍留一点，
-    因为 label() 没有拉伸参数，文字按自然宽度渲染，留一点余量免得顶出边沿。
+    factor 默认 1.0：用户消息去掉了盒框，文字直接排在面板底色上；
+    AI 消息通过 layout.split(factor=AI_MARGIN_SPLIT) 承载。
 
-    region.width 是**设备像素**（ui_scale 已经乘进去，实测 420 与截图 420 px
-    一致），所以三个留白常量也要乘 ui_scale 才能对齐，最后相除时 ui_scale
-    自然约掉。拿不到 region 就退回固定值，不让面板外调用炸掉。
+    在 Blender 中，region.width 是设备像素。
+    UI 标签文本字宽在 standard DPI (scale=1.0) 下每个汉字约为 11px，
+    在高 DPI (如 4K 屏 scale=2.25) 下实测约为 15.8px，并非线性乘以 scale（11*2.25=24.75 会严重低估字数）。
+    因此字宽采用 max(10.0, 7.5 + 3.7 * scale) 进行高保真拟合，消除右侧空白。
     """
     region = getattr(context, "region", None)
     try:
@@ -966,7 +990,8 @@ def bubble_wrap_chars(context, factor=1.0):
     text_px = content_px * float(factor) - BOX_PAD_UI * scale
     if text_px <= 0:
         return WRAP_CHARS_MIN
-    chars = int(text_px / (PX_PER_CJK * scale))
+    char_w = max(10.0, 7.5 + 3.7 * scale)
+    chars = int(text_px / char_w)
     return max(WRAP_CHARS_MIN, min(WRAP_CHARS_MAX, chars))
 
 
@@ -1115,8 +1140,7 @@ def draw_chat_content(layout, context, state, run):
 
                 ai_chars = bubble_wrap_chars(context, factor=AI_MARGIN_SPLIT)
                 if intro:
-                    for ln in wrap_text(intro, max_chars=ai_chars):
-                        sbody.label(text=ln)
+                    draw_ai_paragraph(sbody, intro, ai_chars)
 
                 if questions:
                     if not is_latest_ai:
@@ -1150,13 +1174,14 @@ def draw_chat_content(layout, context, state, run):
                         rec_btn.custom_prompt = info.get("all_recommended", "全部按推荐参数开始建模！")
 
                 for gl in info.get("general", []):
-                    for ln in wrap_text(gl, max_chars=ai_chars):
-                        sbody.label(text=ln)
+                    draw_ai_paragraph(sbody, gl, ai_chars)
 
                 outro = info.get("outro", "")
                 if outro:
-                    for ln in wrap_text(outro, max_chars=ai_chars):
-                        sbody.label(text=ln)
+                    draw_ai_paragraph(sbody, outro, ai_chars)
+
+                if not intro and not questions and not info.get("general") and not outro and item.text.strip():
+                    draw_ai_paragraph(sbody, item.text, ai_chars)
 
                 if item.added_objects_str:
                     res_box = abox

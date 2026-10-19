@@ -268,6 +268,10 @@ def main():
             U.push_history(state, "你",
                            "历史消息 22：做一个精致的中式紫砂茶杯，杯身要能看出"
                            "砂颗粒的质感，把手做成竹节形，壶嘴短一点")
+        elif i == 23:
+            U.push_history(state, "AI",
+                           "历史消息 23：好的，已为您开始制作中式紫砂茶杯，"
+                           "正在分析几何结构与泥料质感并规划建模步骤")
         else:
             U.push_history(state, "你" if i % 2 == 0 else "AI", f"历史消息 {i}")
     layout_order = MockLayout()
@@ -303,15 +307,18 @@ def main():
        "用户消息应当无框，实际宿主链=%r" % (host_kind_of("历史消息 22"),))
     ck("人的消息靠右分栏", "split" in host_kind_of("历史消息 22"),
        "用户消息应当在 split 列里靠右排布，实际宿主链=%r" % (host_kind_of("历史消息 22"),))
-    # 只有「你」说的话缩进，而且**只缩首行** —— AI 的回复不进盒也不缩进。
-    # 22 号那条长指令折出来的所有行 = 从它那行到下一条历史消息之前那一段。
-    # 用切片而不是按内容过滤：折行后的续行不含「历史消息」字样，按内容筛只能
-    # 捞到第一行 —— 那正是上一版断言空过的原因。
+    # 「你」和「AI」说的大段话都首行缩进两格，续行顶格。
+    # 22 号与 23 号那条长指令折出来的所有行 = 从它那行到下一条历史消息之前那一段。
     i22 = next((i for i, t in enumerate(seq) if "历史消息 22" in t), -1)
     j = next((k for k in range(i22 + 1, len(seq)) if "历史消息" in seq[k]), len(seq))
     tea_lines = seq[i22:j] if i22 >= 0 else []
     short_user = [t for t in seq if "历史消息 22" in t]
-    ai_msgs = [t for t in seq if "历史消息 21" in t or "历史消息 23" in t]
+
+    i23 = next((i for i, t in enumerate(seq) if "历史消息 23" in t), -1)
+    k = next((k for k in range(i23 + 1, len(seq)) if "历史消息" in seq[k]), len(seq))
+    ai_23_lines = seq[i23:k] if i23 >= 0 else []
+    single_ai = [t for t in seq if "历史消息 21" in t]
+
     ck("长用户消息确实折成了多行（否则下面两条断言无从区分）",
        len(tea_lines) >= 2,
        "长指令应折行，实际只有 %d 行：%r" % (len(tea_lines), tea_lines))
@@ -328,8 +335,11 @@ def main():
     lines_snow = U.wrap_text(t_snow, max_chars=22, first_chars=20)
     ck("符号空格不提前截断", any("雪堆" in l for l in lines_snow if "烟囱" in l),
        "烟囱行应包含雪堆，不应提前在+空格截断造成大空隙：%r" % (lines_snow,))
-    ck("AI 的消息不缩进", all(not t.startswith("　　") for t in ai_msgs),
-       "AI 的话不进盒也不缩进：%r" % ai_msgs)
+    ck("AI 消息段落首行缩进两格",
+       bool(ai_23_lines) and ai_23_lines[0].startswith("　　")
+       and all(not t.startswith("　　") for t in ai_23_lines[1:])
+       and bool(single_ai) and single_ai[0].startswith("　　"),
+       "AI 消息首行应缩进、续行顶格：%r, %r" % (ai_23_lines, single_ai))
     ck("AI 整段套一个盒", "box" in host_kind_of("历史消息 21"),
        "AI 回复应当整段一个盒，实际宿主链=%r" % (host_kind_of("历史消息 21"),))
     ck("AI 那个盒右边留了间距", "split" in host_kind_of("历史消息 21"),
