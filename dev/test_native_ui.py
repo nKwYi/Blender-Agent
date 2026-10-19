@@ -10,6 +10,7 @@
 """
 import os
 import sys
+import json
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -258,6 +259,26 @@ def main():
     snow_submit_ops = [op for op in layout_snow.all_operators() if op["id"] == "deepseek.submit_selection"]
     ck("snow_clarify_has_options", any("冰屋" in op["text"] for op in snow_submit_ops), "圈号与全角斜杠格式必须被正确解析为按钮")
     ck("snow_clarify_has_rec_btn", any("按推荐参数开始建模" in op["text"] for op in snow_submit_ops), "圈号格式下必须生成一键推荐建模按钮")
+
+    # 6c. 验证冗长技术细节与多步骤自动折叠（消除认知噪音）
+    state.history.clear()
+    msg_ai_verbose = state.history.add()
+    msg_ai_verbose.role = "AI"
+    msg_ai_verbose.text = (
+        "遮雨棚需要确认核心细节：\n"
+        "外观 · 名称 · 常见叫法\n"
+        "等间距细长凸起 · 压筋板\n"
+        "波浪形起伏 · 瓦楞板\n"
+        "1. 板材形态：压筋板 (推荐) / 瓦楞板\n"
+        "另外遮雨棚本体参数：出挑 1.5m 宽 × 3.6m 长，装在建筑正面外侧。"
+    )
+    msg_ai_verbose.steps_json = json.dumps(["分析场景现有结构", "创建基础几何体", "配置材质"])
+    layout_verbose = MockLayout()
+    U.draw_chat_content(layout_verbose, bpy.context, state, run_done)
+    v_texts = layout_verbose.all_texts()
+    ck("ai_steps_folded", any("执行了 3 项建模操作" in t for t in v_texts), "多步工具调用应自动收折为紧凑操作折叠项")
+    ck("ai_verbose_intro_folded", any("查看方案分析与说明" in t for t in v_texts), "大段科普对比应自动折叠，不霸占首屏空间")
+    ck("ai_params_folded", any("查看补充参数与技术细节" in t for t in v_texts), "大段长参数应自动折叠")
 
     # 7. 输入区必须在历史之前：侧栏只能整体滚动，输入框排到长历史下面就用不了
     state.history.clear()

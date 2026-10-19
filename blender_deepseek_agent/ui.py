@@ -1112,21 +1112,31 @@ def draw_chat_content(layout, context, state, run):
                 if isinstance(acol, tuple):
                     acol = acol[0]
                 abox = acol.box()
-                if item.duration_str:
-                    arow = abox.row(align=True)
-                    arow.alignment = 'LEFT'
-                    arow.label(text=f"耗时 {item.duration_str}", icon='COMMUNITY')
-
                 if item.steps_json:
                     try:
                         steps = json.loads(item.steps_json)
                     except Exception:
                         steps = []
                     if steps:
-                        # 同一个盒，不再为了操作列表再开一层。
-                        abox.label(text="执行的操作：", icon='FILE_SCRIPT')
-                        for st in steps:
-                            abox.label(text=f"✓ {st}")
+                        dur_text = f"（耗时 {item.duration_str}）" if item.duration_str else ""
+                        if len(steps) > 1:
+                            p_id = f"chat.ai_steps_{getattr(item, 'uid', idx)}"
+                            panel_res = abox.panel(p_id, default_closed=True)
+                            if isinstance(panel_res, tuple):
+                                shdr, sbody_p = panel_res
+                                if shdr:
+                                    shdr.label(text=f"执行了 {len(steps)} 项建模操作{dur_text}", icon='CHECKMARK')
+                                for st in steps:
+                                    sbody_p.label(text=f"✓ {st}")
+                            else:
+                                for st in steps:
+                                    panel_res.label(text=f"✓ {st}")
+                        else:
+                            abox.label(text=f"✓ {steps[0]}{dur_text}", icon='CHECKMARK')
+                elif item.duration_str:
+                    arow = abox.row(align=True)
+                    arow.alignment = 'LEFT'
+                    arow.label(text=f"耗时 {item.duration_str}", icon='COMMUNITY')
 
                 info = parse_interactive_options(item.text)
                 intro = info.get("intro", "")
@@ -1140,7 +1150,22 @@ def draw_chat_content(layout, context, state, run):
 
                 ai_chars = bubble_wrap_chars(context, factor=AI_MARGIN_SPLIT)
                 if intro:
-                    draw_ai_paragraph(sbody, intro, ai_chars)
+                    intro_paras = [p.strip() for p in intro.split("\n") if p.strip()]
+                    if len(intro_paras) <= 2:
+                        draw_ai_paragraph(sbody, intro, ai_chars)
+                    else:
+                        # 仅展示首句开场，将其余长篇术语科普与对比折叠
+                        draw_ai_paragraph(sbody, intro_paras[0], ai_chars)
+                        p_id = f"chat.ai_intro_more_{getattr(item, 'uid', idx)}"
+                        panel_res = sbody.panel(p_id, default_closed=True)
+                        more_intro = "\n".join(intro_paras[1:])
+                        if isinstance(panel_res, tuple):
+                            ihdr, ibody = panel_res
+                            if ihdr:
+                                ihdr.label(text=f"查看方案分析与说明（{len(intro_paras) - 1}项）", icon='INFO')
+                            draw_ai_paragraph(ibody, more_intro, ai_chars)
+                        else:
+                            draw_ai_paragraph(panel_res, more_intro, ai_chars)
 
                 if questions:
                     if not is_latest_ai:
@@ -1173,15 +1198,42 @@ def draw_chat_content(layout, context, state, run):
                                                 icon='PLAY')
                         rec_btn.custom_prompt = info.get("all_recommended", "全部按推荐参数开始建模！")
 
-                for gl in info.get("general", []):
-                    draw_ai_paragraph(sbody, gl, ai_chars)
+                gen_list = info.get("general", [])
+                if gen_list:
+                    gen_text = "\n".join(gen_list).strip()
+                    if len(gen_list) > 1 or len(gen_text) > 25:
+                        p_id = f"chat.ai_params_{getattr(item, 'uid', idx)}"
+                        panel_res = sbody.panel(p_id, default_closed=True)
+                        if isinstance(panel_res, tuple):
+                            ghdr, gbody = panel_res
+                            if ghdr:
+                                ghdr.label(text="查看补充参数与技术细节", icon='PROPERTIES')
+                            draw_ai_paragraph(gbody, gen_text, ai_chars)
+                        else:
+                            draw_ai_paragraph(panel_res, gen_text, ai_chars)
+                    else:
+                        draw_ai_paragraph(sbody, gen_text, ai_chars)
 
                 outro = info.get("outro", "")
-                if outro:
+                if outro and not questions:
                     draw_ai_paragraph(sbody, outro, ai_chars)
 
                 if not intro and not questions and not info.get("general") and not outro and item.text.strip():
-                    draw_ai_paragraph(sbody, item.text, ai_chars)
+                    full_paras = [p.strip() for p in item.text.split("\n") if p.strip()]
+                    if len(full_paras) > 2:
+                        draw_ai_paragraph(sbody, full_paras[0], ai_chars)
+                        p_id = f"chat.ai_body_more_{getattr(item, 'uid', idx)}"
+                        panel_res = sbody.panel(p_id, default_closed=True)
+                        more_full = "\n".join(full_paras[1:])
+                        if isinstance(panel_res, tuple):
+                            fhdr, fbody = panel_res
+                            if fhdr:
+                                fhdr.label(text=f"查看完整说明（{len(full_paras) - 1}段）", icon='INFO')
+                            draw_ai_paragraph(fbody, more_full, ai_chars)
+                        else:
+                            draw_ai_paragraph(panel_res, more_full, ai_chars)
+                    else:
+                        draw_ai_paragraph(sbody, item.text, ai_chars)
 
                 if item.added_objects_str:
                     res_box = abox
