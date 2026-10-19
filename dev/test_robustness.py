@@ -61,8 +61,8 @@ class MockLayout:
         if text:
             self.texts.append(str(text))
 
-    def operator(self, op_id, text="", icon='NONE', depress=False):
-        self.operators.append({"id": op_id, "text": text, "icon": icon, "depress": depress})
+    def operator(self, op_id, text="", icon='NONE', depress=False, **kw):
+        self.operators.append({"id": op_id, "text": text, "icon": icon, "depress": depress, "kw": kw})
 
         class OpDummy:
             def __setattr__(self, name, value):

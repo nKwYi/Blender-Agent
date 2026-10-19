@@ -227,6 +227,10 @@ class DEEPSEEK_PG_msg(bpy.types.PropertyGroup):
     raw_prompt: bpy.props.StringProperty()
     artifacts_json: bpy.props.StringProperty(default="")
     msg_type: bpy.props.StringProperty(default="CHAT")
+    show_steps: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
+    show_intro_more: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
+    show_params: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
+    show_body_more: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
 
 
 def _tag(context):
@@ -861,6 +865,29 @@ class DEEPSEEK_OT_submit_selection(bpy.types.Operator):
         return dispatch_run_prompt(context, text_override=p_text, reporter=self.report)
 
 
+class DEEPSEEK_OT_toggle_ai_detail(bpy.types.Operator):
+    """展开或折叠 AI 回复中的步骤、技术细节或补充说明（纯本地安全切换，不破坏容器布局）"""
+    bl_idname = "deepseek.toggle_ai_detail"
+    bl_label = "展开/折叠详情"
+    bl_description = "点击展开或折叠此项详细内容"
+    bl_options = {'INTERNAL'}
+
+    uid: bpy.props.IntProperty(default=0)
+    field: bpy.props.StringProperty(default="steps")
+
+    def execute(self, context):
+        state = getattr(context.scene, "deepseek_agent", None) if context.scene else None
+        if not state:
+            return {'CANCELLED'}
+        for item in state.history:
+            if getattr(item, "uid", 0) == self.uid:
+                cur = getattr(item, f"show_{self.field}", False)
+                setattr(item, f"show_{self.field}", not cur)
+                break
+        _tag(context)
+        return {'FINISHED'}
+
+
 # ---------------------------------------------------------------- render helpers
 def ensure_notes(state, count):
     """预分配「其他」备注槽位。
@@ -1120,17 +1147,19 @@ def draw_chat_content(layout, context, state, run):
                     if steps:
                         dur_text = f"（耗时 {item.duration_str}）" if item.duration_str else ""
                         if len(steps) > 1:
-                            p_id = f"chat.ai_steps_{getattr(item, 'uid', idx)}"
-                            panel_res = abox.panel(p_id, default_closed=True)
-                            if isinstance(panel_res, tuple):
-                                shdr, sbody_p = panel_res
-                                if shdr:
-                                    shdr.label(text=f"执行了 {len(steps)} 项建模操作{dur_text}", icon='CHECKMARK')
+                            is_open = getattr(item, "show_steps", False)
+                            icon = 'TRIA_DOWN' if is_open else 'TRIA_RIGHT'
+                            r = abox.row(align=True)
+                            r.alignment = 'LEFT'
+                            btn = r.operator("deepseek.toggle_ai_detail",
+                                             text=f"执行了 {len(steps)} 项建模操作{dur_text}",
+                                             icon=icon,
+                                             emboss=False)
+                            btn.uid = getattr(item, 'uid', 0) or (idx + 1)
+                            btn.field = "steps"
+                            if is_open:
                                 for st in steps:
-                                    sbody_p.label(text=f"✓ {st}")
-                            else:
-                                for st in steps:
-                                    panel_res.label(text=f"✓ {st}")
+                                    abox.label(text=f"  ✓ {st}")
                         else:
                             abox.label(text=f"✓ {steps[0]}{dur_text}", icon='CHECKMARK')
                 elif item.duration_str:
@@ -1156,16 +1185,19 @@ def draw_chat_content(layout, context, state, run):
                     else:
                         # 仅展示首句开场，将其余长篇术语科普与对比折叠
                         draw_ai_paragraph(sbody, intro_paras[0], ai_chars)
-                        p_id = f"chat.ai_intro_more_{getattr(item, 'uid', idx)}"
-                        panel_res = sbody.panel(p_id, default_closed=True)
-                        more_intro = "\n".join(intro_paras[1:])
-                        if isinstance(panel_res, tuple):
-                            ihdr, ibody = panel_res
-                            if ihdr:
-                                ihdr.label(text=f"查看方案分析与说明（{len(intro_paras) - 1}项）", icon='INFO')
-                            draw_ai_paragraph(ibody, more_intro, ai_chars)
-                        else:
-                            draw_ai_paragraph(panel_res, more_intro, ai_chars)
+                        is_open = getattr(item, "show_intro_more", False)
+                        icon = 'TRIA_DOWN' if is_open else 'TRIA_RIGHT'
+                        r = sbody.row(align=True)
+                        r.alignment = 'LEFT'
+                        btn = r.operator("deepseek.toggle_ai_detail",
+                                         text=f"查看方案分析与说明（{len(intro_paras) - 1}项）",
+                                         icon=icon,
+                                         emboss=False)
+                        btn.uid = getattr(item, 'uid', 0) or (idx + 1)
+                        btn.field = "intro_more"
+                        if is_open:
+                            more_intro = "\n".join(intro_paras[1:])
+                            draw_ai_paragraph(sbody, more_intro, ai_chars)
 
                 if questions:
                     if not is_latest_ai:
@@ -1202,15 +1234,18 @@ def draw_chat_content(layout, context, state, run):
                 if gen_list:
                     gen_text = "\n".join(gen_list).strip()
                     if len(gen_list) > 1 or len(gen_text) > 25:
-                        p_id = f"chat.ai_params_{getattr(item, 'uid', idx)}"
-                        panel_res = sbody.panel(p_id, default_closed=True)
-                        if isinstance(panel_res, tuple):
-                            ghdr, gbody = panel_res
-                            if ghdr:
-                                ghdr.label(text="查看补充参数与技术细节", icon='PROPERTIES')
-                            draw_ai_paragraph(gbody, gen_text, ai_chars)
-                        else:
-                            draw_ai_paragraph(panel_res, gen_text, ai_chars)
+                        is_open = getattr(item, "show_params", False)
+                        icon = 'TRIA_DOWN' if is_open else 'TRIA_RIGHT'
+                        r = sbody.row(align=True)
+                        r.alignment = 'LEFT'
+                        btn = r.operator("deepseek.toggle_ai_detail",
+                                         text="查看补充参数与技术细节",
+                                         icon=icon,
+                                         emboss=False)
+                        btn.uid = getattr(item, 'uid', 0) or (idx + 1)
+                        btn.field = "params"
+                        if is_open:
+                            draw_ai_paragraph(sbody, gen_text, ai_chars)
                     else:
                         draw_ai_paragraph(sbody, gen_text, ai_chars)
 
@@ -1222,16 +1257,19 @@ def draw_chat_content(layout, context, state, run):
                     full_paras = [p.strip() for p in item.text.split("\n") if p.strip()]
                     if len(full_paras) > 2:
                         draw_ai_paragraph(sbody, full_paras[0], ai_chars)
-                        p_id = f"chat.ai_body_more_{getattr(item, 'uid', idx)}"
-                        panel_res = sbody.panel(p_id, default_closed=True)
-                        more_full = "\n".join(full_paras[1:])
-                        if isinstance(panel_res, tuple):
-                            fhdr, fbody = panel_res
-                            if fhdr:
-                                fhdr.label(text=f"查看完整说明（{len(full_paras) - 1}段）", icon='INFO')
-                            draw_ai_paragraph(fbody, more_full, ai_chars)
-                        else:
-                            draw_ai_paragraph(panel_res, more_full, ai_chars)
+                        is_open = getattr(item, "show_body_more", False)
+                        icon = 'TRIA_DOWN' if is_open else 'TRIA_RIGHT'
+                        r = sbody.row(align=True)
+                        r.alignment = 'LEFT'
+                        btn = r.operator("deepseek.toggle_ai_detail",
+                                         text=f"查看完整说明（{len(full_paras) - 1}段）",
+                                         icon=icon,
+                                         emboss=False)
+                        btn.uid = getattr(item, 'uid', 0) or (idx + 1)
+                        btn.field = "body_more"
+                        if is_open:
+                            more_full = "\n".join(full_paras[1:])
+                            draw_ai_paragraph(sbody, more_full, ai_chars)
                     else:
                         draw_ai_paragraph(sbody, item.text, ai_chars)
 
@@ -1700,6 +1738,7 @@ OPERATORS = (
     DEEPSEEK_OT_new_task,
     DEEPSEEK_OT_fetch_models, DEEPSEEK_OT_set_model,
     DEEPSEEK_OT_quick_pill, DEEPSEEK_OT_submit_selection,
+    DEEPSEEK_OT_toggle_ai_detail,
 )
 
 CLASSES = (DEEPSEEK_PG_msg, DEEPSEEK_PG_note, DEEPSEEK_PG_state) + OPERATORS + (

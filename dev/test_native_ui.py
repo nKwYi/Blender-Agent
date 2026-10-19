@@ -62,8 +62,10 @@ class MockLayout:
         if text:
             self.texts.append(str(text))
 
-    def operator(self, op_id, text="", icon='NONE'):
-        self.operators.append({"id": op_id, "text": text, "icon": icon})
+    def operator(self, op_id, text="", icon='NONE', **kw):
+        self.operators.append({"id": op_id, "text": text, "icon": icon, "kw": kw})
+        if text:
+            self.texts.append(str(text))
 
         class OpDummy:
             def __setattr__(self, name, value):
@@ -279,6 +281,22 @@ def main():
     ck("ai_steps_folded", any("执行了 3 项建模操作" in t for t in v_texts), "多步工具调用应自动收折为紧凑操作折叠项")
     ck("ai_verbose_intro_folded", any("查看方案分析与说明" in t for t in v_texts), "大段科普对比应自动折叠，不霸占首屏空间")
     ck("ai_params_folded", any("查看补充参数与技术细节" in t for t in v_texts), "大段长参数应自动折叠")
+
+    # 验证输入区与按钮绝对未被折叠吞噬
+    v_tokens = layout_verbose.all_tokens()
+    has_prompt_prop = any(k == "prop" and v == "prompt" for k, v in v_tokens)
+    has_send_op = any(k == "op" and v == "deepseek.run_prompt" for k, v in v_tokens)
+    ck("composer_not_folded", has_prompt_prop and has_send_op, "AI 详情折叠时输入区与操作按钮必须完全可见且未被折叠")
+
+    # 验证折叠项初始未展开，展开后具体步骤出现且输入区依然可见
+    ck("steps_initially_folded", "创建基础几何体" not in v_texts, "未展开时具体步骤不应占用版面")
+    msg_ai_verbose.show_steps = True
+    layout_expanded = MockLayout()
+    U.draw_chat_content(layout_expanded, bpy.context, state, run_done)
+    exp_texts = layout_expanded.all_texts()
+    ck("steps_expand_on_click", any("创建基础几何体" in t for t in exp_texts), "展开后具体步骤应正确列出")
+    exp_tokens = layout_expanded.all_tokens()
+    ck("composer_visible_when_expanded", any(k == "prop" and v == "prompt" for k, v in exp_tokens), "展开时输入区依然完好可见")
 
     # 7. 输入区必须在历史之前：侧栏只能整体滚动，输入框排到长历史下面就用不了
     state.history.clear()
