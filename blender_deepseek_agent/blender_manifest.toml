@@ -1,8 +1,8 @@
 schema_version = "1.0.0"
 id = "blender_deepseek_agent"
 version = "0.5.0"
-name = "Blender DeepSeek Agent"
-tagline = "AI-powered Blender control via DeepSeek & MiniMax"
+name = "Blender Agent"
+tagline = "AI-powered Blender control via natural language"
 maintainer = "Blender Agent <agent@example.com>"
 type = "add-on"
 blender_version_min = "5.2.0"
@@ -10,4 +10,4 @@ license = ["SPDX:MIT"]
 copyright = ["2026 Blender Agent"]
 
 [permissions]
-network = "调用 DeepSeek API 把自然语言指令翻译成工具调用"
+network = "调用 AI 服务商 API 把自然语言指令翻译成工具调用"

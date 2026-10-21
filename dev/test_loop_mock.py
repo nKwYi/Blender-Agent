@@ -152,7 +152,7 @@ try:
     agent_loop("创建立方体", chat=ScriptedChat([]), config={"api_key": "", "max_turns": 4})
     check("缺 Key 必须抛 AgentError", False, "没有抛异常")
 except AgentError as error:
-    check("缺 Key 报可读中文错误", "未配置 DeepSeek API Key" in error.message, error.message)
+    check("缺 Key 报可读中文错误", "未配置 API Key" in error.message, error.message)
 
 print(f"RESULT loop: {len(failures)} failed")
 if failures:

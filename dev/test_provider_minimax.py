@@ -74,7 +74,7 @@ try:
     }
     agent.urllib.request.urlopen = lambda req, timeout=10: MockResponse(mock_models_payload)
     models = agent.fetch_available_models(api_key="sk-cp-test", base_url="https://api.minimax.cn/v1")
-    check("成功解析 MiniMax 官方模型列表（含 M3.1 Flash 预览版）", "MiniMax-M3.1-Flash-Preview" in models and "MiniMax-M3" in models, models)
+    check("成功解析 MiniMax 官方模型列表（含 M3.1 Flash）", "MiniMax-M3.1-Flash" in models and "MiniMax-M3" in models, models)
 
     # 模拟空 Key 拒绝
     try:

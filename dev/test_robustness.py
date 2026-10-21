@@ -1,4 +1,4 @@
-"""Robustness & stress tests for Blender DeepSeek Agent.
+"""Robustness & stress tests for Blender Agent.
 
 Validates stability under edge cases, malformed inputs, scale limits,
 and unexpected user/model behaviors.

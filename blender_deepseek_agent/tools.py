@@ -177,9 +177,21 @@ _EXEC_G = None
 
 
 def _exec_globals():
+    """execute_blender_code 的执行作用域。
+
+    补上 mathutils：Blender 的文本编辑器/控制台默认预导入
+    Vector / Matrix / Euler，模型（按 Blender 惯例写的脚本）会直接用
+    `Vector((0,0,0))`。原先作用域只有 bpy/math/context，模型一用
+    Vector 就 NameError，然后反复重试 —— 每次重试都要用户在面板里
+    批一次，GUI 下会直接耗尽轮次。
+    """
     global _EXEC_G
     if _EXEC_G is None:
-        _EXEC_G = {"bpy": bpy, "math": math, "context": bpy.context, "__name__": "deepseek_exec"}
+        import mathutils
+        _EXEC_G = {"bpy": bpy, "math": math, "mathutils": mathutils,
+                   "Vector": mathutils.Vector, "Matrix": mathutils.Matrix,
+                   "Euler": mathutils.Euler, "Quaternion": mathutils.Quaternion,
+                   "context": bpy.context, "__name__": "deepseek_exec"}
     return _EXEC_G
 
 

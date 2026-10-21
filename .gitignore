@@ -24,3 +24,18 @@ ui_workbench/data/shots/*_full.png
 dev/_tmp_verify/
 _pipe_renders/
 dev/_junklist.txt
+
+# ---- 密钥与本地环境（**绝不入库**）----
+.env
+.env.*
+*.env
+!.env.example
+# 本机 Blender / API 凭据
+*.key
+*.pem
+userpref.blend
+
+# ---- 宣传片制作（promo/）：原始录屏、配音、中间产物与成片（>200MB），不入库 ----
+# 这一整套是宣传片的**生产工作区**，不是插件的一部分；
+# 宣传片成片另行发布（B站 / 小红书），扩展本体以 Releases 上的 zip 为准。
+promo/

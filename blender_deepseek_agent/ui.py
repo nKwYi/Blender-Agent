@@ -652,7 +652,7 @@ class DEEPSEEK_OT_show(bpy.types.Operator):
             "参数：" + json.dumps(call.args, ensure_ascii=False, indent=2),
             "返回：" + json.dumps(call.result, ensure_ascii=False, indent=2),
         ])
-        text = state.transcript or bpy.data.texts.new("DeepSeek 详情")
+        text = state.transcript or bpy.data.texts.new("Blender Agent 详情")
         text.clear()
         text.write(redact(body, state.api_key_cache))
         state.transcript = text
@@ -687,7 +687,7 @@ class DEEPSEEK_OT_export(bpy.types.Operator):
                 lines.append("— usage：" + json.dumps(run.usage, ensure_ascii=False))
             if run.receipt and run.receipt.lines:
                 lines.append("— 变更：" + "; ".join(run.receipt.lines))
-        text = state.transcript or bpy.data.texts.new("DeepSeek 详情")
+        text = state.transcript or bpy.data.texts.new("Blender Agent 详情")
         text.clear()
         text.write(redact("\n".join(lines), state.api_key_cache))
         state.transcript = text

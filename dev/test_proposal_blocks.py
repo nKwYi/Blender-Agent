@@ -31,6 +31,16 @@ WB = os.path.join(ROOT, "ui_workbench")
 UI_PY = os.path.join(ROOT, "blender_deepseek_agent", "ui.py")
 UI_IDS = os.path.join(ROOT, "blender_deepseek_agent", "ui_ids.py")
 
+# Windows 控制台默认 GBK。断言消息里带 ✓ 这类字符时，print 会抛
+# UnicodeEncodeError('gbk' codec can't encode character '\u2713')，
+# 把「断言不成立」变成「打印时崩溃」，掩盖真正的失败原因。
+# 这里只放宽输出流的编码，**不改变任何断言逻辑**。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 EXPECT_BLOCKS = 16
 EXPECT_TAB_COUNTS = {"chat": 7, "detail": 4, "settings": 5}
 EXPECT_STATUS_VARIANTS = ["busy", "approve", "partial", "failed"]

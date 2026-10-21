@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DeepSeek Agent · 新版 UI 需求与交互原型（交接给设计方）</title>
+<title>Blender Agent · 新版 UI 需求与交互原型（交接给设计方）</title>
 <style>
   :root{
     --bg:#191919; --bg2:#202020; --panel:#2b2b2b; --panel2:#3a3a3a; --box:#252525;
@@ -136,7 +136,7 @@
 </head>
 <body>
 <header>
-  <h1>DeepSeek Agent · 新版 UI 需求与交互原型</h1>
+  <h1>Blender Agent · 新版 UI 需求与交互原型</h1>
   <div class="lead">这份文件是<b>交接物</b>：给设计方（人或 AI）做新版界面设计用。里面 ① 锁死了 Blender 5.2 真实能用什么控件 ② 列了全部界面状态（可点） ③ 逐条需求带控件级实现约束和验收标准 ④ 交付格式要求。<b>右侧沙盒里的每个小面板都是"用 Blender 真做得出来的样子"画的，不是网页效果图。</b></div>
   <div class="hard">
     <b>最重要的一条硬约束：</b>Blender 面板<b>没有颜色系统、没有字体控制、没有 CSS 动画</b>。可表达的状态色只有两种——<code>layout.alert = True</code>（红）与 <code>active/enabled</code>（灰）。图标只能用内置枚举（<b>5.2 共 1033 个，名字写错会让整块面板从那一行起静默截断</b>，这是我们踩过的真实事故）。任何"渐变卡片、圆角气泡、悬浮层、淡入动画、品牌色"的方案都<b>无法实现</b>，请直接不要提。
@@ -218,7 +218,7 @@
       <div class="hudslot" id="hudSlot"></div>
     </div>
     <div class="bpwrap">
-      <div class="bp" id="bp" style="width:272px"><div class="bp-h">DeepSeek Agent<span class="r" id="bpHead"></span></div><div class="bp-b" id="bpBody"></div></div>
+      <div class="bp" id="bp" style="width:272px"><div class="bp-h">Blender Agent<span class="r" id="bpHead"></span></div><div class="bp-b" id="bpBody"></div></div>
       <div class="tabs"><span class="on">AI Agent</span><span>工具</span><span>视图</span><span>选项</span></div>
     </div>
   </div>
@@ -276,8 +276,8 @@
       <li>成功回复：<i>"我在场景中创建了一个 1 米见方的立方体 RedCube（位于 [2, 0, 0.5]，避免与原有 Cube 重叠），并赋予了纯红色（[1,0,0]）、非金属、中等粗糙度的 PBR 材质。"</i></li>
       <li>工具返回：<code>{"status":"ok","object_name":"RedCube","material":"MAT_RedCube","base_color":[1,0,0,1],"inputs_set":["Base Color","Metallic","Roughness"]}</code></li>
       <li>usage：<code>{"prompt_tokens":1576,"completion_tokens":61,"prompt_cache_hit_tokens":1408,"prompt_cache_miss_tokens":168}</code></li>
-      <li>缺 Key：<i>"未配置 DeepSeek API Key：编辑 → 偏好设置 → 插件 → Blender DeepSeek Agent 里填入，或设置环境变量 DEEPSEEK_API_KEY"</i></li>
-      <li>断网：<i>"连不上 DeepSeek：&lt;urlopen error …&gt;（当前走系统代理 http://127.0.0.1:7890，确认它还开着）"</i></li>
+      <li>缺 Key：<i>"未配置 API Key：编辑 → 偏好设置 → 插件 → Blender Agent 里填入，或设置环境变量 DEEPSEEK_API_KEY"</i></li>
+      <li>断网：<i>"连不上模型服务：&lt;urlopen error …&gt;（当前走系统代理 http://127.0.0.1:7890，确认它还开着）"</i></li>
       <li>墙钟耗尽：<i>"已达到最大对话轮次或超时预算，操作可能只做了一半。"</i></li>
       <li>exec 崩溃：<code>{"error":"ZeroDivisionError: division by zero","type":"ZeroDivisionError","stdout":""}</code></li>
     </ul>
@@ -344,7 +344,7 @@ const STATES = [
   {g:'结果', n:'16 单请求超时', why:'超时和断网要分开：超时可能是模型在想要重试，断网是本机出网问题（本机走代理）。',
    body:()=> box('alert','<div class="small"><b>第 2 轮请求超时（20 秒）。</b>这一轮还没开始改场景，重试不会重复扣费。</div>')+row('<button class="btn blue">↻ 重试</button><button class="btn">⚙ 把超时改成 40 秒</button>')+trow('get_scene_info','ok','',0.3)+trow('—','dis','请求超时')},
   {g:'结果', n:'17 断网 / 代理没开', why:'实测：代理在时端口不通会返回 502 而不是连接失败。文案必须带上代理地址，否则用户会去怀疑 Key。',
-   body:()=> box('alert','<div class="small"><b>连不上 DeepSeek：</b>HTTP Error 502<br>（当前走系统代理 http://127.0.0.1:7890，确认它还开着）</div>')+row('<button class="btn">↻ 重试</button><button class="btn">🌐 检查代理</button>')},
+   body:()=> box('alert','<div class="small"><b>连不上模型服务：</b>HTTP Error 502<br>（当前走系统代理 http://127.0.0.1:7890，确认它还开着）</div>')+row('<button class="btn">↻ 重试</button><button class="btn">🌐 检查代理</button>')},
   {g:'结果', n:'18 exec 崩溃回喂', why:'execute_blender_code 崩了不中断会话，错误回喂给模型。界面要显示 Python  traceback 摘要。',
    body:()=> hd('工具调用')+trow('execute_blender_code','er','{"error":"ZeroDivisionError: division by zero","type":"ZeroDivisionError","stdout":"step 1 ok"}')+msg('AI','换成用 bmesh 来做，已修正。')+trow('execute_blender_code','ok','{"stdout":"step 1 ok\\nvolume=2.0"}')},
 
@@ -525,7 +525,7 @@ document.getElementById('outTpl').textContent =
 /* 复制任务书 */
 document.getElementById('copyBrief').onclick = async ()=>{
   const t = [
-    '【任务】为 Blender 扩展「DeepSeek Agent」设计新版 UI。目标平台 Blender 5.2.1 LTS，内嵌 Python 3.13。',
+    '【任务】为 Blender 扩展「Blender Agent」设计新版 UI。目标平台 Blender 5.2.1 LTS，内嵌 Python 3.13。',
     '',
     '【硬约束 · 已实测】只能用这些控件：',
     'textbox(data,"prop",initial_visible_lines,placeholder) / progress(type=BAR|RING,factor) /',

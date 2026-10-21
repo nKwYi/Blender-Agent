@@ -31,7 +31,7 @@ from blender_deepseek_agent.receipt import Receipt       # noqa: E402
 if not hasattr(bpy.types.Scene, "deepseek_agent"):
     bda.register()
 bda.config.get_config = lambda: {
-    "api_key": "sk-***", "key_source": "prefs", "model": "MiniMax-M3.1-Flash-Preview",
+    "api_key": "sk-***", "key_source": "prefs", "model": "MiniMax-M3.1-Flash",
     "base_url": "https://api.minimax.cn/v1", "provider": "MINIMAX",
     "timeout": 180, "max_turns": 20, "wall_budget": 600,
     "allow_arbitrary_code": True, "history_page": 3}

@@ -26,13 +26,13 @@ PROVIDERS = {
     "MINIMAX": {
         "name": "MiniMax",
         "base_url": "https://api.minimax.cn/v1",
-        "default_model": "MiniMax-M3.1-Flash-Preview",
+        "default_model": "MiniMax-M3.1-Flash",
         "doc_url": "https://platform.minimax.cn/docs/api-reference/api-overview",
         "key_env": "MINIMAX_API_KEY",
         "key_label": "MiniMax API Key (Token Plan)",
         "key_tip": "支持填入 MiniMax Token Plan API Key (sk-cp-... 或 sk-...)",
         "preset_models": [
-            "MiniMax-M3.1-Flash-Preview",
+            "MiniMax-M3.1-Flash",
             "MiniMax-M3",
             "MiniMax-M2.7",
             "MiniMax-M2.5",
@@ -47,7 +47,7 @@ DEFAULT_MAX_TURNS = 20
 WALL_BUDGET = 1800.0
 
 KEY_MISSING = (
-    "未配置 DeepSeek API Key：编辑 → 偏好设置 → 插件 → Blender DeepSeek Agent 里填入，"
+    "未配置 API Key：编辑 → 偏好设置 → 插件 → Blender Agent 里填入，"
     "或设置环境变量 DEEPSEEK_API_KEY / MINIMAX_API_KEY"
 )
 
@@ -91,6 +91,11 @@ def _on_provider_change(self, context):
 class DEEPSEEK_PT_prefs(bpy.types.AddonPreferences):
     bl_idname = PACKAGE_ID
 
+    # 偏好设置那一栏显示的名字，Blender 5.x 取自 blender_manifest.toml 的 name。
+    # 这里再钉一份，是为了让代码里也能看出对外叫「Blender Agent」，
+    # 而不是某个具体的 AI 服务商（DeepSeek / MiniMax 都是可换的服务商）。
+    bl_label = "Blender Agent"
+
     provider: bpy.props.EnumProperty(
         name="服务商",
         items=[
@@ -108,7 +113,7 @@ class DEEPSEEK_PT_prefs(bpy.types.AddonPreferences):
     model: bpy.props.StringProperty(
         name="模型",
         default=DEFAULT_MODEL,
-        description="模型标识符，如 deepseek-flash / MiniMax-M2.7",
+        description="模型标识符，如 deepseek-flash / MiniMax-M3.1-Flash",
     )
     base_url: bpy.props.StringProperty(name="Base URL", default=DEFAULT_BASE_URL)
     timeout: bpy.props.IntProperty(

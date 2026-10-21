@@ -229,8 +229,8 @@ def fetch_available_models(api_key, base_url, timeout=10):
     seen = set()
     models = []
     if "minimax" in base_url.lower():
-        seen.add("MiniMax-M3.1-Flash-Preview")
-        models.append("MiniMax-M3.1-Flash-Preview")
+        seen.add("MiniMax-M3.1-Flash")
+        models.append("MiniMax-M3.1-Flash")
 
     for m in raw_models:
         if m and m not in seen:

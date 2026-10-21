@@ -6,9 +6,9 @@ from bl_ext.user_default.blender_deepseek_agent import config, agent
 cfg = config.get_config()
 api_key = cfg['api_key']
 
-models = ['MiniMax-M3', 'MiniMax-M3.1-Flash-Preview', 'deepseek-chat']
+models = ['MiniMax-M3', 'MiniMax-M3.1-Flash', 'deepseek-chat']
 
-for m in ['MiniMax-M3', 'MiniMax-M3.1-Flash-Preview']:
+for m in ['MiniMax-M3', 'MiniMax-M3.1-Flash']:
     print(f"\n--- Testing {m} without tools ---")
     payload = {
         'model': m,

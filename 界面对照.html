@@ -331,7 +331,7 @@
   <h3><span class="who">我们 v0.1（现状）</span><span class="meta"><span class="chip">5.2.1 真机跑通</span><span class="chip">4 轮 / 3.9 秒</span></span></h3>
   <div class="body">
     <div class="bp-wrap"><div class="bp">
-      <div class="bp-h">DeepSeek Agent</div><div class="bp-b">
+      <div class="bp-h">Blender Agent</div><div class="bp-b">
         <div class="row"><span class="dot g"></span><span class="lbl" style="font-size:11.5px">Key 已配置（偏好设置）</span></div>
         <div class="row"><span class="dim" style="font-size:11.5px">模型: deepseek-flash</span></div>
         <div class="row"><div class="inp">创建一个红色立方体</div><span class="dim">✕</span></div>
@@ -363,7 +363,7 @@
   <h3><span class="who">我们 · P0 改造后</span><span class="meta"><span class="chip hot">只改 ui.py</span><span class="chip">控件已实测</span></span></h3>
   <div class="body">
     <div class="bp-wrap"><div class="bp">
-      <div class="bp-h">DeepSeek Agent <span class="dim" style="margin-left:auto;font-size:10.5px" id="demoElapsed"></span></div><div class="bp-b">
+      <div class="bp-h">Blender Agent <span class="dim" style="margin-left:auto;font-size:10.5px" id="demoElapsed"></span></div><div class="bp-b">
         <div class="row"><span class="dot g"></span><span class="lbl" style="font-size:11.5px">Key 已配置</span><span class="chip" style="margin-left:auto">deepseek-flash</span></div>
         <div class="hd">指令（textbox 3 行 · 已实测存在）</div>
         <div class="inp area" id="demoPrompt">创建一个红色立方体，然后把它移到 (2, 0, 0)</div>
@@ -372,7 +372,7 @@
           <button class="btn dis" title="P0 之后才有：多轮历史">↺ 重说</button>
         </div>
         <div class="box ok" id="demoReceipt" style="display:none"><div class="hd" style="margin-top:0;color:#9d9">可撤销</div><div style="font:11px var(--mono);color:#b9b9b9" id="demoReceiptTxt">objects: 3 → 4</div></div>
-        <div class="box alert" id="demoErr" style="display:none"><div style="font-size:11.5px">连不上 DeepSeek（当前走系统代理 127.0.0.1:7890，确认它还开着）</div><div class="row"><button class="btn" style="margin-top:5px">↻ 重试</button><span class="dim" style="font-size:11px">错误单独成盒，不再混在回复里</span></div></div>
+        <div class="box alert" id="demoErr" style="display:none"><div style="font-size:11.5px">连不上模型服务（当前走系统代理 127.0.0.1:7890，确认它还开着）</div><div class="row"><button class="btn" style="margin-top:5px">↻ 重试</button><span class="dim" style="font-size:11px">错误单独成盒，不再混在回复里</span></div></div>
         <div class="hd">对话</div>
         <div class="box" id="demoTalk" style="max-height:170px;overflow:hidden">
           <div class="msg me"><div class="who">你</div><div class="txt">创建一个红色立方体，然后把它移到 (2, 0, 0)</div></div>
