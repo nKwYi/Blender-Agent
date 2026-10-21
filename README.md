@@ -8,6 +8,13 @@ Blender 5.2 扩展 · v0.5.0 · MIT 协议 · 支持 DeepSeek / MiniMax
 
 ![建模助手面板](docs/shots/blender_agent_panel.png)
 
+<p align="center">
+  <img src="docs/shots/promo_cover.png" width="620" alt="宣传片《怪盗预告函》封面">
+</p>
+
+> 宣传片《怪盗预告函》：2 分 37 秒，32 个镜头，六个真实案例一帧没剪。
+> 在 B 站 / 小红书搜索「Blender Agent 怪盗预告函」。
+
 ---
 
 ## 目录
