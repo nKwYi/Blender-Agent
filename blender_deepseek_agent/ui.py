@@ -1235,23 +1235,34 @@ def draw_chat_content(layout, context, state, run):
                                                 icon='PLAY')
                         rec_btn.custom_prompt = prompt_text
                 else:
-                    gen_list = info.get("general", [])
-                    if gen_list:
-                        gen_text = "\n".join(gen_list).strip()
-                        draw_ai_paragraph(sbody, gen_text, ai_chars)
-                    elif item.text.strip():
-                        paras = [p.strip() for p in item.text.split("\n") if p.strip()]
-                        display_text = paras[0] if (steps and len(paras) > 1) else item.text
-                        draw_ai_paragraph(sbody, display_text, ai_chars)
+                    # 交付态 / 普通回复：优先提取开场核心结论，绝不把长篇参数列表塞回主聊天框
+                    intro_paras = [p.strip() for p in intro.split("\n") if p.strip()] if intro else []
+                    all_paras = [p.strip() for p in item.text.split("\n") if p.strip()]
+                    if steps:
+                        # 建模交付态：只展示 1 句核心结果摘要
+                        core_line = intro_paras[0] if intro_paras else (all_paras[0] if all_paras else "")
+                        if core_line:
+                            draw_ai_paragraph(sbody, core_line, ai_chars)
+                    else:
+                        # 普通对话态：最多展示前 2 段精炼内容
+                        short_paras = intro_paras[:2] if intro_paras else all_paras[:2]
+                        if short_paras:
+                            draw_ai_paragraph(sbody, "\n".join(short_paras), ai_chars)
 
                 if item.added_objects_str:
                     res_box = abox
                     res_box.label(text=f"新增对象：{item.added_objects_str}", icon='MESH_DATA')
 
-                if steps or (run and run.calls):
+                has_more_detail = bool(
+                    steps
+                    or (run and run.calls)
+                    or len(info.get("general", [])) > 1
+                    or len([p for p in item.text.split("\n") if p.strip()]) > 2
+                )
+                if has_more_detail:
                     drow = abox.row(align=True)
                     drow.alignment = 'RIGHT'
-                    dbtn = drow.operator("deepseek.switch_tab", text="查看完整步骤与用量 →", icon='CONSOLE', emboss=False)
+                    dbtn = drow.operator("deepseek.switch_tab", text="查看完整步骤与详情 →", icon='CONSOLE', emboss=False)
                     dbtn.tab = "DETAIL"
     # 3) 输入区贴在对话流下面：聊天窗口的阅读顺序是"上一条永远在输入框上面"，
     #    所以自己刚发的话不该出现在输入框下面。历史条数由偏好设置封顶，不会把输入框推出屏幕。
@@ -1331,6 +1342,32 @@ class DEEPSEEK_PT_chat(bpy.types.Panel):
 
 def draw_detail_content(layout, state, run):
     has_content = False
+
+    # 顶部快捷返回对话按钮
+    back_row = layout.row(align=True)
+    back_btn = back_row.operator("deepseek.switch_tab", text="← 返回对话面板", icon='BACK')
+    back_btn.tab = "CHAT"
+
+    # 0) 最近一次 AI 回复的完整步骤与说明（承接主聊天框极简化后收起的细节）
+    latest_ai = next((m for m in reversed(state.history) if m.role == "AI"), None) if state.history else None
+    if latest_ai:
+        has_content = True
+        mbox = layout.box()
+        dur_suffix = f"（耗时 {latest_ai.duration_str}）" if latest_ai.duration_str else ""
+        mbox.label(text=f"最新任务执行摘要{dur_suffix}", icon='CHECKMARK')
+        if latest_ai.steps_json:
+            try:
+                hist_steps = json.loads(latest_ai.steps_json)
+            except Exception:
+                hist_steps = []
+            for st in hist_steps:
+                mbox.label(text=f"  ✓ {st}")
+        if latest_ai.added_objects_str:
+            mbox.label(text=f"新增对象：{latest_ai.added_objects_str}", icon='MESH_DATA')
+        if latest_ai.text.strip():
+            mbox.separator()
+            mbox.label(text="完整回复说明：", icon='TEXT')
+            draw_ai_paragraph(mbox, latest_ai.text.strip(), max_chars=30)
 
     # 1) 工具调用记录
     if run and run.calls:
