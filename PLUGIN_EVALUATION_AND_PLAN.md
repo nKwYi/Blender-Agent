@@ -152,24 +152,24 @@
 ## 四、 分阶段可执行改造计划（Executable Action Plan）
 
 ### Phase 1 (P0)：核心交互重塑与致命 Bug 清零
-- [ ] **Task 1.1：修复追问多选题「点选即发送」Bug，实现真正的多题组合选择**
+- [x] **Task 1.1：修复追问多选题「点选即发送」Bug，实现真正的多题组合选择**
   - **目标文件**：[`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L811-L866) 与 [`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L1219-L1260)
   - **执行动作**：
     1. 将追问卡片中每个选项按钮绑定的算子从 `deepseek.submit_selection` 改为 `deepseek.select_option`，传入 `question` 与 `option`；
     2. 若某题尚未在 `state.selected_options_json` 中记录，默认将 `is_rec=True`（或第 1 项）作为当前选中态，渲染 `depress=True` 高亮样式与 `CHECKBOX_HLT` 图标；
     3. 底部统一渲染 1 个主提交按钮 `按所选方案开始建模`（绑定 `deepseek.submit_selection`，自动汇总所有题目的当前选中项发送给 AI）。
-- [ ] **Task 1.2：砍掉主对话流（CHAT）所有「伪折叠按钮」噪音，极简化 AI 气泡**
+- [x] **Task 1.2：砍掉主对话流（CHAT）所有「伪折叠按钮」噪音，极简化 AI 气泡**
   - **目标文件**：[`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L1160-L1289)
   - **执行动作**：
     1. 移除主对话气泡中的 `查看方案分析与说明`、`查看补充参数与技术细节`、`执行了 N 项建模操作`、`查看完整说明` 折叠按钮；
     2. **追问气泡**仅保留：1 句精炼导语 + 多题选项按钮组 + 底部「按所选方案开始建模」主按钮；
     3. **交付气泡**仅保留：顶部完成状态行（`已完成 · N 步 · X.Xs`）+ 1 句核心结果摘要 + 新增场景对象胶囊标签 + 右下角轻量跳转按钮 `查看执行详情 →`（点击切换至 `DETAIL` 页签查看完整步骤与输出）。
-- [ ] **Task 1.3：根除用户气泡中的 `ubox.panel()` 折叠逃逸隐患，并提供历史记录展开按钮**
+- [x] **Task 1.3：根除用户气泡中的 `ubox.panel()` 折叠逃逸隐患，并提供历史记录展开按钮**
   - **目标文件**：[`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L1106-L1135)、[`config.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/config.py#L135-L138)
   - **执行动作**：
     1. 删除 [`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L1124) 的 `ubox.panel()`，长用户消息采用纯文本折行展示；
     2. 将默认历史显示条数从 `3` 提升为 `6`，并在顶部提供 `↑ 展开全部 N 条历史记录` / `↑ 收起早期历史` 切换按钮。
-- [ ] **Task 1.4：修复 `DEEPSEEK_OT_undo_task` 方法名错误与孤立数据块清理**
+- [x] **Task 1.4：修复 `DEEPSEEK_OT_undo_task` 方法名错误与孤立数据块清理**
   - **目标文件**：[`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L541-L630)
   - **执行动作**：
     1. 将 `CONTROLLER.stop()` 修正为 `CONTROLLER.request_stop()`；
@@ -177,21 +177,21 @@
     3. 统一 `can_undo(state)` 与 `DEEPSEEK_OT_undo_task.poll()` 的判断条件，支持在追问态撤回上一轮对话并恢复输入框提示词。
 
 ### Phase 2 (P1)：代码质量与运行安全加固
-- [ ] **Task 2.1：移除 `get_config()` 在 `draw()` 中的强写副作用**
+- [x] **Task 2.1：移除 `get_config()` 在 `draw()` 中的强写副作用**
   - **目标文件**：[`config.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/config.py#L190-L219)
   - **执行动作**：删除 `get_config()` 中强行覆写 `p.timeout = 600`、`p.max_turns = 16`、`p.wall_budget = 1200` 的代码，尊重用户在设置面板中调小的参数。
-- [ ] **Task 2.2：限制 `fetch_models` 网络超时为 8 秒，防止主线程假死**
+- [x] **Task 2.2：限制 `fetch_models` 网络超时为 8 秒，防止主线程假死**
   - **目标文件**：[`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L766)
   - **执行动作**：将 `fetch_available_models(..., timeout=min(int(cfg["timeout"]), 8))` 超时上限锁定为 8 秒。
-- [ ] **Task 2.3：隔离 `tools.py` 的代码执行命名空间 `_EXEC_G`**
+- [x] **Task 2.3：隔离 `tools.py` 的代码执行命名空间 `_EXEC_G`**
   - **目标文件**：[`tools.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/tools.py#L176-L215)
   - **执行动作**：每次执行代码时基于基础环境字典生成干净副本，防止跨任务残留已删除 Blender 对象的悬空引用。
 
 ### Phase 3 (P2)：僵尸代码清理、热重载机制与自动化契约验收
-- [ ] **Task 3.1：清理 `DEEPSEEK_PG_state` 中的 13 个僵尸属性与死代码**
+- [x] **Task 3.1：清理 `DEEPSEEK_PG_state` 中的 13 个僵尸属性与死代码**
   - **目标文件**：[`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L200-L380)、[`__init__.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/__init__.py)
   - **执行动作**：移除 `DEEPSEEK_PG_note`、`ensure_notes` 及 `show_card_*` 等 13 个未使用的属性，并在 [`__init__.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/__init__.py) 中完善模块 `importlib.reload` 支持，确保开发态重载插件时所有新算子与 RNA 属性100%重新注册。
-- [ ] **Task 3.2：升级 `check_layout_contract()` 并在 Blender 5.2 无头模式下执行全量契约验收**
+- [x] **Task 3.2：升级 `check_layout_contract()` 并在 Blender 5.2 无头模式下执行全量契约验收**
   - **目标文件**：[`ui.py`](file:///e:/Three%20JS/Blender%20Agent/blender_deepseek_agent/ui.py#L1799-L1826)
   - **验收命令**：
     ```powershell

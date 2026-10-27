@@ -208,11 +208,6 @@ def get_current_action_text(run):
     return f"正在处理中... ({elapsed}秒)"
 
 
-class DEEPSEEK_PG_note(bpy.types.PropertyGroup):
-    """单个问题的「其他」自由备注，可直接绑定到 textbox"""
-    text: bpy.props.StringProperty(default="", options={'TEXTEDIT_UPDATE', 'SKIP_SAVE'})
-
-
 class DEEPSEEK_PG_msg(bpy.types.PropertyGroup):
     role: bpy.props.StringProperty()
     text: bpy.props.StringProperty()
@@ -276,14 +271,7 @@ def push_history(state, role, text, run=None, raw_prompt=""):
         else:
             item.msg_type = "EXECUTE" if modeling_calls else "CHAT"
 
-    # 收到追问时预分配「其他」备注槽位（draw 期间不允许写 ID 数据）
-    try:
-        qs = parse_interactive_options(item.text).get("questions") or []
-    except Exception:
-        qs = []
-    if qs and role == "AI":
-        state.notes.clear()
-        ensure_notes(state, len(qs))
+
 
 
 def refresh_tick():
@@ -350,32 +338,9 @@ class DEEPSEEK_PG_state(bpy.types.PropertyGroup):
     fetch_status_msg: bpy.props.StringProperty(default="", options={'SKIP_SAVE'})
     session_topic: bpy.props.StringProperty(default="", options={'SKIP_SAVE'})
     session_date: bpy.props.StringProperty(default="", options={'SKIP_SAVE'})
-    show_card_objects: bpy.props.BoolProperty(name="新增对象详情", default=False, options={'SKIP_SAVE'})
-    show_card_params: bpy.props.BoolProperty(name="建模参数详情", default=False, options={'SKIP_SAVE'})
-    show_card_script: bpy.props.BoolProperty(name="执行脚本摘要", default=False, options={'SKIP_SAVE'})
-    show_card_archive: bpy.props.BoolProperty(name="场景归档信息", default=False, options={'SKIP_SAVE'})
-    show_card_qa: bpy.props.BoolProperty(name="查看已确认细节", default=False, options={'SKIP_SAVE'})
-    show_user_params_detail: bpy.props.BoolProperty(name="查看用户参数详情", default=False, options={'SKIP_SAVE'})
     prompt_lines: bpy.props.IntProperty(name="输入框行数", default=3, min=1, max=10, description="拖动调节输入框高度（行数）", options={'SKIP_SAVE'})
     selected_options_json: bpy.props.StringProperty(default="{}", options={'SKIP_SAVE'})
-    # ---- v2 新增：结果区四 tab / 新增对象折叠 / 其他备注 / 渐进加载 ----
-    result_tab: bpy.props.EnumProperty(
-        name="结果区",
-        description="结果区当前显示的分组",
-        items=[
-            ('OBJECTS', "新增对象", "本次任务新增的对象清单", 'MESH_DATA', 0),
-            ('PARAMS', "建模参数", "几何参数、修改器与材质", 'MODIFIER', 1),
-            ('SCRIPT', "执行脚本", "实际执行的建模脚本", 'CONSOLE', 2),
-            ('ARCHIVE', "场景归档", "合集归属与撤销边界", 'OUTLINER_COLLECTION', 3),
-        ],
-        default='OBJECTS',
-        options={'SKIP_SAVE'},
-    )
-    show_result_list: bpy.props.BoolProperty(name="展开对象清单", default=False, options={'SKIP_SAVE'})
-    show_all_questions: bpy.props.BoolProperty(name="展开全部规格", default=False, options={'SKIP_SAVE'})
-    other_open_q: bpy.props.StringProperty(default="", options={'SKIP_SAVE'})
-    notes: bpy.props.CollectionProperty(type=DEEPSEEK_PG_note, options={'SKIP_SAVE'})
-    shown_count: bpy.props.IntProperty(default=2, min=2, max=200, options={'SKIP_SAVE'})
+    show_all_history: bpy.props.BoolProperty(name="展开全部历史", default=False, options={'SKIP_SAVE'})
     # 下一个用户气泡的 uid 发号器（在 draw 之外赋值，draw 期间不能写 ID 数据）
     next_uid: bpy.props.IntProperty(default=1, options={'SKIP_SAVE'})
 
@@ -557,7 +522,7 @@ class DEEPSEEK_OT_undo_task(bpy.types.Operator):
         # 1. 若当前任务还在运行，先安全终止，防止并发写入导致 C++ 内存冲突闪退
         if CONTROLLER.busy:
             try:
-                CONTROLLER.stop()
+                CONTROLLER.request_stop()
             except Exception:
                 pass
 
@@ -585,6 +550,10 @@ class DEEPSEEK_OT_undo_task(bpy.types.Operator):
                 col = bpy.data.collections.get(run.collection_name)
                 if col:
                     bpy.data.collections.remove(col)
+            try:
+                bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -732,10 +701,7 @@ class DEEPSEEK_OT_new_task(bpy.types.Operator):
         state.prompt = ""
         state.settled_phase = Phase.READY.value
         state.settled_err = ""
-        state.show_card_objects = False
-        state.show_card_params = False
-        state.show_card_script = False
-        state.show_card_archive = False
+        state.selected_options_json = "{}"
         state.session_topic = ""
         CONTROLLER.reset()
         _tag(context)
@@ -763,7 +729,7 @@ class DEEPSEEK_OT_fetch_models(bpy.types.Operator):
 
         try:
             from .agent import fetch_available_models
-            models = fetch_available_models(cfg["api_key"], cfg["base_url"], timeout=cfg["timeout"])
+            models = fetch_available_models(cfg["api_key"], cfg["base_url"], timeout=min(int(cfg.get("timeout", 8)), 8))
             state.fetched_models_json = json.dumps(models)
             state.fetch_status_msg = f"成功获取 {len(models)} 个可用模型"
             self.report({'INFO'}, f"成功拉取到 {len(models)} 个可用模型")
@@ -834,8 +800,67 @@ class DEEPSEEK_OT_quick_pill(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class DEEPSEEK_OT_toggle_all_history(bpy.types.Operator):
+    """展开或收起早期历史对话记录"""
+    bl_idname = "deepseek.toggle_all_history"
+    bl_label = "切换历史显示"
+    bl_options = set()
+
+    def execute(self, context):
+        state = getattr(context.scene, "deepseek_agent", None)
+        if state:
+            state.show_all_history = not state.show_all_history
+        _tag(context)
+        return {'FINISHED'}
+
+
+class DEEPSEEK_OT_select_option(bpy.types.Operator):
+    """在追问态下点选/切换某项规格参数（仅在本地更新勾选状态，不触发向 LLM 发送请求）"""
+    bl_idname = "deepseek.select_option"
+    bl_label = "选择规格参数"
+    bl_options = set()
+
+    question_idx: bpy.props.IntProperty(default=0)
+    question_title: bpy.props.StringProperty(default="")
+    option_value: bpy.props.StringProperty(default="")
+
+    def execute(self, context):
+        state = getattr(context.scene, "deepseek_agent", None)
+        if not state:
+            return {'CANCELLED'}
+        try:
+            sel = json.loads(state.selected_options_json or "{}")
+        except Exception:
+            sel = {}
+
+        key = str(self.question_idx)
+        sel[key] = {
+            "title": self.question_title,
+            "value": self.option_value,
+        }
+        state.selected_options_json = json.dumps(sel, ensure_ascii=False)
+        _tag(context)
+        return {'FINISHED'}
+
+
+class DEEPSEEK_OT_switch_tab(bpy.types.Operator):
+    """快捷切换界面页签"""
+    bl_idname = "deepseek.switch_tab"
+    bl_label = "切换页签"
+    bl_options = set()
+
+    tab: bpy.props.StringProperty(default="CHAT")
+
+    def execute(self, context):
+        state = getattr(context.scene, "deepseek_agent", None)
+        if state:
+            state.active_tab = self.tab
+        _tag(context)
+        return {'FINISHED'}
+
+
 class DEEPSEEK_OT_submit_selection(bpy.types.Operator):
-    """提交当前勾选的参数并开始建模（杜绝文本重复）"""
+    """提交已确认的规格参数组合并开始建模"""
     bl_idname = "deepseek.submit_selection"
     bl_label = "提交选择并建模"
     bl_options = set()
@@ -843,7 +868,7 @@ class DEEPSEEK_OT_submit_selection(bpy.types.Operator):
     custom_prompt: bpy.props.StringProperty(default="")
 
     def execute(self, context):
-        state = context.scene.deepseek_agent
+        state = getattr(context.scene, "deepseek_agent", None)
         if self.custom_prompt:
             p_text = self.custom_prompt
         else:
@@ -853,15 +878,25 @@ class DEEPSEEK_OT_submit_selection(bpy.types.Operator):
                 sel = {}
             all_chosen = []
             for k in sorted(sel.keys(), key=lambda x: int(x) if x.isdigit() else 0):
-                for val in sel[k]:
-                    if val and val not in all_chosen:
-                        all_chosen.append(val)
+                val_item = sel[k]
+                if isinstance(val_item, dict):
+                    v = val_item.get("value", "")
+                    t = val_item.get("title", "")
+                    if v:
+                        all_chosen.append(f"{t}: {v}" if t else v)
+                elif isinstance(val_item, list):
+                    for v in val_item:
+                        if v and v not in all_chosen:
+                            all_chosen.append(v)
+                elif isinstance(val_item, str) and val_item:
+                    all_chosen.append(val_item)
             if not all_chosen:
                 p_text = "全部按推荐参数开始建模！"
             else:
                 p_text = f"参数已确认：{'；'.join(all_chosen)}，开始建模！"
 
-        state.selected_options_json = "{}"
+        if state:
+            state.selected_options_json = "{}"
         return dispatch_run_prompt(context, text_override=p_text, reporter=self.report)
 
 
@@ -893,21 +928,6 @@ class DEEPSEEK_OT_toggle_ai_detail(bpy.types.Operator):
             setattr(target, f"show_{self.field}", not cur)
         _tag(context)
         return {'FINISHED'}
-
-
-# ---------------------------------------------------------------- render helpers
-def ensure_notes(state, count):
-    """预分配「其他」备注槽位。
-
-    notes 是 CollectionProperty，而 Panel.draw() 期间 Blender 会锁住 ID 数据写入
-    （AttributeError: Writing to ID classes in this context is not allowed），
-    所以槽位只能在 draw 之外（收到追问时 / operator 里）预先建好。
-    """
-    try:
-        while len(state.notes) < max(0, int(count)):
-            state.notes.add()
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------- panels
@@ -1103,195 +1123,136 @@ def draw_chat_content(layout, context, state, run):
         ebox.label(text="描述想创建的模型，或选择快捷标签：")
     else:
         hist_len = len(state.history)
-        max_show = max(1, int(config.get_config().get("history_page", 8)))
-        start_idx = max(0, hist_len - max_show)
-        if start_idx > 0:
-            layout.label(text=f"... 上方已折叠更早的 {start_idx} 条历史 ...", icon='TRIA_UP')
+        max_show = max(1, int(config.get_config().get("history_page", 6)))
+        show_all = getattr(state, "show_all_history", False)
+        start_idx = 0 if show_all else max(0, hist_len - max_show)
+        if not show_all and start_idx > 0:
+            r = layout.row(align=True)
+            r.alignment = 'CENTER'
+            r.operator("deepseek.toggle_all_history", text=f"↑ 展开更早的 {start_idx} 条历史", icon='TRIA_UP', emboss=False)
+        elif show_all and hist_len > max_show:
+            r = layout.row(align=True)
+            r.alignment = 'CENTER'
+            r.operator("deepseek.toggle_all_history", text="↓ 收起早期历史", icon='TRIA_DOWN', emboss=False)
 
         for idx in range(start_idx, hist_len):
             item = state.history[idx]
             if item.role == "你":
                 # 用户消息：靠右侧分栏排布（左侧留出 20% 空白缩进，右侧无盒框直接排布文字）
+                # 严禁使用折叠面板 API 避免 Blender 5.2 布局栈逃逸崩溃
                 sp = layout.split(factor=0.20)
                 sp.column()  # 左侧 20% 留白列
                 rcol = sp.column()  # 右侧 80% 文字排布列
 
                 chars = bubble_wrap_chars(context, factor=0.80)
-                ubox = rcol
-                target = ubox
-                if user_msg_is_long(item.text, max_chars=chars):
-                    p_id = f"chat.user_msg_{int(getattr(item, 'uid', 0) or 0) or (idx + 1)}"
-                    panel_res = ubox.panel(p_id, default_closed=False)
-                    if isinstance(panel_res, tuple):
-                        uheader, ubody = panel_res
-                        if uheader:
-                            uheader.alignment = 'RIGHT'
-                            uheader.label(text=user_msg_summary(item.text), icon='USER')
-                        target = ubody
-                    else:
-                        panel_res.label(text=user_msg_summary(item.text), icon='USER')
-                        target = panel_res
                 # 靠右贴紧排布，首行缩进两格，续行顶格
-                if target is not None:
-                    for i, ln in enumerate(wrap_text(item.text, max_chars=chars,
-                                                     first_chars=max(2, chars - 2))):
-                        urow = target.row()
-                        urow.alignment = 'RIGHT'
-                        urow.label(text=("　　" + ln) if i == 0 else ln)
+                for i, ln in enumerate(wrap_text(item.text, max_chars=chars,
+                                                 first_chars=max(2, chars - 2))):
+                    urow = rcol.row()
+                    urow.alignment = 'RIGHT'
+                    urow.label(text=("　　" + ln) if i == 0 else ln)
             else:
-                # AI 回的：**右边留一栏空白**，内容画在 split 返回的左边那列里
-                # （实测 split 返回左边列、宽 = factor × 内容宽，右边留白；
-                #  align 在 5.2 是 bool 且不影响位置，这里不传）。
-                # 用户原话「A 回复的内容要整体套一个盒」：耗时行 + 操作列表 +
-                # 引子 + 规格段 + 通用条目 + 结语 + 新增对象**全部装在同一个盒里**，
-                # 盒画在 split 返回的左边列上，右边自然空出一栏。
-                # 只有这一层盒；规格区不再是另一个盒，也不在盒里套盒。
                 acol = layout.split(factor=AI_MARGIN_SPLIT)
                 if isinstance(acol, tuple):
                     acol = acol[0]
                 abox = acol.box()
+
+                # 1. 建模执行状态摘要（单行清晰展示，杜绝折叠噪音）
+                steps = []
                 if item.steps_json:
                     try:
                         steps = json.loads(item.steps_json)
                     except Exception:
                         steps = []
-                    if steps:
-                        dur_text = f"（耗时 {item.duration_str}）" if item.duration_str else ""
-                        if len(steps) > 1:
-                            is_open = getattr(item, "show_steps", False)
-                            icon = 'TRIA_DOWN' if is_open else 'TRIA_RIGHT'
-                            r = abox.row(align=True)
-                            r.alignment = 'LEFT'
-                            btn = r.operator("deepseek.toggle_ai_detail",
-                                             text=f"执行了 {len(steps)} 项建模操作{dur_text}",
-                                             icon=icon,
-                                             emboss=False)
-                            btn.idx = idx
-                            btn.uid = getattr(item, 'uid', 0) or (idx + 1)
-                            btn.field = "steps"
-                            if is_open:
-                                for st in steps:
-                                    abox.label(text=f"  ✓ {st}")
-                        else:
-                            abox.label(text=f"{steps[0]}{dur_text}", icon='CHECKMARK')
+                dur_text = f" · {item.duration_str}" if item.duration_str else ""
+                if steps:
+                    srow = abox.row(align=True)
+                    srow.label(text=f"建模完成 · 共 {len(steps)} 项操作{dur_text}", icon='CHECKMARK')
                 elif item.duration_str:
-                    arow = abox.row(align=True)
-                    arow.alignment = 'LEFT'
-                    arow.label(text=f"耗时 {item.duration_str}", icon='COMMUNITY')
+                    srow = abox.row(align=True)
+                    srow.label(text=f"已完成{dur_text}", icon='CHECKMARK')
 
+                # 2. 解析正文与追问选项
                 info = parse_interactive_options(item.text)
                 intro = info.get("intro", "")
                 questions = info.get("questions", [])
                 is_latest_ai = (idx == hist_len - 1)
-                # 规格段是 AI 整段盒的**一部分**，不是另一个盒：
-                # 引子 + 所有细节 + 选项按钮 + 结语都直接画在 abox 上。
+                ai_chars = bubble_wrap_chars(context, factor=AI_MARGIN_SPLIT)
                 sbody = abox
+
                 if questions:
                     mark(sbody, CHAT_OPTIONS)
+                    if intro:
+                        intro_paras = [p.strip() for p in intro.split("\n") if p.strip()]
+                        # 仅展示开场 1~2 句核心结论，杜绝长篇废话
+                        draw_ai_paragraph(sbody, "\n".join(intro_paras[:2]), ai_chars)
 
-                ai_chars = bubble_wrap_chars(context, factor=AI_MARGIN_SPLIT)
-                if intro:
-                    intro_paras = [p.strip() for p in intro.split("\n") if p.strip()]
-                    if len(intro_paras) <= 2:
-                        draw_ai_paragraph(sbody, intro, ai_chars)
-                    else:
-                        # 仅展示首句开场，将其余长篇术语科普与对比折叠
-                        draw_ai_paragraph(sbody, intro_paras[0], ai_chars)
-                        is_open = getattr(item, "show_intro_more", False)
-                        icon = 'TRIA_DOWN' if is_open else 'TRIA_RIGHT'
-                        r = sbody.row(align=True)
-                        r.alignment = 'LEFT'
-                        btn = r.operator("deepseek.toggle_ai_detail",
-                                         text=f"查看方案分析与说明（{len(intro_paras) - 1}项）",
-                                         icon=icon,
-                                         emboss=False)
-                        btn.idx = idx
-                        btn.uid = getattr(item, 'uid', 0) or (idx + 1)
-                        btn.field = "intro_more"
-                        if is_open:
-                            more_intro = "\n".join(intro_paras[1:])
-                            draw_ai_paragraph(sbody, more_intro, ai_chars)
-
-                if questions:
                     if not is_latest_ai:
                         sbody.label(text="关键规格已确认", icon='CHECKMARK')
                     else:
+                        try:
+                            current_sel = json.loads(state.selected_options_json or "{}")
+                        except Exception:
+                            current_sel = {}
+
+                        chosen_summary = []
                         for q_idx, q in enumerate(questions):
-                            # AI 给的 title 常自带 markdown 序号前缀（「1. 杯型风格」）。
-                            # 外面已经有「细节 N：」这个序号，这里再留一遍就成了
-                            # 「细节 1：1.杯型风格」两个 1，所以先剥掉。
                             q_title = re.sub(r"^\s*\d+\s*[.、．)）]\s*",
                                              "", str(q.get('title', '')))
-                            # MENU_PANEL：这一组是「等你从菜单里选」的分组标题
                             sbody.label(text=f"细节 {q_idx + 1}：{q_title}",
                                         icon='MENU_PANEL')
                             opts = q.get("options", [])
-                            # 永远横排。Blender 量不了文字宽度，但用户说了截断没关系、
-                            # 面板可以拉宽，纵向空间才是真约束——所以不再按字数退回竖排。
+                            key = str(q_idx)
+
+                            sel_info = current_sel.get(key)
+                            cur_val = sel_info.get("value") if isinstance(sel_info, dict) else (sel_info[0] if isinstance(sel_info, list) and sel_info else "")
+                            if not cur_val:
+                                rec_opt = next((o for o in opts if o.get("is_recommended")), (opts[0] if opts else None))
+                                cur_val = (rec_opt.get("value") or rec_opt.get("label", "")) if rec_opt else ""
+
+                            if cur_val:
+                                chosen_summary.append(f"{q_title}：{cur_val}")
+
                             orow_holder = sbody.row(align=True)
                             for opt in opts:
                                 val = opt.get("value") or opt.get("label", "")
                                 lbl = opt.get("label", val)
-                                orow = orow_holder
-                                btn = orow.operator("deepseek.submit_selection",
-                                                    text=f"选择: {lbl}",
-                                                    icon='CHECKBOX_DEHLT')
-                                btn.custom_prompt = f"针对「{q_title}」，我选择：{val}"
+                                is_selected = (val == cur_val)
+                                btn = orow_holder.operator("deepseek.select_option",
+                                                           text=lbl,
+                                                           icon='CHECKBOX_HLT' if is_selected else 'CHECKBOX_DEHLT',
+                                                           depress=is_selected)
+                                btn.question_idx = q_idx
+                                btn.question_title = q_title
+                                btn.option_value = val
 
+                        if chosen_summary:
+                            prompt_text = f"参数已确认：{'；'.join(chosen_summary)}，开始建模！"
+                        else:
+                            prompt_text = info.get("all_recommended", "全部按推荐参数开始建模！")
                         rec_btn = sbody.operator("deepseek.submit_selection",
-                                                text="按推荐参数开始建模",
+                                                text="按所选方案开始建模",
                                                 icon='PLAY')
-                        rec_btn.custom_prompt = info.get("all_recommended", "全部按推荐参数开始建模！")
-
-                gen_list = info.get("general", [])
-                if gen_list:
-                    gen_text = "\n".join(gen_list).strip()
-                    if len(gen_list) > 1 or len(gen_text) > 25:
-                        is_open = getattr(item, "show_params", False)
-                        icon = 'TRIA_DOWN' if is_open else 'TRIA_RIGHT'
-                        r = sbody.row(align=True)
-                        r.alignment = 'LEFT'
-                        btn = r.operator("deepseek.toggle_ai_detail",
-                                         text="查看补充参数与技术细节",
-                                         icon=icon,
-                                         emboss=False)
-                        btn.idx = idx
-                        btn.uid = getattr(item, 'uid', 0) or (idx + 1)
-                        btn.field = "params"
-                        if is_open:
-                            draw_ai_paragraph(sbody, gen_text, ai_chars)
-                    else:
+                        rec_btn.custom_prompt = prompt_text
+                else:
+                    gen_list = info.get("general", [])
+                    if gen_list:
+                        gen_text = "\n".join(gen_list).strip()
                         draw_ai_paragraph(sbody, gen_text, ai_chars)
-
-                outro = info.get("outro", "")
-                if outro and not questions:
-                    draw_ai_paragraph(sbody, outro, ai_chars)
-
-                if not intro and not questions and not info.get("general") and not outro and item.text.strip():
-                    full_paras = [p.strip() for p in item.text.split("\n") if p.strip()]
-                    if len(full_paras) > 2:
-                        draw_ai_paragraph(sbody, full_paras[0], ai_chars)
-                        is_open = getattr(item, "show_body_more", False)
-                        icon = 'TRIA_DOWN' if is_open else 'TRIA_RIGHT'
-                        r = sbody.row(align=True)
-                        r.alignment = 'LEFT'
-                        btn = r.operator("deepseek.toggle_ai_detail",
-                                         text=f"查看完整说明（{len(full_paras) - 1}段）",
-                                         icon=icon,
-                                         emboss=False)
-                        btn.idx = idx
-                        btn.uid = getattr(item, 'uid', 0) or (idx + 1)
-                        btn.field = "body_more"
-                        if is_open:
-                            more_full = "\n".join(full_paras[1:])
-                            draw_ai_paragraph(sbody, more_full, ai_chars)
-                    else:
-                        draw_ai_paragraph(sbody, item.text, ai_chars)
+                    elif item.text.strip():
+                        paras = [p.strip() for p in item.text.split("\n") if p.strip()]
+                        display_text = paras[0] if (steps and len(paras) > 1) else item.text
+                        draw_ai_paragraph(sbody, display_text, ai_chars)
 
                 if item.added_objects_str:
                     res_box = abox
                     res_box.label(text=f"新增对象：{item.added_objects_str}", icon='MESH_DATA')
 
+                if steps or (run and run.calls):
+                    drow = abox.row(align=True)
+                    drow.alignment = 'RIGHT'
+                    dbtn = drow.operator("deepseek.switch_tab", text="查看完整步骤与用量 →", icon='CONSOLE', emboss=False)
+                    dbtn.tab = "DETAIL"
     # 3) 输入区贴在对话流下面：聊天窗口的阅读顺序是"上一条永远在输入框上面"，
     #    所以自己刚发的话不该出现在输入框下面。历史条数由偏好设置封顶，不会把输入框推出屏幕。
     pills = list(quick_pills(state))
@@ -1744,7 +1705,9 @@ def quick_pills(state):
 
 def can_undo(state):
     run = CONTROLLER.run
-    return bool(run is not None and run.receipt and getattr(run.receipt, "boundary_pushed", False))
+    can_undo_run = bool(run is not None and run.receipt and getattr(run.receipt, "boundary_pushed", False))
+    has_history = bool(state and len(getattr(state, "history", [])) > 0)
+    return can_undo_run or has_history
 
 
 OPERATORS = (
@@ -1752,11 +1715,12 @@ OPERATORS = (
     DEEPSEEK_OT_show, DEEPSEEK_OT_export, DEEPSEEK_OT_clear,
     DEEPSEEK_OT_new_task,
     DEEPSEEK_OT_fetch_models, DEEPSEEK_OT_set_model,
-    DEEPSEEK_OT_quick_pill, DEEPSEEK_OT_submit_selection,
+    DEEPSEEK_OT_quick_pill, DEEPSEEK_OT_select_option, DEEPSEEK_OT_submit_selection,
+    DEEPSEEK_OT_toggle_all_history, DEEPSEEK_OT_switch_tab,
     DEEPSEEK_OT_toggle_ai_detail,
 )
 
-CLASSES = (DEEPSEEK_PG_msg, DEEPSEEK_PG_note, DEEPSEEK_PG_state) + OPERATORS + (
+CLASSES = (DEEPSEEK_PG_msg, DEEPSEEK_PG_state) + OPERATORS + (
     DEEPSEEK_PT_chat,
 )
 
@@ -1801,10 +1765,10 @@ def check_layout_contract():
         bad.append("wrap_follows_box_width: 还有写死 18 字的折行宽度")
     if 'text=("　　" + ln) if i == 0 else ln' not in content_src:
         bad.append("indent_first_line_only: 缩进必须只加首行，续行顶格")
-    if '.panel(' not in content_src:
-        bad.append("user_msg_panel_fold: 长提示词没有用原生 layout.panel() 折叠")
-    if 'default_closed=False' not in content_src:
-        bad.append("user_msg_panel_fold: 折叠面板必须默认展开")
+    import re
+    code_no_comments = re.sub(r'#.*', '', content_src)
+    if re.search(r'\bpanel\(', code_no_comments) or '.panel(' in code_no_comments:
+        bad.append("zero_panel_leak: 严禁在代码中调用 .panel()，避免 Blender 5.2 布局栈逃逸崩溃")
     return bad
 
 

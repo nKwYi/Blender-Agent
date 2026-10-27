@@ -133,8 +133,8 @@ class DEEPSEEK_PT_prefs(bpy.types.AddonPreferences):
         description="关闭时，模型请求 execute_blender_code 会先弹出代码并要求明确批准",
     )
     history_page: bpy.props.IntProperty(
-        name="主面板显示条数", default=3, min=1, max=10,
-        description="侧栏实测无法靠滚轮滚动，历史按页显示，更早的走翻页",
+        name="主面板显示条数", default=6, min=1, max=20,
+        description="主对话流默认显示的最近消息条数，更早的消息可通过翻页展开",
     )
 
     def draw(self, context):
@@ -188,34 +188,8 @@ def get_config():
             key = os.environ.get("DEEPSEEK_API_KEY", "").strip() or os.environ.get("MINIMAX_API_KEY", "").strip()
 
     raw_timeout = p.timeout if p else DEFAULT_TIMEOUT
-    if p and raw_timeout < 600:
-        try:
-            p.timeout = 600
-            raw_timeout = 600
-        except Exception:
-            raw_timeout = 600
-    elif raw_timeout < 600:
-        raw_timeout = 600
-
     raw_turns = p.max_turns if p else DEFAULT_MAX_TURNS
-    if p and raw_turns < 16:
-        try:
-            p.max_turns = 16
-            raw_turns = 16
-        except Exception:
-            raw_turns = 16
-    elif raw_turns < 16:
-        raw_turns = 16
-
-    raw_wall = p.wall_budget if p else WALL_BUDGET
-    if p and raw_wall < 1200:
-        try:
-            p.wall_budget = 1200
-            raw_wall = 1200
-        except Exception:
-            raw_wall = 1200
-    elif raw_wall < 1200:
-        raw_wall = 1200
+    raw_wall = p.wall_budget if p else int(WALL_BUDGET)
 
     return {
         "provider": provider,
@@ -229,7 +203,7 @@ def get_config():
         "max_turns": raw_turns,
         "wall_budget": raw_wall,
         "allow_arbitrary_code": bool(p.allow_arbitrary_code) if p else False,
-        "history_page": p.history_page if p else 3,
+        "history_page": p.history_page if p else 6,
     }
 
 

@@ -173,26 +173,35 @@ def handle_get_scene_info(args):
     }
 
 
-_EXEC_G = None
+_BASE_EXEC_G = None
+
+
+def _get_base_globals():
+    global _BASE_EXEC_G
+    if _BASE_EXEC_G is None:
+        import mathutils
+        _BASE_EXEC_G = {
+            "bpy": bpy,
+            "math": math,
+            "mathutils": mathutils,
+            "Vector": mathutils.Vector,
+            "Matrix": mathutils.Matrix,
+            "Euler": mathutils.Euler,
+            "Quaternion": mathutils.Quaternion,
+            "__name__": "deepseek_exec",
+        }
+    return _BASE_EXEC_G
 
 
 def _exec_globals():
     """execute_blender_code 的执行作用域。
 
-    补上 mathutils：Blender 的文本编辑器/控制台默认预导入
-    Vector / Matrix / Euler，模型（按 Blender 惯例写的脚本）会直接用
-    `Vector((0,0,0))`。原先作用域只有 bpy/math/context，模型一用
-    Vector 就 NameError，然后反复重试 —— 每次重试都要用户在面板里
-    批一次，GUI 下会直接耗尽轮次。
+    每次返回全新浅拷贝字典并注入当前最新 bpy.context，
+    彻底杜绝跨任务全局变量残留与已删除 Blender 对象的悬空指针引用。
     """
-    global _EXEC_G
-    if _EXEC_G is None:
-        import mathutils
-        _EXEC_G = {"bpy": bpy, "math": math, "mathutils": mathutils,
-                   "Vector": mathutils.Vector, "Matrix": mathutils.Matrix,
-                   "Euler": mathutils.Euler, "Quaternion": mathutils.Quaternion,
-                   "context": bpy.context, "__name__": "deepseek_exec"}
-    return _EXEC_G
+    scope = dict(_get_base_globals())
+    scope["context"] = bpy.context
+    return scope
 
 
 def handle_execute_code(args):
